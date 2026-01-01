@@ -1094,6 +1094,11 @@ class MainWindow(QMainWindow):
         """
         Transform parameter data into 2D advanced view format.
 
+        For results tables that are already organized as 2D tables, this will:
+        - Put years as row indices
+        - Hide the year column
+        - Leave the rest of the table as is
+
         Args:
             df: Original parameter DataFrame
             current_filters: Dictionary of current filter selections
@@ -1140,86 +1145,104 @@ class MainWindow(QMainWindow):
             if filter_value and filter_value != "All" and filter_col in filtered_df.columns:
                 filtered_df = filtered_df[filtered_df[filter_col] == filter_value]
 
-        # Create pivot table
-        if not year_columns:
-            # If no year columns, use index as rows
+        # Check if data is already in 2D format (has years and other dimensions as columns)
+        # This is typical for results tables that are already organized properly
+        has_year_column = any(col in filtered_df.columns for col in year_columns)
+        has_other_columns = len([col for col in filtered_df.columns if col not in year_columns and col not in filter_columns]) > 0
+
+        if has_year_column and has_other_columns:
+            # Data is already in 2D format - just set year as index and remove year columns from display
             pivot_df = filtered_df.copy()
+
+            # Set the first available year column as index
+            year_col = next((col for col in year_columns if col in pivot_df.columns), None)
+            if year_col:
+                pivot_df = pivot_df.set_index(year_col)
+
+            # Remove all year columns from the display columns
+            columns_to_keep = [col for col in pivot_df.columns if col not in year_columns]
+            pivot_df = pivot_df[columns_to_keep]
+
         else:
-            # Determine index columns (years)
-            index_cols = year_columns.copy()
-
-            # If both year_vtg and year_act exist, create combined year column
-            if 'year_vtg' in year_columns and 'year_act' in year_columns:
-                # Create a combined year identifier
-                filtered_df['year_combined'] = filtered_df.apply(
-                    lambda row: f"{row['year_vtg']}_{row['year_act']}", axis=1
-                )
-                index_cols = ['year_combined']
-
-            # Determine columns for pivoting (exclude filter columns and year columns)
-            pivot_cols = [col for col in property_columns if col in filtered_df.columns and col not in filter_columns and col not in year_columns]
-
-            # If no property columns, use a default grouping
-            if not pivot_cols:
-                pivot_cols = ['index']
-                filtered_df['index'] = range(len(filtered_df))
-
+            # Original pivot logic for data that needs transformation
             # Create pivot table
-            try:
-                import numpy as np
-                pivot_df = filtered_df.pivot_table(
-                    values=value_column,
-                    index=index_cols,
-                    columns=pivot_cols,
-                    aggfunc='first',  # Take first value if duplicates
-                    fill_value=np.nan,  # Use NaN for missing values to avoid downcasting warning
-                    dropna=False  # Don't drop NaN values
-                )
+            if not year_columns:
+                # If no year columns, use index as rows
+                pivot_df = filtered_df.copy()
+            else:
+                # Determine index columns (years)
+                index_cols = year_columns.copy()
 
-                # Ensure numeric columns can contain NaN by converting int columns to float
-                for col in pivot_df.columns:
-                    col_data = pivot_df[col]
-                    # Check if it's a Series (single column) and has integer dtype
-                    if hasattr(col_data, 'dtype') and col_data.dtype in ['int64', 'int32', 'int16', 'int8']:
-                        pivot_df[col] = col_data.astype('float64')
+                # If both year_vtg and year_act exist, create combined year column
+                if 'year_vtg' in year_columns and 'year_act' in year_columns:
+                    # Create a combined year identifier
+                    filtered_df['year_combined'] = filtered_df.apply(
+                        lambda row: f"{row['year_vtg']}_{row['year_act']}", axis=1
+                    )
+                    index_cols = ['year_combined']
 
-                # Convert columns that are all zeros to NaN (treat as empty)
-                for col in pivot_df.columns:
-                    col_data = pivot_df[col]
-                    if hasattr(col_data, 'dtype') and col_data.dtype in ['float64', 'float32'] and (col_data == 0).all():
-                        pivot_df[col] = col_data.replace(0, np.nan)
+                # Determine columns for pivoting (exclude filter columns and year columns)
+                pivot_cols = [col for col in property_columns if col in filtered_df.columns and col not in filter_columns and col not in year_columns]
 
-                # Flatten MultiIndex columns if they exist
-                if isinstance(pivot_df.columns, pd.MultiIndex):
-                    # Create clean column names by joining the levels, excluding units
-                    new_columns = []
-                    for col_tuple in pivot_df.columns:
-                        # Filter out None/NaN values, empty strings, and units-like values
-                        clean_parts = []
-                        for part in col_tuple:
-                            if pd.notna(part) and str(part).strip():
-                                part_str = str(part).strip()
-                                # Skip units-like values (common units)
-                                if part_str.lower() not in ['gwa', 'gw', 'mw', 'kw', 'tj', 'pj', 'mt', 'kt', 'usd', 'eur', 'usd_2005', 'usd_2010']:
-                                    clean_parts.append(part_str)
-                        if clean_parts:
-                            new_columns.append('_'.join(clean_parts))
-                        else:
-                            # If all parts were filtered out, use the first non-empty part
+                # If no property columns, use a default grouping
+                if not pivot_cols:
+                    pivot_cols = ['index']
+                    filtered_df['index'] = range(len(filtered_df))
+
+                # Create pivot table
+                try:
+                    import numpy as np
+                    pivot_df = filtered_df.pivot_table(
+                        values=value_column,
+                        index=index_cols,
+                        columns=pivot_cols,
+                        aggfunc='first',  # Take first value if duplicates
+                        fill_value=np.nan,  # Use NaN for missing values to avoid downcasting warning
+                        dropna=False  # Don't drop NaN values
+                    )
+
+                    # Ensure numeric columns can contain NaN by converting int columns to float
+                    for col in pivot_df.columns:
+                        col_data = pivot_df[col]
+                        # Check if it's a Series (single column) and has integer dtype
+                        if hasattr(col_data, 'dtype') and col_data.dtype in ['int64', 'int32', 'int16', 'int8']:
+                            pivot_df[col] = col_data.astype('float64')
+
+                    # Convert columns that are all zeros to NaN (treat as empty)
+                    for col in pivot_df.columns:
+                        col_data = pivot_df[col]
+                        if hasattr(col_data, 'dtype') and col_data.dtype in ['float64', 'float32'] and (col_data == 0).all():
+                            pivot_df[col] = col_data.replace(0, np.nan)
+
+                    # Flatten MultiIndex columns if they exist
+                    if isinstance(pivot_df.columns, pd.MultiIndex):
+                        # Create clean column names by joining the levels, excluding units
+                        new_columns = []
+                        for col_tuple in pivot_df.columns:
+                            # Filter out None/NaN values, empty strings, and units-like values
+                            clean_parts = []
                             for part in col_tuple:
                                 if pd.notna(part) and str(part).strip():
-                                    new_columns.append(str(part).strip())
-                                    break
+                                    part_str = str(part).strip()
+                                    # Skip units-like values (common units)
+                                    if part_str.lower() not in ['gwa', 'gw', 'mw', 'kw', 'tj', 'pj', 'mt', 'kt', 'usd', 'eur', 'usd_2005', 'usd_2010']:
+                                        clean_parts.append(part_str)
+                            if clean_parts:
+                                new_columns.append('_'.join(clean_parts))
                             else:
-                                new_columns.append(str(col_tuple))
-                    pivot_df.columns = new_columns
+                                # If all parts were filtered out, use the first non-empty part
+                                for part in col_tuple:
+                                    if pd.notna(part) and str(part).strip():
+                                        new_columns.append(str(part).strip())
+                                        break
+                                else:
+                                    new_columns.append(str(col_tuple))
+                        pivot_df.columns = new_columns
 
-            except Exception as e:
-                # Fallback: just return filtered data if pivot fails
-                print(f"Pivot failed: {e}")
-                pivot_df = filtered_df
-
-            # Keep years as DataFrame index for advanced view
+                except Exception as e:
+                    # Fallback: just return filtered data if pivot fails
+                    print(f"Pivot failed: {e}")
+                    pivot_df = filtered_df
 
         return pivot_df
 
