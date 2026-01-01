@@ -549,11 +549,23 @@ class MainWindow(QMainWindow):
         # Determine formatting for numerical columns based on max values
         column_formats = {}
         for col_idx, col_name in enumerate(df.columns):
-            if df[col_name].dtype in ['int64', 'float64', 'int32', 'float32']:
+            col_dtype = df.dtypes[col_name]
+            # Handle case where duplicate column names return a Series
+            if hasattr(col_dtype, '__iter__') and not isinstance(col_dtype, str):
+                # Multiple columns with same name, check if any are numeric
+                is_numeric = any(dtype in ['int64', 'float64', 'int32', 'float32'] for dtype in col_dtype)
+            else:
+                # Single column
+                is_numeric = col_dtype in ['int64', 'float64', 'int32', 'float32']
+
+            if is_numeric:
                 # Find max absolute value in the column (excluding NaN)
                 numeric_values = df[col_name].dropna()
                 if not numeric_values.empty:
                     max_abs_value = abs(numeric_values).max()
+                    # Handle case where max_abs_value is a Series (duplicate columns)
+                    if hasattr(max_abs_value, 'max'):
+                        max_abs_value = max_abs_value.max()
                     if max_abs_value < 10:
                         column_formats[col_idx] = ".2f"  # #.##
                     elif max_abs_value < 100:
@@ -602,7 +614,16 @@ class MainWindow(QMainWindow):
 
                 # Right-align numeric columns
                 col_name = df.columns[col_idx]
-                if df[col_name].dtype in ['int64', 'float64', 'int32', 'float32'] or col_name == parameter.metadata.get('value_column', 'value'):
+                col_dtype = df.dtypes[col_name]
+                # Handle case where duplicate column names return a Series
+                if hasattr(col_dtype, '__iter__') and not isinstance(col_dtype, str):
+                    # Multiple columns with same name, check if any are numeric
+                    is_numeric = any(dtype in ['int64', 'float64', 'int32', 'float32'] for dtype in col_dtype)
+                else:
+                    # Single column
+                    is_numeric = col_dtype in ['int64', 'float64', 'int32', 'float32']
+
+                if is_numeric or col_name == parameter.metadata.get('value_column', 'value'):
                     item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
 
                 self.param_table.setItem(row_idx, col_idx, item)
@@ -649,11 +670,23 @@ class MainWindow(QMainWindow):
         # Determine formatting for numerical columns based on max values
         column_formats = {}
         for col_idx, col_name in enumerate(df.columns):
-            if df[col_name].dtype in ['int64', 'float64', 'int32', 'float32']:
+            col_dtype = df.dtypes[col_name]
+            # Handle case where duplicate column names return a Series
+            if hasattr(col_dtype, '__iter__') and not isinstance(col_dtype, str):
+                # Multiple columns with same name, check if any are numeric
+                is_numeric = any(dtype in ['int64', 'float64', 'int32', 'float32'] for dtype in col_dtype)
+            else:
+                # Single column
+                is_numeric = col_dtype in ['int64', 'float64', 'int32', 'float32']
+
+            if is_numeric:
                 # Find max absolute value in the column (excluding NaN)
                 numeric_values = df[col_name].dropna()
                 if not numeric_values.empty:
                     max_abs_value = abs(numeric_values).max()
+                    # Handle case where max_abs_value is a Series (duplicate columns)
+                    if hasattr(max_abs_value, 'max'):
+                        max_abs_value = max_abs_value.max()
                     if max_abs_value < 10:
                         column_formats[col_idx] = ".2f"  # #.##
                     elif max_abs_value < 100:
@@ -702,7 +735,16 @@ class MainWindow(QMainWindow):
 
                 # Right-align numeric columns
                 col_name = df.columns[col_idx]
-                if df[col_name].dtype in ['int64', 'float64', 'int32', 'float32'] or col_name == result.metadata.get('value_column', 'value'):
+                col_dtype = df.dtypes[col_name]
+                # Handle case where duplicate column names return a Series
+                if hasattr(col_dtype, '__iter__') and not isinstance(col_dtype, str):
+                    # Multiple columns with same name, check if any are numeric
+                    is_numeric = any(dtype in ['int64', 'float64', 'int32', 'float32'] for dtype in col_dtype)
+                else:
+                    # Single column
+                    is_numeric = col_dtype in ['int64', 'float64', 'int32', 'float32']
+
+                if is_numeric or col_name == result.metadata.get('value_column', 'value'):
                     item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
 
                 self.param_table.setItem(row_idx, col_idx, item)
