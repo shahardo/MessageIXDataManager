@@ -5,7 +5,7 @@ Input Manager - handles loading and parsing of message_ix Excel input files
 import os
 import pandas as pd
 from openpyxl import load_workbook
-from typing import Optional, List
+from typing import Optional, List, Callable
 
 from core.data_models import ScenarioData, Parameter
 
@@ -17,12 +17,13 @@ class InputManager:
         self.current_scenario: Optional[ScenarioData] = None
         self.loaded_file_path: Optional[str] = None
 
-    def load_excel_file(self, file_path: str) -> ScenarioData:
+    def load_excel_file(self, file_path: str, progress_callback: Optional[Callable[[int, str], None]] = None) -> ScenarioData:
         """
         Load and parse a message_ix Excel input file
 
         Args:
             file_path: Path to the Excel file
+            progress_callback: Optional callback function for progress updates (value, message)
 
         Returns:
             ScenarioData object containing parsed data
@@ -40,27 +41,42 @@ class InputManager:
         scenario = ScenarioData()
 
         try:
+            # Initialize progress
+            if progress_callback:
+                progress_callback(0, "Loading workbook...")
+
             # Load workbook
             wb = load_workbook(file_path, data_only=True)
 
+            if progress_callback:
+                progress_callback(10, "Workbook loaded, parsing sets...")
+
             # Parse sets
-            self._parse_sets(wb, scenario)
+            self._parse_sets(wb, scenario, progress_callback)
+
+            if progress_callback:
+                progress_callback(40, "Sets parsed, parsing parameters...")
 
             # Parse parameters
-            self._parse_parameters(wb, scenario)
+            self._parse_parameters(wb, scenario, progress_callback)
 
             # Store reference
             self.current_scenario = scenario
             self.loaded_file_path = file_path
 
+            if progress_callback:
+                progress_callback(100, "Loading complete")
+
             print(f"Successfully loaded {len(scenario.parameters)} parameters and {len(scenario.sets)} sets")
 
         except Exception as e:
+            if progress_callback:
+                progress_callback(0, f"Error: {str(e)}")
             raise ValueError(f"Error parsing Excel file: {str(e)}")
 
         return scenario
 
-    def _parse_sets(self, wb, scenario: ScenarioData):
+    def _parse_sets(self, wb, scenario: ScenarioData, progress_callback: Optional[Callable[[int, str], None]] = None):
         """Parse sets from the workbook"""
         # Look for common set sheet names in message_ix format
         set_sheet_names = ['sets', 'set', 'Sets', 'Set']
@@ -73,8 +89,14 @@ class InputManager:
 
         # Also check for individual set sheets (common in message_ix)
         potential_set_sheets = ['node', 'technology', 'commodity', 'level', 'year', 'mode', 'time']
-        for set_name in potential_set_sheets:
+        total_sheets = len([s for s in potential_set_sheets if s in wb.sheetnames])
+
+        for i, set_name in enumerate(potential_set_sheets):
             if set_name in wb.sheetnames:
+                if progress_callback and total_sheets > 0:
+                    progress = 10 + int((i / total_sheets) * 20)  # Progress from 10% to 30%
+                    progress_callback(progress, f"Parsing set: {set_name}")
+
                 sheet = wb[set_name]
                 self._parse_individual_set_sheet(sheet, set_name, scenario)
 
@@ -104,13 +126,15 @@ class InputManager:
         if set_values:
             scenario.sets[set_name] = pd.Series(set_values)
 
-    def _parse_parameters(self, wb, scenario: ScenarioData):
+    def _parse_parameters(self, wb, scenario: ScenarioData, progress_callback: Optional[Callable[[int, str], None]] = None):
         """Parse parameters from the workbook"""
         # Look for parameter sheets
         param_sheet_names = ['parameters', 'parameter', 'Parameters', 'Parameter', 'data']
 
         for sheet_name in param_sheet_names:
             if sheet_name in wb.sheetnames:
+                if progress_callback:
+                    progress_callback(40, f"Parsing combined parameters sheet: {sheet_name}")
                 sheet = wb[sheet_name]
                 self._parse_parameters_sheet(sheet, scenario)
                 break
@@ -120,10 +144,16 @@ class InputManager:
         exclude_sheets = set(param_sheet_names + ['sets', 'set', 'Sets', 'Set'] + list(scenario.sets.keys()))
         potential_param_sheets = all_sheets - exclude_sheets
 
-        for sheet_name in potential_param_sheets:
-            if sheet_name not in scenario.sets:  # Skip if already parsed as set
-                sheet = wb[sheet_name]
-                self._parse_individual_parameter_sheet(sheet, sheet_name, scenario)
+        param_sheets = [sheet_name for sheet_name in potential_param_sheets if sheet_name not in scenario.sets]
+        total_param_sheets = len(param_sheets)
+
+        for i, sheet_name in enumerate(param_sheets):
+            if progress_callback and total_param_sheets > 0:
+                progress = 50 + int((i / total_param_sheets) * 50)  # Progress from 50% to 100%
+                progress_callback(progress, f"Parsing parameter: {sheet_name}")
+
+            sheet = wb[sheet_name]
+            self._parse_individual_parameter_sheet(sheet, sheet_name, scenario)
 
     def _parse_parameters_sheet(self, sheet, scenario: ScenarioData):
         """Parse a combined parameters sheet"""
@@ -191,7 +221,8 @@ class InputManager:
                          param_data: List, headers: List[str]):
         """Create a Parameter object from parsed data"""
         try:
-            if not param_data or not headers:
+            # Check for valid input data - handle pandas Series ambiguity
+            if param_data is None or headers is None or len(param_data) == 0 or len(headers) == 0:
                 return
 
             # Convert to DataFrame
@@ -304,13 +335,13 @@ class InputManager:
 
         # Check dimension consistency
         dims = parameter.metadata.get('dims', [])
-        if dims:
+        if dims and len(dims) > 0:  # Explicit check to avoid pandas Series ambiguity
             missing_dims = [dim for dim in dims if dim not in parameter.df.columns]
             if missing_dims:
                 issues.append(f"Missing dimension columns: {missing_dims}")
 
         # Check for duplicate dimension combinations
-        if dims and all(dim in parameter.df.columns for dim in dims):
+        if dims and len(dims) > 0 and all(dim in parameter.df.columns for dim in dims):
             dim_cols = parameter.df[dims]
             duplicates = dim_cols.duplicated().sum()
             if duplicates > 0:
