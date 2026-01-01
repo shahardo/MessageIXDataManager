@@ -5,7 +5,8 @@ Main application window for MessageIX Data Manager
 from PyQt5.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QSplitter, QTreeWidget, QTableWidget, QTableWidgetItem, QTextEdit,
-    QStatusBar, QMenuBar, QMenu, QAction, QFileDialog, QMessageBox, QTreeWidgetItem, QLabel, QProgressBar
+    QStatusBar, QMenuBar, QMenu, QAction, QFileDialog, QMessageBox, QTreeWidgetItem, QLabel, QProgressBar,
+    QPushButton, QComboBox, QGroupBox, QFrame
 )
 from PyQt5.QtCore import Qt, QSettings
 from PyQt5.QtGui import QIcon, QFont
@@ -38,6 +39,7 @@ class MainWindow(QMainWindow):
 
         # View state
         self.current_view = "input"  # "input" or "results"
+        self.table_display_mode = "raw"  # "raw" or "advanced"
 
         # Connect solver manager to console
         self.solver_manager.set_output_callback(self._append_to_console)
@@ -80,14 +82,70 @@ class MainWindow(QMainWindow):
         self.param_tree.itemSelectionChanged.connect(self._on_parameter_selected)
         content_splitter.addWidget(self.param_tree)
 
-        # Parameter table with title
+        # Parameter table with title and controls
         table_container = QWidget()
         table_layout = QVBoxLayout(table_container)
         table_layout.setContentsMargins(0, 0, 0, 0)
 
+        # Title and toggle button in horizontal layout
+        title_layout = QHBoxLayout()
+        title_layout.setContentsMargins(0, 0, 0, 0)
+
         self.param_title = QLabel("Select a parameter to view data")
         self.param_title.setStyleSheet("font-size: 12px; color: #333; padding: 5px; background-color: #f0f0f0;")
-        table_layout.addWidget(self.param_title)
+        title_layout.addWidget(self.param_title)
+        title_layout.addStretch()
+
+        # Toggle button for raw/advanced view
+        self.view_toggle_button = QPushButton("Raw Display")
+        self.view_toggle_button.setCheckable(True)
+        self.view_toggle_button.setChecked(False)  # Start with raw mode
+        self.view_toggle_button.clicked.connect(self._toggle_display_mode)
+        self.view_toggle_button.setStyleSheet("""
+            QPushButton {
+                font-size: 11px;
+                padding: 3px 8px;
+                background-color: #e0e0e0;
+                border: 1px solid #ccc;
+                border-radius: 3px;
+            }
+            QPushButton:checked {
+                background-color: #4CAF50;
+                color: white;
+                font-weight: bold;
+            }
+        """)
+        title_layout.addWidget(self.view_toggle_button)
+
+        table_layout.addLayout(title_layout)
+
+        # Selector container for advanced mode (initially hidden)
+        self.selector_container = QGroupBox("Data Filters")
+        self.selector_container.setVisible(False)
+        self.selector_container.setStyleSheet("""
+            QGroupBox {
+                font-size: 11px;
+                font-weight: bold;
+                margin-top: 5px;
+                padding-top: 10px;
+                border: 1px solid #ccc;
+                border-radius: 3px;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                left: 10px;
+                padding: 0 5px 0 5px;
+            }
+        """)
+
+        selector_layout = QHBoxLayout(self.selector_container)
+        selector_layout.setContentsMargins(10, 10, 10, 10)
+
+        # Property selectors (will be populated dynamically)
+        self.property_selectors = {}
+        selector_layout.addStretch()
+
+        table_layout.addWidget(self.selector_container)
 
         self.param_table = QTableWidget()
         self.param_table.setAlternatingRowColors(True)
@@ -542,14 +600,33 @@ class MainWindow(QMainWindow):
             self.status_bar.showMessage(f"Parameter: {parameter.name} (empty)")
             return
 
+        # Handle display mode
+        if self.table_display_mode == "advanced":
+            # Get current filter selections
+            current_filters = {}
+            for col, selector in self.property_selectors.items():
+                selected_value = selector.currentText()
+                if selected_value != "All":
+                    current_filters[col] = selected_value
+
+            # Transform data for advanced view
+            display_df = self._transform_to_advanced_view(df, current_filters)
+
+            # Set up selectors if not already done
+            if not self.property_selectors:
+                self._setup_property_selectors(df)
+        else:
+            # Raw mode - use original data
+            display_df = df
+
         # Set table dimensions
-        self.param_table.setRowCount(len(df))
-        self.param_table.setColumnCount(len(df.columns))
+        self.param_table.setRowCount(len(display_df))
+        self.param_table.setColumnCount(len(display_df.columns))
 
         # Determine formatting for numerical columns based on max values
         column_formats = {}
-        for col_idx, col_name in enumerate(df.columns):
-            col_dtype = df.dtypes[col_name]
+        for col_idx, col_name in enumerate(display_df.columns):
+            col_dtype = display_df.dtypes[col_name]
             # Handle case where duplicate column names return a Series
             if hasattr(col_dtype, '__iter__') and not isinstance(col_dtype, str):
                 # Multiple columns with same name, check if any are numeric
@@ -560,7 +637,7 @@ class MainWindow(QMainWindow):
 
             if is_numeric:
                 # Find max absolute value in the column (excluding NaN)
-                numeric_values = df[col_name].dropna()
+                numeric_values = display_df[col_name].dropna()
                 if not numeric_values.empty:
                     max_abs_value = abs(numeric_values).max()
                     # Handle case where max_abs_value is a Series (duplicate columns)
@@ -575,17 +652,17 @@ class MainWindow(QMainWindow):
 
         # Set headers with better formatting
         headers = []
-        for col in df.columns:
-            if col == parameter.metadata.get('value_column', 'value'):
+        for col in display_df.columns:
+            if self.table_display_mode == "raw" and col == parameter.metadata.get('value_column', 'value'):
                 headers.append(f"{col} ({parameter.metadata.get('units', 'N/A')})")
             else:
                 headers.append(str(col))
         self.param_table.setHorizontalHeaderLabels(headers)
 
         # Fill table data with better formatting
-        for row_idx in range(len(df)):
-            for col_idx in range(len(df.columns)):
-                value = df.iloc[row_idx, col_idx]
+        for row_idx in range(len(display_df)):
+            for col_idx in range(len(display_df.columns)):
+                value = display_df.iloc[row_idx, col_idx]
                 item = QTableWidgetItem()
 
                 # Handle different data types with proper formatting
@@ -613,8 +690,8 @@ class MainWindow(QMainWindow):
                     item.setToolTip(f"Text: {str_value}")
 
                 # Right-align numeric columns
-                col_name = df.columns[col_idx]
-                col_dtype = df.dtypes[col_name]
+                col_name = display_df.columns[col_idx]
+                col_dtype = display_df.dtypes[col_name]
                 # Handle case where duplicate column names return a Series
                 if hasattr(col_dtype, '__iter__') and not isinstance(col_dtype, str):
                     # Multiple columns with same name, check if any are numeric
@@ -623,7 +700,7 @@ class MainWindow(QMainWindow):
                     # Single column
                     is_numeric = col_dtype in ['int64', 'float64', 'int32', 'float32']
 
-                if is_numeric or col_name == parameter.metadata.get('value_column', 'value'):
+                if is_numeric or (self.table_display_mode == "raw" and col_name == parameter.metadata.get('value_column', 'value')):
                     item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
 
                 self.param_table.setItem(row_idx, col_idx, item)
@@ -639,14 +716,15 @@ class MainWindow(QMainWindow):
 
         # Update status with more detailed information
         dims_info = f", dims: {len(parameter.metadata.get('dims', []))}" if parameter.metadata.get('dims') else ""
-        self.status_bar.showMessage(f"Parameter: {parameter.name} ({len(df)} rows{dims_info})")
+        display_mode_info = f" ({self.table_display_mode} view)"
+        self.status_bar.showMessage(f"Parameter: {parameter.name} ({len(display_df)} rows{dims_info}){display_mode_info}")
 
         # Update console with parameter info
-        self.console.append(f"Displayed parameter: {parameter.name}")
-        self.console.append(f"  Shape: {df.shape}")
+        self.console.append(f"Displayed parameter: {parameter.name} ({self.table_display_mode} view)")
+        self.console.append(f"  Shape: {display_df.shape}")
         if parameter.metadata.get('dims'):
             self.console.append(f"  Dimensions: {', '.join(parameter.metadata['dims'])}")
-        if parameter.metadata.get('units') != 'N/A':
+        if self.table_display_mode == "raw" and parameter.metadata.get('units') != 'N/A':
             self.console.append(f"  Units: {parameter.metadata['units']}")
 
     def _display_result_data(self, result):
@@ -663,14 +741,33 @@ class MainWindow(QMainWindow):
             self.status_bar.showMessage(f"Result: {result.name} (empty)")
             return
 
+        # Handle display mode
+        if self.table_display_mode == "advanced":
+            # Get current filter selections
+            current_filters = {}
+            for col, selector in self.property_selectors.items():
+                selected_value = selector.currentText()
+                if selected_value != "All":
+                    current_filters[col] = selected_value
+
+            # Transform data for advanced view
+            display_df = self._transform_to_advanced_view(df, current_filters)
+
+            # Set up selectors if not already done
+            if not self.property_selectors:
+                self._setup_property_selectors(df)
+        else:
+            # Raw mode - use original data
+            display_df = df
+
         # Set table dimensions
-        self.param_table.setRowCount(len(df))
-        self.param_table.setColumnCount(len(df.columns))
+        self.param_table.setRowCount(len(display_df))
+        self.param_table.setColumnCount(len(display_df.columns))
 
         # Determine formatting for numerical columns based on max values
         column_formats = {}
-        for col_idx, col_name in enumerate(df.columns):
-            col_dtype = df.dtypes[col_name]
+        for col_idx, col_name in enumerate(display_df.columns):
+            col_dtype = display_df.dtypes[col_name]
             # Handle case where duplicate column names return a Series
             if hasattr(col_dtype, '__iter__') and not isinstance(col_dtype, str):
                 # Multiple columns with same name, check if any are numeric
@@ -681,7 +778,7 @@ class MainWindow(QMainWindow):
 
             if is_numeric:
                 # Find max absolute value in the column (excluding NaN)
-                numeric_values = df[col_name].dropna()
+                numeric_values = display_df[col_name].dropna()
                 if not numeric_values.empty:
                     max_abs_value = abs(numeric_values).max()
                     # Handle case where max_abs_value is a Series (duplicate columns)
@@ -696,17 +793,17 @@ class MainWindow(QMainWindow):
 
         # Set headers with better formatting
         headers = []
-        for col in df.columns:
-            if col == result.metadata.get('value_column', 'value'):
+        for col in display_df.columns:
+            if self.table_display_mode == "raw" and col == result.metadata.get('value_column', 'value'):
                 headers.append(f"{col} ({result.metadata.get('units', 'N/A')})")
             else:
                 headers.append(str(col))
         self.param_table.setHorizontalHeaderLabels(headers)
 
         # Fill table data with better formatting
-        for row_idx in range(len(df)):
-            for col_idx in range(len(df.columns)):
-                value = df.iloc[row_idx, col_idx]
+        for row_idx in range(len(display_df)):
+            for col_idx in range(len(display_df.columns)):
+                value = display_df.iloc[row_idx, col_idx]
                 item = QTableWidgetItem()
 
                 # Handle different data types with proper formatting
@@ -734,8 +831,8 @@ class MainWindow(QMainWindow):
                     item.setToolTip(f"Text: {str_value}")
 
                 # Right-align numeric columns
-                col_name = df.columns[col_idx]
-                col_dtype = df.dtypes[col_name]
+                col_name = display_df.columns[col_idx]
+                col_dtype = display_df.dtypes[col_name]
                 # Handle case where duplicate column names return a Series
                 if hasattr(col_dtype, '__iter__') and not isinstance(col_dtype, str):
                     # Multiple columns with same name, check if any are numeric
@@ -744,7 +841,7 @@ class MainWindow(QMainWindow):
                     # Single column
                     is_numeric = col_dtype in ['int64', 'float64', 'int32', 'float32']
 
-                if is_numeric or col_name == result.metadata.get('value_column', 'value'):
+                if is_numeric or (self.table_display_mode == "raw" and col_name == result.metadata.get('value_column', 'value')):
                     item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
 
                 self.param_table.setItem(row_idx, col_idx, item)
@@ -760,14 +857,15 @@ class MainWindow(QMainWindow):
 
         # Update status with more detailed information
         dims_info = f", dims: {len(result.metadata.get('dims', []))}" if result.metadata.get('dims') else ""
-        self.status_bar.showMessage(f"Result: {result.name} ({len(df)} rows{dims_info})")
+        display_mode_info = f" ({self.table_display_mode} view)"
+        self.status_bar.showMessage(f"Result: {result.name} ({len(display_df)} rows{dims_info}){display_mode_info}")
 
         # Update console with result info
-        self.console.append(f"Displayed result: {result.name}")
-        self.console.append(f"  Shape: {df.shape}")
+        self.console.append(f"Displayed result: {result.name} ({self.table_display_mode} view)")
+        self.console.append(f"  Shape: {display_df.shape}")
         if result.metadata.get('dims'):
             self.console.append(f"  Dimensions: {', '.join(result.metadata['dims'])}")
-        if result.metadata.get('units') != 'N/A':
+        if self.table_display_mode == "raw" and result.metadata.get('units') != 'N/A':
             self.console.append(f"  Units: {result.metadata['units']}")
 
     def _append_to_console(self, message: str):
@@ -882,6 +980,222 @@ class MainWindow(QMainWindow):
         else:
             self.console.append("No solver is currently running")
 
+    def _toggle_display_mode(self):
+        """Toggle between raw and advanced display modes"""
+        if self.view_toggle_button.isChecked():
+            self.table_display_mode = "advanced"
+            self.view_toggle_button.setText("Advanced Display")
+            self.selector_container.setVisible(True)
+        else:
+            self.table_display_mode = "raw"
+            self.view_toggle_button.setText("Raw Display")
+            self.selector_container.setVisible(False)
+
+        # Refresh the current parameter display if one is selected
+        if self.current_view == "input":
+            selected_items = self.param_tree.selectedItems()
+            if selected_items and selected_items[0].parent() is not None:
+                item_name = selected_items[0].text(0)
+                data = self.input_manager.get_parameter(item_name)
+                if data:
+                    self._display_parameter_data(data)
+        else:  # results view
+            selected_items = self.param_tree.selectedItems()
+            if selected_items and selected_items[0].parent() is not None:
+                item_name = selected_items[0].text(0)
+                data = self.results_analyzer.get_result_data(item_name)
+                if data:
+                    self._display_result_data(data)
+
+    def _transform_to_advanced_view(self, df: pd.DataFrame, current_filters: dict = None) -> pd.DataFrame:
+        """
+        Transform parameter data into 2D advanced view format.
+
+        Args:
+            df: Original parameter DataFrame
+            current_filters: Dictionary of current filter selections
+
+        Returns:
+            Transformed DataFrame with years as rows and properties as columns
+        """
+        if df.empty:
+            return df
+
+        # Default filters if none provided
+        if current_filters is None:
+            current_filters = {}
+
+        # Identify year columns and property columns
+        year_columns = []
+        property_columns = []
+        filter_columns = []
+        value_column = None
+
+        # Categorize columns
+        for col in df.columns:
+            col_lower = col.lower()
+            if col_lower in ['value', 'val']:
+                value_column = col
+            elif col_lower in ['year_vtg', 'year_act', 'year_rel', 'year']:
+                year_columns.append(col)
+            elif col_lower in ['node_loc', 'node_rel', 'node_dest', 'node_origin', 'region',
+                             'mode', 'level', 'grade']:
+                # These become filter selectors (popup menus)
+                filter_columns.append(col)
+            elif col_lower in ['commodity', 'technology', 'type']:
+                # These become columns in advanced view
+                property_columns.append(col)
+            # Ignore units columns and other non-relevant columns
+
+        # If no value column found, assume last column is value
+        if value_column is None and len(df.columns) > 0:
+            value_column = df.columns[-1]
+
+        # Apply filters
+        filtered_df = df.copy()
+        for filter_col, filter_value in current_filters.items():
+            if filter_value and filter_value != "All" and filter_col in filtered_df.columns:
+                filtered_df = filtered_df[filtered_df[filter_col] == filter_value]
+
+        # Create pivot table
+        if not year_columns:
+            # If no year columns, use index as rows
+            pivot_df = filtered_df.copy()
+        else:
+            # Determine index columns (years)
+            index_cols = year_columns.copy()
+
+            # If both year_vtg and year_act exist, create combined year column
+            if 'year_vtg' in year_columns and 'year_act' in year_columns:
+                # Create a combined year identifier
+                filtered_df['year_combined'] = filtered_df.apply(
+                    lambda row: f"{row['year_vtg']}_{row['year_act']}", axis=1
+                )
+                index_cols = ['year_combined']
+
+            # Determine columns for pivoting (exclude filter columns and year columns)
+            pivot_cols = [col for col in property_columns if col in filtered_df.columns and col not in filter_columns and col not in year_columns]
+
+            # If no property columns, use a default grouping
+            if not pivot_cols:
+                pivot_cols = ['index']
+                filtered_df['index'] = range(len(filtered_df))
+
+            # Create pivot table
+            try:
+                pivot_df = filtered_df.pivot_table(
+                    values=value_column,
+                    index=index_cols,
+                    columns=pivot_cols,
+                    aggfunc='first',  # Take first value if duplicates
+                    fill_value=''  # Empty string for missing values
+                )
+
+                # Flatten MultiIndex columns if they exist
+                if isinstance(pivot_df.columns, pd.MultiIndex):
+                    # Create clean column names by joining the levels, excluding units
+                    new_columns = []
+                    for col_tuple in pivot_df.columns:
+                        # Filter out None/NaN values, empty strings, and units-like values
+                        clean_parts = []
+                        for part in col_tuple:
+                            if pd.notna(part) and str(part).strip():
+                                part_str = str(part).strip()
+                                # Skip units-like values (common units)
+                                if part_str.lower() not in ['gwa', 'gw', 'mw', 'kw', 'tj', 'pj', 'mt', 'kt', 'usd', 'eur', 'usd_2005', 'usd_2010']:
+                                    clean_parts.append(part_str)
+                        if clean_parts:
+                            new_columns.append('_'.join(clean_parts))
+                        else:
+                            # If all parts were filtered out, use the first non-empty part
+                            for part in col_tuple:
+                                if pd.notna(part) and str(part).strip():
+                                    new_columns.append(str(part).strip())
+                                    break
+                            else:
+                                new_columns.append(str(col_tuple))
+                    pivot_df.columns = new_columns
+
+            except Exception as e:
+                # Fallback: just return filtered data if pivot fails
+                print(f"Pivot failed: {e}")
+                pivot_df = filtered_df
+
+            # Reset index to make year columns regular columns
+            pivot_df = pivot_df.reset_index()
+
+        return pivot_df
+
+    def _setup_property_selectors(self, df: pd.DataFrame):
+        """Set up property selectors for advanced view based on DataFrame columns"""
+        # Clear existing selectors
+        for selector in self.property_selectors.values():
+            selector.setParent(None)
+        self.property_selectors.clear()
+
+        # Identify filter columns
+        filter_columns = []
+        for col in df.columns:
+            col_lower = col.lower()
+            if col_lower in ['node_loc', 'node_rel', 'node_dest', 'node_origin', 'region',
+                           'mode', 'level', 'grade']:
+                filter_columns.append(col)
+
+        # Create selectors for filter columns
+        selector_layout = self.selector_container.layout()
+        if selector_layout:
+            # Remove the stretch item if it exists
+            while selector_layout.count() > 0:
+                item = selector_layout.takeAt(0)
+                if item.widget():
+                    item.widget().setParent(None)
+
+        for col in filter_columns:
+            # Create label
+            label = QLabel(f"{col}:")
+            label.setStyleSheet("font-size: 11px; font-weight: bold;")
+            selector_layout.addWidget(label)
+
+            # Create combo box
+            combo = QComboBox()
+            combo.setStyleSheet("font-size: 11px; padding: 2px;")
+
+            # Add "All" option and unique values
+            unique_values = sorted(df[col].dropna().unique().tolist())
+            combo.addItem("All")
+            for value in unique_values:
+                combo.addItem(str(value))
+
+            # Set default to "All"
+            combo.setCurrentText("All")
+
+            # Connect signal
+            combo.currentTextChanged.connect(self._on_selector_changed)
+
+            selector_layout.addWidget(combo)
+            self.property_selectors[col] = combo
+
+        # Add stretch at the end
+        selector_layout.addStretch()
+
+    def _on_selector_changed(self):
+        """Handle selector value changes - refresh the table display"""
+        # Refresh the current parameter display
+        if self.current_view == "input":
+            selected_items = self.param_tree.selectedItems()
+            if selected_items and selected_items[0].parent() is not None:
+                item_name = selected_items[0].text(0)
+                data = self.input_manager.get_parameter(item_name)
+                if data:
+                    self._display_parameter_data(data)
+        else:  # results view
+            selected_items = self.param_tree.selectedItems()
+            if selected_items and selected_items[0].parent() is not None:
+                item_name = selected_items[0].text(0)
+                data = self.results_analyzer.get_result_data(item_name)
+                if data:
+                    self._display_result_data(data)
+
     def _show_dashboard(self):
         """Show results dashboard"""
         try:
@@ -909,9 +1223,18 @@ class MainWindow(QMainWindow):
             self.param_tree.setHeaderLabel("Parameters")
             self.param_title.setText("Select a parameter to view data")
             self.param_title.setStyleSheet("font-size: 12px; color: #333; padding: 5px; background-color: #f0f0f0;")
-            # Clear the table
+            # Clear the table and reset selectors
             self.param_table.setRowCount(0)
             self.param_table.setColumnCount(0)
+            # Reset display mode and hide selectors
+            self.table_display_mode = "raw"
+            self.view_toggle_button.setChecked(False)
+            self.view_toggle_button.setText("Raw Display")
+            self.selector_container.setVisible(False)
+            # Clear existing selectors
+            for selector in self.property_selectors.values():
+                selector.setParent(None)
+            self.property_selectors.clear()
 
     def _switch_to_results_view(self):
         """Switch to results view"""
@@ -921,6 +1244,15 @@ class MainWindow(QMainWindow):
             self.param_tree.setHeaderLabel("Results")
             self.param_title.setText("Select a result to view data")
             self.param_title.setStyleSheet("font-size: 12px; color: #333; padding: 5px; background-color: #f0f0f0;")
-            # Clear the table
+            # Clear the table and reset selectors
             self.param_table.setRowCount(0)
             self.param_table.setColumnCount(0)
+            # Reset display mode and hide selectors
+            self.table_display_mode = "raw"
+            self.view_toggle_button.setChecked(False)
+            self.view_toggle_button.setText("Raw Display")
+            self.selector_container.setVisible(False)
+            # Clear existing selectors
+            for selector in self.property_selectors.values():
+                selector.setParent(None)
+            self.property_selectors.clear()
