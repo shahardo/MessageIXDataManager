@@ -272,7 +272,7 @@ class MainWindow(QMainWindow):
         # Load input file if it exists and is readable
         if input_file and os.path.exists(input_file):
             try:
-                self.console.append(f"Auto-loading last input file: {input_file}")
+                self._append_to_console_with_scroll(f"Auto-loading last input file: {input_file}")
 
                 # Show progress bar for auto-loading
                 self.show_progress_bar(100)
@@ -293,7 +293,7 @@ class MainWindow(QMainWindow):
                 # Update parameter tree
                 self._update_parameter_tree()
 
-                self.console.append(f"✓ Auto-loaded input file with {len(scenario.parameters)} parameters")
+                self._append_to_console_with_scroll(f"✓ Auto-loaded input file with {len(scenario.parameters)} parameters")
 
             except Exception as e:
                 # Hide progress bar on error
@@ -341,7 +341,7 @@ class MainWindow(QMainWindow):
 
         if file_path:
             try:
-                self.console.append(f"Loading input file: {file_path}")
+                self._append_to_console_with_scroll(f"Loading input file: {file_path}")
 
                 # Show progress bar
                 self.show_progress_bar(100)
@@ -374,8 +374,8 @@ class MainWindow(QMainWindow):
 
                 # Report validation results
                 if validation['valid']:
-                    self.console.append(f"✓ Successfully loaded {len(scenario.parameters)} parameters, {len(scenario.sets)} sets")
-                    self.console.append(f"  Total data points: {validation['summary']['total_data_points']}")
+                    self._append_to_console_with_scroll(f"✓ Successfully loaded {len(scenario.parameters)} parameters, {len(scenario.sets)} sets")
+                    self._append_to_console_with_scroll(f"  Total data points: {validation['summary']['total_data_points']}")
                 else:
                     self.console.append(f"⚠ Loaded {len(scenario.parameters)} parameters with validation issues:")
                     for issue in validation['issues'][:5]:  # Show first 5 issues
@@ -730,12 +730,27 @@ class MainWindow(QMainWindow):
         self.status_bar.showMessage(f"Parameter: {parameter.name} ({len(display_df)} rows{dims_info}){display_mode_info}")
 
         # Update console with parameter info
-        self.console.append(f"Displayed parameter: {parameter.name} ({self.table_display_mode} view)")
-        self.console.append(f"  Shape: {display_df.shape}")
-        if parameter.metadata.get('dims'):
-            self.console.append(f"  Dimensions: {', '.join(parameter.metadata['dims'])}")
+        self._append_to_console_with_scroll(f"Displayed parameter: {parameter.name} ({self.table_display_mode} view)")
+        self._append_to_console_with_scroll(f"  Shape: {display_df.shape}")
+
+        if self.table_display_mode == "advanced":
+            # Show transformed dimensions for advanced view
+            index_name = display_df.index.name if display_df.index.name else "year"
+            if len(display_df.columns) <= 5:
+                columns_info = f"{', '.join(display_df.columns)}"
+            else:
+                columns_info = f"{', '.join(display_df.columns[:3])}, ... ({len(display_df.columns)} total)"
+            self._append_to_console_with_scroll(f"  Dimensions: {index_name} (rows), {columns_info} (columns)")
+            if current_filters:
+                applied_filters = [f"{k}={v}" for k, v in current_filters.items()]
+                self._append_to_console_with_scroll(f"  Filters applied: {', '.join(applied_filters)}")
+        else:
+            # Show original dimensions for raw view
+            if parameter.metadata.get('dims'):
+                self._append_to_console_with_scroll(f"  Dimensions: {', '.join(parameter.metadata['dims'])}")
+
         if self.table_display_mode == "raw" and parameter.metadata.get('units') != 'N/A':
-            self.console.append(f"  Units: {parameter.metadata['units']}")
+            self._append_to_console_with_scroll(f"  Units: {parameter.metadata['units']}")
 
     def _display_result_data(self, result):
         """Display result data in the table view"""
@@ -881,16 +896,49 @@ class MainWindow(QMainWindow):
         self.status_bar.showMessage(f"Result: {result.name} ({len(display_df)} rows{dims_info}){display_mode_info}")
 
         # Update console with result info
-        self.console.append(f"Displayed result: {result.name} ({self.table_display_mode} view)")
-        self.console.append(f"  Shape: {display_df.shape}")
-        if result.metadata.get('dims'):
-            self.console.append(f"  Dimensions: {', '.join(result.metadata['dims'])}")
+        self._append_to_console_with_scroll(f"Displayed result: {result.name} ({self.table_display_mode} view)")
+        self._append_to_console_with_scroll(f"  Shape: {display_df.shape}")
+
+        if self.table_display_mode == "advanced":
+            # Show transformed dimensions for advanced view
+            index_name = display_df.index.name if display_df.index.name else "year"
+            if len(display_df.columns) <= 5:
+                columns_info = f"{', '.join(display_df.columns)}"
+            else:
+                columns_info = f"{', '.join(display_df.columns[:3])}, ... ({len(display_df.columns)} total)"
+            self._append_to_console_with_scroll(f"  Dimensions: {index_name} (rows), {columns_info} (columns)")
+            if current_filters:
+                applied_filters = [f"{k}={v}" for k, v in current_filters.items()]
+                self._append_to_console_with_scroll(f"  Filters applied: {', '.join(applied_filters)}")
+        else:
+            # Show original dimensions for raw view
+            if result.metadata.get('dims'):
+                self._append_to_console_with_scroll(f"  Dimensions: {', '.join(result.metadata['dims'])}")
+
         if self.table_display_mode == "raw" and result.metadata.get('units') != 'N/A':
-            self.console.append(f"  Units: {result.metadata['units']}")
+            self._append_to_console_with_scroll(f"  Units: {result.metadata['units']}")
 
     def _append_to_console(self, message: str):
         """Append message to console from solver manager"""
+        self._append_to_console_with_scroll(message)
+
+    def _append_to_console_with_scroll(self, message: str):
+        """Append message to console and scroll to bottom"""
         self.console.append(message)
+        # Scroll to the bottom using text cursor
+        cursor = self.console.textCursor()
+        cursor.movePosition(cursor.End)
+        self.console.setTextCursor(cursor)
+
+    def _append_to_console_with_scroll(self, message: str):
+        """Append message to console and scroll to bottom"""
+        self.console.append(message)
+        # Scroll to the bottom
+        cursor = self.console.textCursor()
+        cursor.movePosition(cursor.End)
+        self.console.setTextCursor(cursor)
+        # Alternative method:
+        # self.console.verticalScrollBar().setValue(self.console.verticalScrollBar().maximum())
 
     def _update_status_from_solver(self, status: str):
         """Update status bar from solver manager"""
