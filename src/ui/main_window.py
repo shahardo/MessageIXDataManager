@@ -8,6 +8,8 @@ from PyQt5.QtWidgets import (
     QStatusBar, QMenuBar, QMenu, QAction, QFileDialog, QMessageBox, QTreeWidgetItem
 )
 from PyQt5.QtCore import Qt
+import os
+import pandas as pd
 
 from .navigator import ProjectNavigator
 from .dashboard import ResultsDashboard
