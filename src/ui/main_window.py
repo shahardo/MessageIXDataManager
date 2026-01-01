@@ -91,6 +91,8 @@ class MainWindow(QMainWindow):
 
         self.param_table = QTableWidget()
         self.param_table.setAlternatingRowColors(True)
+        # Reduce row height for more compact display
+        self.param_table.verticalHeader().setDefaultSectionSize(22)
         # Style the header to make it more distinct
         header = self.param_table.horizontalHeader()
         header.setStyleSheet("""
@@ -517,10 +519,14 @@ class MainWindow(QMainWindow):
             data = self.input_manager.get_parameter(item_name)
             if data:
                 self._display_parameter_data(data)
+                # Reset table view to top when switching parameters
+                self.param_table.scrollToTop()
         else:  # results view
             data = self.results_analyzer.get_result_data(item_name)
             if data:
                 self._display_result_data(data)
+                # Reset table view to top when switching parameters
+                self.param_table.scrollToTop()
 
     def _display_parameter_data(self, parameter):
         """Display parameter data in the table view"""
@@ -539,6 +545,21 @@ class MainWindow(QMainWindow):
         # Set table dimensions
         self.param_table.setRowCount(len(df))
         self.param_table.setColumnCount(len(df.columns))
+
+        # Determine formatting for numerical columns based on max values
+        column_formats = {}
+        for col_idx, col_name in enumerate(df.columns):
+            if df[col_name].dtype in ['int64', 'float64', 'int32', 'float32']:
+                # Find max absolute value in the column (excluding NaN)
+                numeric_values = df[col_name].dropna()
+                if not numeric_values.empty:
+                    max_abs_value = abs(numeric_values).max()
+                    if max_abs_value < 10:
+                        column_formats[col_idx] = ".2f"  # #.##
+                    elif max_abs_value < 100:
+                        column_formats[col_idx] = ".1f"  # #.#
+                    else:
+                        column_formats[col_idx] = ",.0f"  # #,##0
 
         # Set headers with better formatting
         headers = []
@@ -560,11 +581,16 @@ class MainWindow(QMainWindow):
                     item.setText("")
                     item.setToolTip("No data")
                 elif isinstance(value, float):
-                    # Format floats with reasonable precision
-                    if abs(value) < 0.01 or abs(value) > 1000000:
-                        item.setText(f"{value:.6g}")
+                    # Use column-specific formatting for numerical columns
+                    if col_idx in column_formats:
+                        format_str = column_formats[col_idx]
+                        item.setText(f"{value:{format_str}}")
                     else:
-                        item.setText(f"{value:.4f}")
+                        # Fallback formatting for columns without specific format
+                        if abs(value) < 0.01 or abs(value) > 1000000:
+                            item.setText(f"{value:.6g}")
+                        else:
+                            item.setText(f"{value:.4f}")
                     item.setToolTip(f"Float: {value}")
                 elif isinstance(value, int):
                     item.setText(str(value))
@@ -576,7 +602,7 @@ class MainWindow(QMainWindow):
 
                 # Right-align numeric columns
                 col_name = df.columns[col_idx]
-                if col_name == parameter.metadata.get('value_column', 'value'):
+                if df[col_name].dtype in ['int64', 'float64', 'int32', 'float32'] or col_name == parameter.metadata.get('value_column', 'value'):
                     item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
 
                 self.param_table.setItem(row_idx, col_idx, item)
@@ -620,6 +646,21 @@ class MainWindow(QMainWindow):
         self.param_table.setRowCount(len(df))
         self.param_table.setColumnCount(len(df.columns))
 
+        # Determine formatting for numerical columns based on max values
+        column_formats = {}
+        for col_idx, col_name in enumerate(df.columns):
+            if df[col_name].dtype in ['int64', 'float64', 'int32', 'float32']:
+                # Find max absolute value in the column (excluding NaN)
+                numeric_values = df[col_name].dropna()
+                if not numeric_values.empty:
+                    max_abs_value = abs(numeric_values).max()
+                    if max_abs_value < 10:
+                        column_formats[col_idx] = ".2f"  # #.##
+                    elif max_abs_value < 100:
+                        column_formats[col_idx] = ".1f"  # #.#
+                    else:
+                        column_formats[col_idx] = ",.0f"  # #,##0
+
         # Set headers with better formatting
         headers = []
         for col in df.columns:
@@ -640,11 +681,16 @@ class MainWindow(QMainWindow):
                     item.setText("")
                     item.setToolTip("No data")
                 elif isinstance(value, float):
-                    # Format floats with reasonable precision
-                    if abs(value) < 0.01 or abs(value) > 1000000:
-                        item.setText(f"{value:.6g}")
+                    # Use column-specific formatting for numerical columns
+                    if col_idx in column_formats:
+                        format_str = column_formats[col_idx]
+                        item.setText(f"{value:{format_str}}")
                     else:
-                        item.setText(f"{value:.4f}")
+                        # Fallback formatting for columns without specific format
+                        if abs(value) < 0.01 or abs(value) > 1000000:
+                            item.setText(f"{value:.6g}")
+                        else:
+                            item.setText(f"{value:.4f}")
                     item.setToolTip(f"Float: {value}")
                 elif isinstance(value, int):
                     item.setText(str(value))
@@ -656,7 +702,7 @@ class MainWindow(QMainWindow):
 
                 # Right-align numeric columns
                 col_name = df.columns[col_idx]
-                if col_name == result.metadata.get('value_column', 'value'):
+                if df[col_name].dtype in ['int64', 'float64', 'int32', 'float32'] or col_name == result.metadata.get('value_column', 'value'):
                     item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
 
                 self.param_table.setItem(row_idx, col_idx, item)
