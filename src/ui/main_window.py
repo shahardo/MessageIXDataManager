@@ -627,9 +627,8 @@ class MainWindow(QMainWindow):
             # Transform data for advanced view
             display_df = self._transform_to_advanced_view(df, current_filters)
 
-            # Set up selectors if not already done
-            if not self.property_selectors:
-                self._setup_property_selectors(df)
+            # Always recalculate selectors for the current parameter data
+            self._setup_property_selectors(df)
         else:
             # Raw mode - use original data
             display_df = df
@@ -793,9 +792,8 @@ class MainWindow(QMainWindow):
             # Transform data for advanced view
             display_df = self._transform_to_advanced_view(df, current_filters)
 
-            # Set up selectors if not already done
-            if not self.property_selectors:
-                self._setup_property_selectors(df)
+            # Always recalculate selectors for the current parameter data
+            self._setup_property_selectors(df)
         else:
             # Raw mode - use original data
             display_df = df
