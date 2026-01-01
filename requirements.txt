@@ -1,0 +1,13 @@
+# Core GUI Framework
+PyQt5>=5.15.0
+
+# Data Processing
+pandas>=1.5.0
+openpyxl>=3.0.10
+
+# Visualization
+plotly>=5.10.0
+
+# Optional: For development/testing (uncomment as needed)
+pytest>=7.0.0
+pytest-qt>=4.2.0
