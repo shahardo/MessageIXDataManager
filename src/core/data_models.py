@@ -11,7 +11,7 @@ class Parameter:
 
     def __init__(self, name: str, df: pd.DataFrame, metadata: dict):
         self.name = name
-        self.df = df.reset_index()  # columns: dim1, dim2, ..., value
+        self.df = df  # columns: dim1, dim2, ..., value
         self.metadata = metadata  # {'units': str, 'desc': str, 'dims': list[str]}
 
 
