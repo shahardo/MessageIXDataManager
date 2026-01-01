@@ -117,7 +117,7 @@ class InputManager:
 
         # Also check for individual parameter sheets
         all_sheets = set(wb.sheetnames)
-        exclude_sheets = set(['sets', 'set', 'Sets', 'Set'] + list(scenario.sets.keys()))
+        exclude_sheets = set(param_sheet_names + ['sets', 'set', 'Sets', 'Set'] + list(scenario.sets.keys()))
         potential_param_sheets = all_sheets - exclude_sheets
 
         for sheet_name in potential_param_sheets:
@@ -223,6 +223,8 @@ class InputManager:
 
             # Create parameter object
             parameter = Parameter(param_name, df, metadata)
+            # Update shape to reflect the reset_index() operation
+            parameter.metadata['shape'] = parameter.df.shape
             scenario.add_parameter(parameter)
 
         except Exception as e:
