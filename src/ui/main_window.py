@@ -36,6 +36,9 @@ class MainWindow(QMainWindow):
         # Initialize dashboard
         self.dashboard = ResultsDashboard(self.results_analyzer)
 
+        # View state
+        self.current_view = "input"  # "input" or "results"
+
         # Connect solver manager to console
         self.solver_manager.set_output_callback(self._append_to_console)
         self.solver_manager.set_status_callback(self._update_status_from_solver)
@@ -61,6 +64,7 @@ class MainWindow(QMainWindow):
 
         # Left panel: Project navigator
         self.navigator = ProjectNavigator()
+        self.navigator.file_selected.connect(self._on_file_selected)
         splitter.addWidget(self.navigator)
 
         # Right panel: Main content area
@@ -82,7 +86,7 @@ class MainWindow(QMainWindow):
         table_layout.setContentsMargins(0, 0, 0, 0)
 
         self.param_title = QLabel("Select a parameter to view data")
-        self.param_title.setStyleSheet("font-size: 14px; color: #333; padding: 5px; background-color: #f0f0f0;")
+        self.param_title.setStyleSheet("font-size: 12px; color: #333; padding: 5px; background-color: #f0f0f0;")
         table_layout.addWidget(self.param_title)
 
         self.param_table = QTableWidget()
@@ -391,6 +395,60 @@ class MainWindow(QMainWindow):
 
             sets_item.setExpanded(False)
 
+    def _update_results_tree(self):
+        """Update the parameter tree with loaded results"""
+        self.param_tree.clear()
+
+        results = self.results_analyzer.get_current_results()
+        if not results:
+            return
+
+        # Group results by type
+        categories = {}
+
+        for result_name in results.get_parameter_names():
+            result = results.get_parameter(result_name)
+            if not result:
+                continue
+
+            # Categorize by result type
+            result_type = result.metadata.get('result_type', 'result')
+            if result_type == 'variable':
+                category = "Variables"
+            elif result_type == 'equation':
+                category = "Equations"
+            else:
+                category = "Results"
+
+            if category not in categories:
+                categories[category] = []
+            categories[category].append((result_name, result))
+
+        # Sort categories
+        sorted_categories = sorted(categories.keys())
+
+        # Create tree items
+        for category in sorted_categories:
+            results_list = categories[category]
+            category_item = QTreeWidgetItem(self.param_tree)
+            category_item.setText(0, f"{category} ({len(results_list)} results)")
+
+            # Sort results within category
+            results_list.sort(key=lambda x: x[0])
+
+            for result_name, result in results_list:
+                result_item = QTreeWidgetItem(category_item)
+                result_item.setText(0, result_name)
+
+                # Add metadata to tooltip
+                dims_info = f"Dimensions: {', '.join(result.metadata.get('dims', []))}" if result.metadata.get('dims') else "No dimensions"
+                shape_info = f"Shape: {result.metadata.get('shape', ('?', '?'))}"
+                units_info = f"Units: {result.metadata.get('units', 'N/A')}"
+                tooltip = f"Result: {result_name}\n{dims_info}\n{shape_info}\n{units_info}"
+                result_item.setToolTip(0, tooltip)
+
+            category_item.setExpanded(True)
+
     def _categorize_parameter(self, param_name: str, parameter) -> str:
         """Categorize a parameter based on its name and properties"""
         name_lower = param_name.lower()
@@ -432,29 +490,37 @@ class MainWindow(QMainWindow):
             return "Other"
 
     def _on_parameter_selected(self):
-        """Handle parameter selection in tree view"""
+        """Handle parameter/result selection in tree view"""
         selected_items = self.param_tree.selectedItems()
         if not selected_items:
             return
 
         selected_item = selected_items[0]
 
-        # Check if it's a parameter item (not a category)
+        # Check if it's a parameter/result item (not a category)
         if selected_item.parent() is None:
             # It's a category, don't display data
-            self.param_title.setText("Select a parameter to view data")
+            if self.current_view == "input":
+                self.param_title.setText("Select a parameter to view data")
+            else:
+                self.param_title.setText("Select a result to view data")
             self.param_title.setStyleSheet("font-size: 12px; color: #333; padding: 5px; background-color: #f0f0f0;")
             self.param_table.setRowCount(0)
             self.param_table.setColumnCount(0)
             return
 
-        # Get parameter name
-        param_name = selected_item.text(0)
+        # Get parameter/result name
+        item_name = selected_item.text(0)
 
-        # Get parameter data
-        parameter = self.input_manager.get_parameter(param_name)
-        if parameter:
-            self._display_parameter_data(parameter)
+        # Get data based on current view
+        if self.current_view == "input":
+            data = self.input_manager.get_parameter(item_name)
+            if data:
+                self._display_parameter_data(data)
+        else:  # results view
+            data = self.results_analyzer.get_result_data(item_name)
+            if data:
+                self._display_result_data(data)
 
     def _display_parameter_data(self, parameter):
         """Display parameter data in the table view"""
@@ -535,6 +601,86 @@ class MainWindow(QMainWindow):
             self.console.append(f"  Dimensions: {', '.join(parameter.metadata['dims'])}")
         if parameter.metadata.get('units') != 'N/A':
             self.console.append(f"  Units: {parameter.metadata['units']}")
+
+    def _display_result_data(self, result):
+        """Display result data in the table view"""
+        df = result.df
+
+        # Update the table title
+        self.param_title.setText(f"Result: {result.name}")
+        self.param_title.setStyleSheet("font-weight: bold; font-size: 14px; color: #333; padding: 5px; background-color: #f0f0f0;")
+
+        if df.empty:
+            self.param_table.setRowCount(0)
+            self.param_table.setColumnCount(0)
+            self.status_bar.showMessage(f"Result: {result.name} (empty)")
+            return
+
+        # Set table dimensions
+        self.param_table.setRowCount(len(df))
+        self.param_table.setColumnCount(len(df.columns))
+
+        # Set headers with better formatting
+        headers = []
+        for col in df.columns:
+            if col == result.metadata.get('value_column', 'value'):
+                headers.append(f"{col} ({result.metadata.get('units', 'N/A')})")
+            else:
+                headers.append(str(col))
+        self.param_table.setHorizontalHeaderLabels(headers)
+
+        # Fill table data with better formatting
+        for row_idx in range(len(df)):
+            for col_idx in range(len(df.columns)):
+                value = df.iloc[row_idx, col_idx]
+                item = QTableWidgetItem()
+
+                # Handle different data types with proper formatting
+                if pd.isna(value):
+                    item.setText("")
+                    item.setToolTip("No data")
+                elif isinstance(value, float):
+                    # Format floats with reasonable precision
+                    if abs(value) < 0.01 or abs(value) > 1000000:
+                        item.setText(f"{value:.6g}")
+                    else:
+                        item.setText(f"{value:.4f}")
+                    item.setToolTip(f"Float: {value}")
+                elif isinstance(value, int):
+                    item.setText(str(value))
+                    item.setToolTip(f"Integer: {value}")
+                else:
+                    str_value = str(value).strip()
+                    item.setText(str_value)
+                    item.setToolTip(f"Text: {str_value}")
+
+                # Right-align numeric columns
+                col_name = df.columns[col_idx]
+                if col_name == result.metadata.get('value_column', 'value'):
+                    item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+
+                self.param_table.setItem(row_idx, col_idx, item)
+
+        # Resize columns to content with reasonable limits
+        self.param_table.resizeColumnsToContents()
+
+        # Limit maximum column width for readability
+        for col_idx in range(self.param_table.columnCount()):
+            width = self.param_table.columnWidth(col_idx)
+            if width > 200:  # Max width of 200 pixels
+                self.param_table.setColumnWidth(col_idx, 200)
+
+        # Update status with more detailed information
+        dims_info = f", dims: {len(result.metadata.get('dims', []))}" if result.metadata.get('dims') else ""
+        self.status_bar.showMessage(f"Result: {result.name} ({len(df)} rows{dims_info})")
+
+        # Update console with result info
+        self.console.append(f"Displayed result: {result.name}")
+        self.console.append(f"  Shape: {df.shape}")
+        if result.metadata.get('dims'):
+            self.console.append(f"  Dimensions: {', '.join(result.metadata['dims'])}")
+        if result.metadata.get('units') != 'N/A':
+            self.console.append(f"  Units: {result.metadata['units']}")
 
     def _append_to_console(self, message: str):
         """Append message to console from solver manager"""
@@ -659,3 +805,34 @@ class MainWindow(QMainWindow):
             self.console.append(f"Error showing dashboard: {str(e)}")
             QMessageBox.critical(self, "Dashboard Error",
                                f"Failed to open dashboard: {str(e)}")
+
+    def _on_file_selected(self, file_path: str, file_type: str):
+        """Handle file selection in navigator"""
+        if file_type == "input":
+            self._switch_to_input_view()
+        elif file_type == "results":
+            self._switch_to_results_view()
+
+    def _switch_to_input_view(self):
+        """Switch to input parameters view"""
+        if self.current_view != "input":
+            self.current_view = "input"
+            self._update_parameter_tree()
+            self.param_tree.setHeaderLabel("Parameters")
+            self.param_title.setText("Select a parameter to view data")
+            self.param_title.setStyleSheet("font-size: 12px; color: #333; padding: 5px; background-color: #f0f0f0;")
+            # Clear the table
+            self.param_table.setRowCount(0)
+            self.param_table.setColumnCount(0)
+
+    def _switch_to_results_view(self):
+        """Switch to results view"""
+        if self.current_view != "results":
+            self.current_view = "results"
+            self._update_results_tree()
+            self.param_tree.setHeaderLabel("Results")
+            self.param_title.setText("Select a result to view data")
+            self.param_title.setStyleSheet("font-size: 12px; color: #333; padding: 5px; background-color: #f0f0f0;")
+            # Clear the table
+            self.param_table.setRowCount(0)
+            self.param_table.setColumnCount(0)

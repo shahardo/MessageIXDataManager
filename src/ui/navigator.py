@@ -4,17 +4,23 @@ Project Navigator component
 
 import os
 from PyQt5.QtWidgets import QTreeWidget, QTreeWidgetItem
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, pyqtSignal
 
 
 class ProjectNavigator(QTreeWidget):
     """Project navigator showing recent files and project structure"""
 
+    # Signal emitted when a file is selected (file_path, file_type)
+    file_selected = pyqtSignal(str, str)
+
     def __init__(self):
         super().__init__()
         self.setHeaderLabel("Project Navigator")
+        self.input_files = []  # Store input file paths
+        self.results_files = []  # Store results file paths
         self._setup_ui()
         self._load_recent_files()
+        self.itemSelectionChanged.connect(self._on_item_selected)
 
     def _setup_ui(self):
         """Set up the navigator UI"""
@@ -69,6 +75,8 @@ class ProjectNavigator(QTreeWidget):
 
     def update_input_files(self, files_list):
         """Update the inputs section with loaded files"""
+        self.input_files = files_list or []
+
         # Find inputs item
         for i in range(self.topLevelItemCount()):
             item = self.topLevelItem(i)
@@ -85,6 +93,7 @@ class ProjectNavigator(QTreeWidget):
                         file_item = QTreeWidgetItem(item)
                         file_item.setText(0, os.path.basename(file_path))
                         file_item.setToolTip(0, file_path)
+                        file_item.setData(0, Qt.UserRole, ("input", file_path))  # Store file type and path
                         file_item.setIcon(0, self.style().standardIcon(self.style().SP_FileIcon))
 
                 item.setExpanded(True)
@@ -92,6 +101,8 @@ class ProjectNavigator(QTreeWidget):
 
     def update_result_files(self, files_list):
         """Update the results section with loaded files"""
+        self.results_files = files_list or []
+
         # Find results item
         for i in range(self.topLevelItemCount()):
             item = self.topLevelItem(i)
@@ -108,7 +119,22 @@ class ProjectNavigator(QTreeWidget):
                         file_item = QTreeWidgetItem(item)
                         file_item.setText(0, os.path.basename(file_path))
                         file_item.setToolTip(0, file_path)
+                        file_item.setData(0, Qt.UserRole, ("results", file_path))  # Store file type and path
                         file_item.setIcon(0, self.style().standardIcon(self.style().SP_FileIcon))
 
                 item.setExpanded(True)
                 break
+
+    def _on_item_selected(self):
+        """Handle item selection in the navigator"""
+        selected_items = self.selectedItems()
+        if not selected_items:
+            return
+
+        selected_item = selected_items[0]
+
+        # Check if this is a file item (has user data)
+        file_data = selected_item.data(0, Qt.UserRole)
+        if file_data and isinstance(file_data, tuple) and len(file_data) == 2:
+            file_type, file_path = file_data
+            self.file_selected.emit(file_path, file_type)
