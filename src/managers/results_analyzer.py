@@ -137,12 +137,34 @@ class ResultsAnalyzer:
         # Get all headers (including None)
         all_headers = [cell.value for cell in sheet[1]]
 
+        # Check if first column should be included as year column
+        include_year_column = False
+        if len(all_headers) > 0 and all_headers[0] is None:
+            # Check if first column data looks like years
+            year_values = []
+            for row in sheet.iter_rows(min_row=2, max_row=min(10, sheet.max_row), values_only=True):
+                if row and len(row) > 0 and row[0] is not None:
+                    try:
+                        year_val = float(row[0])
+                        if 1900 <= year_val <= 2100:  # Reasonable year range
+                            year_values.append(year_val)
+                    except (ValueError, TypeError):
+                        pass
+
+            # Include as year column if we found year-like values
+            if len(year_values) >= 3:  # At least a few years
+                include_year_column = True
+
         # Filter out None headers and get their indices
         headers = []
         valid_indices = []
         for i, header in enumerate(all_headers):
             if header is not None:
                 headers.append(str(header))
+                valid_indices.append(i)
+            elif i == 0 and include_year_column:
+                # Include first column as year column
+                headers.append("year")
                 valid_indices.append(i)
 
         if not headers:
