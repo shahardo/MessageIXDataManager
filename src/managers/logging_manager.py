@@ -77,7 +77,7 @@ class SQLiteHandler(logging.Handler):
 class LoggingManager:
     """Centralized logging manager for the application"""
 
-    def __init__(self, log_file: str = "message_viewer.log", db_file: str = "logs.db"):
+    def __init__(self, log_file: str = "messageix_data_manager.log", db_file: str = "logs.db"):
         self.log_file = log_file
         self.db_file = db_file
         self.logger = None
@@ -86,7 +86,7 @@ class LoggingManager:
     def _setup_logging(self):
         """Set up Python logging with multiple handlers"""
         # Create logger
-        self.logger = logging.getLogger('message_viewer')
+        self.logger = logging.getLogger('messageix_data_manager')
         self.logger.setLevel(logging.DEBUG)
 
         # Remove existing handlers to avoid duplicates

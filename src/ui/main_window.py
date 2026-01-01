@@ -1,5 +1,5 @@
 """
-Main application window for Message Viewer
+Main application window for MessageIX Data Manager
 """
 
 from PyQt5.QtWidgets import (
@@ -24,7 +24,7 @@ class MainWindow(QMainWindow):
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Message Viewer - message_ix Data Manager")
+        self.setWindowTitle("MessageIX Data Manager - message_ix Data Manager")
         self.setGeometry(100, 100, 1200, 800)
 
         # Initialize managers
@@ -79,7 +79,7 @@ class MainWindow(QMainWindow):
         # Bottom: Console/Dashboard area
         self.console = QTextEdit()
         self.console.setMaximumHeight(200)
-        self.console.setPlainText("Welcome to Message Viewer\n")
+        self.console.setPlainText("Welcome to MessageIX Data Manager\n")
         content_splitter.addWidget(self.console)
 
         content_layout.addWidget(content_splitter)

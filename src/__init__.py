@@ -1,2 +1,2 @@
-# Message Viewer - message_ix Data Manager
+# MessageIX Data Manager
 # Main application package

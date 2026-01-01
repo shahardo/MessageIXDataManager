@@ -1,1 +1,1 @@
-# Test package for Message Viewer
+# Test package for MessageIX Data Manager

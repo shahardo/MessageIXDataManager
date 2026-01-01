@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Message Viewer - message_ix Data Manager
+MessageIX Data Manager
 Main application entry point
 """
 
@@ -13,7 +13,7 @@ from ui.main_window import MainWindow
 def main():
     """Main application entry point"""
     app = QApplication(sys.argv)
-    app.setApplicationName("Message Viewer")
+    app.setApplicationName("MessageIX Data Manager")
     app.setApplicationVersion("1.0.0")
 
     # Create and show main window
