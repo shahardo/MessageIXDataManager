@@ -6,7 +6,7 @@ from PyQt5.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QSplitter, QTreeWidget, QTableWidget, QTableWidgetItem, QTextEdit,
     QStatusBar, QMenuBar, QMenu, QAction, QFileDialog, QMessageBox, QTreeWidgetItem, QLabel, QProgressBar,
-    QPushButton, QComboBox, QGroupBox, QFrame
+    QPushButton, QComboBox, QGroupBox, QFrame, QCheckBox
 )
 from PyQt5.QtCore import Qt, QSettings
 from PyQt5.QtGui import QIcon, QFont
@@ -40,6 +40,7 @@ class MainWindow(QMainWindow):
         # View state
         self.current_view = "input"  # "input" or "results"
         self.table_display_mode = "raw"  # "raw" or "advanced"
+        self.hide_empty_columns = False  # Whether to hide empty columns in advanced view
 
         # Connect solver manager to console
         self.solver_manager.set_output_callback(self._append_to_console)
@@ -625,7 +626,7 @@ class MainWindow(QMainWindow):
                     current_filters[col] = selected_value
 
             # Transform data for advanced view
-            display_df = self._transform_to_advanced_view(df, current_filters)
+            display_df = self._transform_to_advanced_view(df, current_filters, is_results=False)
 
             # Always recalculate selectors for the current parameter data
             self._setup_property_selectors(df)
@@ -791,7 +792,7 @@ class MainWindow(QMainWindow):
                     current_filters[col] = selected_value
 
             # Transform data for advanced view
-            display_df = self._transform_to_advanced_view(df, current_filters)
+            display_df = self._transform_to_advanced_view(df, current_filters, is_results=True)
 
             # Always recalculate selectors for the current parameter data
             self._setup_property_selectors(df)
@@ -1090,7 +1091,7 @@ class MainWindow(QMainWindow):
                 if data:
                     self._display_result_data(data)
 
-    def _transform_to_advanced_view(self, df: pd.DataFrame, current_filters: dict = None) -> pd.DataFrame:
+    def _transform_to_advanced_view(self, df: pd.DataFrame, current_filters: dict = None, is_results: bool = False) -> pd.DataFrame:
         """
         Transform parameter data into 2D advanced view format.
 
@@ -1145,12 +1146,26 @@ class MainWindow(QMainWindow):
             if filter_value and filter_value != "All" and filter_col in filtered_df.columns:
                 filtered_df = filtered_df[filtered_df[filter_col] == filter_value]
 
-        # Check if data is already in 2D format (has years and other dimensions as columns)
-        # This is typical for results tables that are already organized properly
+        # Check if data is already in 2D format (typical for some results tables)
+        # vs data that needs pivoting (typical for input files)
+        # Input files are usually in long format with many rows per parameter
+        # Results files might already be in 2D format with years as rows
         has_year_column = any(col in filtered_df.columns for col in year_columns)
-        has_other_columns = len([col for col in filtered_df.columns if col not in year_columns and col not in filter_columns]) > 0
+        has_value_column = value_column is not None and value_column in filtered_df.columns
+        has_property_columns = len(property_columns) > 0
+        many_rows = len(filtered_df) > 50  # Heuristic: many rows suggest long format
 
-        if has_year_column and has_other_columns:
+        # Handle results and input data differently
+        if is_results:
+            # For results: if it has a year column, treat it as already 2D and just set year as index
+            # Results data is typically already in a suitable format
+            is_already_2d = has_year_column
+        else:
+            # Input: use the original logic for detecting long format that needs pivoting
+            is_already_2d = (has_year_column and not has_value_column and not many_rows and
+                            len([col for col in filtered_df.columns if col not in year_columns and col not in filter_columns]) > 0)
+
+        if is_already_2d:
             # Data is already in 2D format - just set year as index and remove year columns from display
             pivot_df = filtered_df.copy()
 
@@ -1161,6 +1176,23 @@ class MainWindow(QMainWindow):
 
             # Remove all year columns from the display columns
             columns_to_keep = [col for col in pivot_df.columns if col not in year_columns]
+
+            # Filter out empty columns if option is enabled
+            if self.hide_empty_columns:
+                non_empty_columns = []
+                for col in columns_to_keep:
+                    col_data = pivot_df[col]
+                    # Check if column has any non-NaN, non-zero values
+                    if hasattr(col_data, 'notna'):
+                        # For pandas Series/DataFrame
+                        has_data = col_data.notna().any() and (col_data != 0).any()
+                    else:
+                        # Fallback for other data types
+                        has_data = any(val is not None and val != 0 for val in col_data.values.flatten())
+                    if has_data:
+                        non_empty_columns.append(col)
+                columns_to_keep = non_empty_columns
+
             pivot_df = pivot_df[columns_to_keep]
 
         else:
@@ -1244,6 +1276,32 @@ class MainWindow(QMainWindow):
                     print(f"Pivot failed: {e}")
                     pivot_df = filtered_df
 
+        # Filter out empty columns if option is enabled
+        # For results data, be more conservative about what constitutes "empty"
+        if self.hide_empty_columns and not pivot_df.empty:
+            non_empty_columns = []
+            for col in pivot_df.columns:
+                col_data = pivot_df[col]
+                if is_results:
+                    # For results: only hide columns that are completely NaN or all zeros
+                    if hasattr(col_data, 'notna'):
+                        has_data = not col_data.isna().all()  # At least one non-NaN value
+                    else:
+                        has_data = any(val is not None for val in col_data.values.flatten())
+                else:
+                    # For input: hide columns that are entirely empty (all NaN or all zeros)
+                    if hasattr(col_data, 'isna'):
+                        # Hide column if all values are NaN or zero
+                        all_empty = (col_data.isna() | (col_data == 0)).all()
+                        has_data = not all_empty
+                    else:
+                        # Fallback for non-pandas data
+                        all_empty = all(val is None or val == 0 or (isinstance(val, float) and np.isnan(val)) for val in col_data.values.flatten())
+                        has_data = not all_empty
+                if has_data:
+                    non_empty_columns.append(col)
+            pivot_df = pivot_df[non_empty_columns]
+
         return pivot_df
 
     def _setup_property_selectors(self, df: pd.DataFrame):
@@ -1269,6 +1327,13 @@ class MainWindow(QMainWindow):
                 item = selector_layout.takeAt(0)
                 if item.widget():
                     item.widget().setParent(None)
+
+        # Add checkbox for hiding empty columns
+        self.hide_empty_checkbox = QCheckBox("Hide Empty Columns")
+        self.hide_empty_checkbox.setStyleSheet("font-size: 11px; font-weight: bold;")
+        self.hide_empty_checkbox.setChecked(self.hide_empty_columns)
+        self.hide_empty_checkbox.stateChanged.connect(self._on_hide_empty_changed)
+        selector_layout.addWidget(self.hide_empty_checkbox)
 
         for col in filter_columns:
             # Create label
@@ -1300,6 +1365,25 @@ class MainWindow(QMainWindow):
 
     def _on_selector_changed(self):
         """Handle selector value changes - refresh the table display"""
+        # Refresh the current parameter display
+        if self.current_view == "input":
+            selected_items = self.param_tree.selectedItems()
+            if selected_items and selected_items[0].parent() is not None:
+                item_name = selected_items[0].text(0)
+                data = self.input_manager.get_parameter(item_name)
+                if data:
+                    self._display_parameter_data(data)
+        else:  # results view
+            selected_items = self.param_tree.selectedItems()
+            if selected_items and selected_items[0].parent() is not None:
+                item_name = selected_items[0].text(0)
+                data = self.results_analyzer.get_result_data(item_name)
+                if data:
+                    self._display_result_data(data)
+
+    def _on_hide_empty_changed(self):
+        """Handle hide empty columns checkbox state change"""
+        self.hide_empty_columns = self.hide_empty_checkbox.isChecked()
         # Refresh the current parameter display
         if self.current_view == "input":
             selected_items = self.param_tree.selectedItems()
@@ -1355,6 +1439,9 @@ class MainWindow(QMainWindow):
             for selector in self.property_selectors.values():
                 selector.setParent(None)
             self.property_selectors.clear()
+            # Disconnect hide empty checkbox if it exists
+            if hasattr(self, 'hide_empty_checkbox'):
+                self.hide_empty_checkbox.setParent(None)
 
     def _switch_to_results_view(self):
         """Switch to results view"""
@@ -1376,3 +1463,6 @@ class MainWindow(QMainWindow):
             for selector in self.property_selectors.values():
                 selector.setParent(None)
             self.property_selectors.clear()
+            # Disconnect hide empty checkbox if it exists
+            if hasattr(self, 'hide_empty_checkbox'):
+                self.hide_empty_checkbox.setParent(None)
