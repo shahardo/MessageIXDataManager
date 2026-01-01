@@ -4,6 +4,7 @@ Results Analyzer - handles loading and parsing of message_ix result Excel files
 
 import os
 import pandas as pd
+import numpy as np
 from openpyxl import load_workbook
 from typing import Dict, List, Optional, Any, Callable
 
@@ -181,6 +182,23 @@ class ResultsAnalyzer:
 
         if data and len(data) > 0:
             df = pd.DataFrame(data, columns=headers)
+            # Ensure None values are converted to NaN to preserve empty cells
+            df = df.replace({None: np.nan})
+
+            # Convert any integer columns that contain NaN to float to preserve NaN values
+            for col in df.columns:
+                col_data = df[col]
+                if hasattr(col_data, 'dtype') and col_data.dtype in ['int64', 'int32', 'int16', 'int8'] and col_data.isna().any():
+                    df[col] = col_data.astype('float64')
+
+            # Convert columns that are all zeros to NaN (treat as empty)
+            for col in df.columns:
+                col_data = df[col]
+                if hasattr(col_data, 'dtype') and col_data.dtype in ['int64', 'int32', 'int16', 'int8', 'float64', 'float32']:
+                    # Check if all non-NaN values are 0
+                    non_nan_values = col_data.dropna()
+                    if len(non_nan_values) > 0 and (non_nan_values == 0).all():
+                        df[col] = col_data.replace(0, np.nan)
 
             # Create parameter object for this result
             metadata = {

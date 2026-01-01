@@ -690,9 +690,9 @@ class MainWindow(QMainWindow):
                 item = QTableWidgetItem()
 
                 # Handle different data types with proper formatting
-                if pd.isna(value):
+                if pd.isna(value) or (isinstance(value, (int, float)) and value == 0):
                     item.setText("")
-                    item.setToolTip("No data")
+                    item.setToolTip("No data" if pd.isna(value) else "Zero value")
                 elif isinstance(value, float):
                     # Use column-specific formatting for numerical columns
                     if col_idx in column_formats:
@@ -751,9 +751,9 @@ class MainWindow(QMainWindow):
             # Show transformed dimensions for advanced view
             index_name = display_df.index.name if display_df.index.name else "year"
             if len(display_df.columns) <= 5:
-                columns_info = f"{', '.join(display_df.columns)}"
+                columns_info = f"{', '.join(str(col) for col in display_df.columns)}"
             else:
-                columns_info = f"{', '.join(display_df.columns[:3])}, ... ({len(display_df.columns)} total)"
+                columns_info = f"{', '.join(str(col) for col in display_df.columns[:3])}, ... ({len(display_df.columns)} total)"
             self._append_to_console_with_scroll(f"  Dimensions: {index_name} (rows), {columns_info} (columns)")
             if current_filters:
                 applied_filters = [f"{k}={v}" for k, v in current_filters.items()]
@@ -855,9 +855,9 @@ class MainWindow(QMainWindow):
                 item = QTableWidgetItem()
 
                 # Handle different data types with proper formatting
-                if pd.isna(value):
+                if pd.isna(value) or (isinstance(value, (int, float)) and value == 0):
                     item.setText("")
-                    item.setToolTip("No data")
+                    item.setToolTip("No data" if pd.isna(value) else "Zero value")
                 elif isinstance(value, float):
                     # Use column-specific formatting for numerical columns
                     if col_idx in column_formats:
@@ -916,9 +916,9 @@ class MainWindow(QMainWindow):
             # Show transformed dimensions for advanced view
             index_name = display_df.index.name if display_df.index.name else "year"
             if len(display_df.columns) <= 5:
-                columns_info = f"{', '.join(display_df.columns)}"
+                columns_info = f"{', '.join(str(col) for col in display_df.columns)}"
             else:
-                columns_info = f"{', '.join(display_df.columns[:3])}, ... ({len(display_df.columns)} total)"
+                columns_info = f"{', '.join(str(col) for col in display_df.columns[:3])}, ... ({len(display_df.columns)} total)"
             self._append_to_console_with_scroll(f"  Dimensions: {index_name} (rows), {columns_info} (columns)")
             if current_filters:
                 applied_filters = [f"{k}={v}" for k, v in current_filters.items()]
@@ -1170,8 +1170,22 @@ class MainWindow(QMainWindow):
                     index=index_cols,
                     columns=pivot_cols,
                     aggfunc='first',  # Take first value if duplicates
-                    fill_value=np.nan  # Use NaN for missing values to avoid downcasting warning
+                    fill_value=np.nan,  # Use NaN for missing values to avoid downcasting warning
+                    dropna=False  # Don't drop NaN values
                 )
+
+                # Ensure numeric columns can contain NaN by converting int columns to float
+                for col in pivot_df.columns:
+                    col_data = pivot_df[col]
+                    # Check if it's a Series (single column) and has integer dtype
+                    if hasattr(col_data, 'dtype') and col_data.dtype in ['int64', 'int32', 'int16', 'int8']:
+                        pivot_df[col] = col_data.astype('float64')
+
+                # Convert columns that are all zeros to NaN (treat as empty)
+                for col in pivot_df.columns:
+                    col_data = pivot_df[col]
+                    if hasattr(col_data, 'dtype') and col_data.dtype in ['float64', 'float32'] and (col_data == 0).all():
+                        pivot_df[col] = col_data.replace(0, np.nan)
 
                 # Flatten MultiIndex columns if they exist
                 if isinstance(pivot_df.columns, pd.MultiIndex):
