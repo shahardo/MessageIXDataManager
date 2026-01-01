@@ -116,7 +116,7 @@ class TestInputManager:
         # Check dataframe content
         df = fix_cost_param.df
         assert len(df) == 2  # 2 rows of data
-        assert list(df.columns) == ['index', 'node_loc', 'technology', 'year_vtg', 'value']
+        assert list(df.columns) == ['node_loc', 'technology', 'year_vtg', 'value']
 
         # Check specific values
         assert df.iloc[0]['node_loc'] == 'region1'
@@ -130,7 +130,7 @@ class TestInputManager:
         # Check metadata
         assert fix_cost_param.metadata['dims'] == ['node_loc', 'technology', 'year_vtg']
         assert fix_cost_param.metadata['value_column'] == 'value'
-        assert fix_cost_param.metadata['shape'] == (2, 5)
+        assert fix_cost_param.metadata['shape'] == (2, 4)
 
     def test_parse_sets(self, temp_excel_file):
         """Test set parsing"""
@@ -222,7 +222,63 @@ class TestInputManager:
         assert metadata['desc'] == 'Parameter fix_cost'
         assert metadata['dims'] == ['node_loc', 'technology', 'year_vtg']
         assert metadata['value_column'] == 'value'
-        assert metadata['shape'] == (2, 5)
+        assert metadata['shape'] == (2, 4)
+
+    def test_set_parsing_consistency_with_falsy_values(self):
+        """Test that set parsing handles falsy values consistently between combined and individual sheets"""
+        wb = Workbook()
+
+        # Create parameters sheet (minimal)
+        ws_params = wb.active
+        ws_params.title = "parameters"
+        ws_params['A1'] = 'parameter'
+        ws_params['B1'] = 'value'
+        ws_params['A2'] = 'dummy_param'
+        ws_params['B2'] = 1
+
+        # Create sets sheet with falsy values (including 0)
+        ws_sets = wb.create_sheet("sets")
+        ws_sets['A1'] = 'set_name'
+        ws_sets['B1'] = 'element1'
+        ws_sets['C1'] = 'element2'
+        ws_sets['D1'] = 'element3'
+
+        ws_sets['A2'] = 'year'
+        ws_sets['B2'] = 2020
+        ws_sets['C2'] = 0      # Year 0 should be included
+        ws_sets['D2'] = 2025
+
+        # Create individual year sheet with same values
+        ws_year = wb.create_sheet("year")
+        ws_year['A1'] = 'year'
+        ws_year['A2'] = 2020
+        ws_year['A3'] = 0      # Year 0 should be included
+        ws_year['A4'] = 2025
+
+        # Save to temporary file
+        tmp_fd, tmp_path = tempfile.mkstemp(suffix='.xlsx')
+        try:
+            with os.fdopen(tmp_fd, 'wb') as tmp:
+                wb.save(tmp)
+
+            manager = InputManager()
+            scenario = manager.load_excel_file(tmp_path)
+
+            # Both parsing methods should produce the same result
+            assert 'year' in scenario.sets
+            year_set = scenario.sets['year']
+
+            # Should include 0 (falsy but valid year value)
+            expected_years = {'2020', '0', '2025'}  # Converted to strings
+            actual_years = set(str(x) for x in year_set.values)
+
+            assert actual_years == expected_years, f"Expected {expected_years}, got {actual_years}"
+
+        finally:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
 
     def test_parameter_with_missing_data(self):
         """Test handling of parameters with missing data"""

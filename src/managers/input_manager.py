@@ -81,7 +81,7 @@ class InputManager:
     def _parse_sets_sheet(self, sheet, scenario: ScenarioData):
         """Parse a combined sets sheet"""
         for row in sheet.iter_rows(min_row=2, values_only=True):
-            if row[0] and len(row) > 1:
+            if row[0] is not None and len(row) > 1:
                 set_name = str(row[0]).strip()
                 # Collect all non-empty values from remaining columns
                 set_values = []
