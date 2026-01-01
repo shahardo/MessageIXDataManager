@@ -165,4 +165,5 @@ $RECYCLE.BIN/
 # data/
 # logs/
 # *.sqlite
+files/
 *.db
