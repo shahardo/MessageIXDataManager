@@ -81,6 +81,20 @@ class ResultsAnalyzer:
         """Parse results from workbook"""
         # Look for result sheets (typically var_* for variables, equ_* for equations)
         result_sheets = [sheet_name for sheet_name in wb.sheetnames if sheet_name.startswith(('var_', 'equ_'))]
+
+        # Also include sheets that look like result data (have headers and data rows)
+        # Exclude sheets that are clearly input-related
+        input_indicators = ['parameter', 'parameters', 'set', 'sets', 'data']
+        potential_result_sheets = [sheet_name for sheet_name in wb.sheetnames
+                                 if not any(indicator.lower() in sheet_name.lower() for indicator in input_indicators)
+                                 and sheet_name not in result_sheets]
+
+        # Check which potential sheets actually contain result-like data
+        for sheet_name in potential_result_sheets:
+            sheet = wb[sheet_name]
+            if self._is_result_sheet(sheet):
+                result_sheets.append(sheet_name)
+
         total_sheets = len(result_sheets)
 
         for i, sheet_name in enumerate(result_sheets):
@@ -91,22 +105,57 @@ class ResultsAnalyzer:
             sheet = wb[sheet_name]
             self._parse_result_sheet(sheet, results, sheet_name)
 
+    def _is_result_sheet(self, sheet) -> bool:
+        """Check if a sheet contains result-like data"""
+        try:
+            # Get all rows
+            rows = list(sheet.iter_rows(values_only=True))
+
+            # Need at least headers + 1 data row
+            if len(rows) < 2:
+                return False
+
+            # Check if first row looks like headers (strings)
+            headers = rows[0]
+            if not headers or not any(isinstance(h, str) and h.strip() for h in headers):
+                return False
+
+            # Check if we have at least one data row with some numeric values
+            has_numeric_data = False
+            for row in rows[1:]:
+                if any(isinstance(cell, (int, float)) and not pd.isna(cell) for cell in row):
+                    has_numeric_data = True
+                    break
+
+            return has_numeric_data
+
+        except Exception:
+            return False
+
     def _parse_result_sheet(self, sheet, results: ScenarioData, sheet_name: str):
         """Parse individual result sheet"""
-        # Get headers
-        headers = []
-        for cell in sheet[1]:
-            if cell.value:
-                headers.append(str(cell.value))
+        # Get all headers (including None)
+        all_headers = [cell.value for cell in sheet[1]]
 
-        if not headers or len(headers) == 0:
+        # Filter out None headers and get their indices
+        headers = []
+        valid_indices = []
+        for i, header in enumerate(all_headers):
+            if header is not None:
+                headers.append(str(header))
+                valid_indices.append(i)
+
+        if not headers:
             return
 
-        # Parse data
+        # Parse data, keeping only columns with valid headers
         data = []
         for row in sheet.iter_rows(min_row=2, values_only=True):
             if row and any(cell is not None for cell in row):
-                data.append(row)
+                # Filter row to only include valid columns
+                filtered_row = [row[i] for i in valid_indices if i < len(row)]
+                if filtered_row:  # Only add if we have some valid data
+                    data.append(filtered_row)
 
         if data and len(data) > 0:
             df = pd.DataFrame(data, columns=headers)
