@@ -621,7 +621,17 @@ class MainWindow(QMainWindow):
 
         # Set table dimensions
         self.param_table.setRowCount(len(display_df))
-        self.param_table.setColumnCount(len(display_df.columns))
+
+        # In advanced mode, set vertical headers to show years
+        if self.table_display_mode == "advanced":
+            self.param_table.setColumnCount(len(display_df.columns))
+            # Set vertical header labels to show years
+            year_labels = [str(year) for year in display_df.index]
+            self.param_table.setVerticalHeaderLabels(year_labels)
+        else:
+            self.param_table.setColumnCount(len(display_df.columns))
+            # Reset vertical headers to default
+            self.param_table.setVerticalHeaderLabels([])
 
         # Determine formatting for numerical columns based on max values
         column_formats = {}
@@ -762,7 +772,17 @@ class MainWindow(QMainWindow):
 
         # Set table dimensions
         self.param_table.setRowCount(len(display_df))
-        self.param_table.setColumnCount(len(display_df.columns))
+
+        # In advanced mode, set vertical headers to show years
+        if self.table_display_mode == "advanced":
+            self.param_table.setColumnCount(len(display_df.columns))
+            # Set vertical header labels to show years
+            year_labels = [str(year) for year in display_df.index]
+            self.param_table.setVerticalHeaderLabels(year_labels)
+        else:
+            self.param_table.setColumnCount(len(display_df.columns))
+            # Reset vertical headers to default
+            self.param_table.setVerticalHeaderLabels([])
 
         # Determine formatting for numerical columns based on max values
         column_formats = {}
@@ -1121,8 +1141,7 @@ class MainWindow(QMainWindow):
                 print(f"Pivot failed: {e}")
                 pivot_df = filtered_df
 
-            # Reset index to make year columns regular columns
-            pivot_df = pivot_df.reset_index()
+            # Keep years as DataFrame index for advanced view
 
         return pivot_df
 
