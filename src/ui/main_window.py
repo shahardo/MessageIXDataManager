@@ -644,8 +644,9 @@ class MainWindow(QMainWindow):
             self.param_table.setVerticalHeaderLabels(year_labels)
         else:
             self.param_table.setColumnCount(len(display_df.columns))
-            # Reset vertical headers to default
-            self.param_table.setVerticalHeaderLabels([])
+            # Set vertical headers to show row numbers starting from 1
+            row_labels = [str(i + 1) for i in range(len(display_df))]
+            self.param_table.setVerticalHeaderLabels(row_labels)
 
         # Determine formatting for numerical columns based on max values
         column_formats = {}
@@ -809,8 +810,9 @@ class MainWindow(QMainWindow):
             self.param_table.setVerticalHeaderLabels(year_labels)
         else:
             self.param_table.setColumnCount(len(display_df.columns))
-            # Reset vertical headers to default
-            self.param_table.setVerticalHeaderLabels([])
+            # Set vertical headers to show row numbers starting from 1
+            row_labels = [str(i + 1) for i in range(len(display_df))]
+            self.param_table.setVerticalHeaderLabels(row_labels)
 
         # Determine formatting for numerical columns based on max values
         column_formats = {}
