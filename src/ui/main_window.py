@@ -1103,12 +1103,13 @@ class MainWindow(QMainWindow):
 
             # Create pivot table
             try:
+                import numpy as np
                 pivot_df = filtered_df.pivot_table(
                     values=value_column,
                     index=index_cols,
                     columns=pivot_cols,
                     aggfunc='first',  # Take first value if duplicates
-                    fill_value=''  # Empty string for missing values
+                    fill_value=np.nan  # Use NaN for missing values to avoid downcasting warning
                 )
 
                 # Flatten MultiIndex columns if they exist
