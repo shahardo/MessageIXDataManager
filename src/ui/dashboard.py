@@ -53,6 +53,13 @@ class ResultsDashboard(QWidget):
         # Chart display
         self.chart_view = QWebEngineView()
         self.chart_view.setMinimumHeight(400)
+
+        # Enable JavaScript and other web features
+        from PyQt5.QtWebEngineWidgets import QWebEngineSettings
+        settings = self.chart_view.settings()
+        settings.setAttribute(QWebEngineSettings.JavascriptEnabled, True)
+        settings.setAttribute(QWebEngineSettings.LocalContentCanAccessRemoteUrls, True)
+
         layout.addWidget(self.chart_view)
 
         # Show placeholder
@@ -147,10 +154,92 @@ class ResultsDashboard(QWidget):
                 template='plotly_white'
             )
 
-            # Save to temporary HTML file
+            # Save to temporary HTML file with simplified configuration
             with tempfile.NamedTemporaryFile(mode='w', suffix='.html', delete=False, encoding='utf-8') as f:
-                html_content = pio.to_html(fig, full_html=True)
-                f.write(html_content)
+                # Simple configuration to avoid issues
+                config = {
+                    'displayModeBar': True,
+                    'displaylogo': False,
+                    'responsive': True
+                }
+
+                # Generate minimal HTML without Plotly.js initially
+                html_content = pio.to_html(
+                    fig,
+                    full_html=False,
+                    include_plotlyjs=False,
+                    config=config,
+                    div_id='plotly-chart'
+                )
+
+                # Add simple CSS override to fix styling issues (removed problematic :focus-visible rule)
+                css_override = """
+                <style>
+                /* Basic Plotly styling */
+                .js-plotly-plot .plotly {
+                    font-family: Arial, sans-serif;
+                }
+
+                .js-plotly-plot .plotly .modebar {
+                    background: rgba(255, 255, 255, 0.9) !important;
+                }
+
+                .js-plotly-plot .plotly .modebar-btn {
+                    border: 1px solid #ccc !important;
+                    background: #fff !important;
+                }
+
+                .js-plotly-plot .plotly .modebar-btn:hover {
+                    background: #f0f0f0 !important;
+                }
+
+                /* Override any problematic focus styles */
+                .js-plotly-plot .plotly .modebar-btn:focus {
+                    outline: 1px solid #007bff;
+                    outline-offset: 1px;
+                    border-radius: 3px;
+                }
+                </style>
+                """
+
+                # Create complete HTML structure with Plotly.js loaded from CDN
+                plotly_js_url = "https://cdn.plot.ly/plotly-2.27.0.min.js"
+                complete_html = f"""
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <meta charset="utf-8">
+                    <title>{chart_data.get('title', 'Results Chart')}</title>
+                    <script src="{plotly_js_url}"></script>
+                    {css_override}
+                </head>
+                <body>
+                    {html_content}
+                    <script>
+                    // Wait for Plotly to be available and initialize
+                    function initChart() {{
+                        if (typeof Plotly !== 'undefined') {{
+                            console.log('Plotly loaded successfully');
+                            // Chart should already be rendered by plotly's to_html
+                        }} else {{
+                            console.error('Plotly failed to load');
+                        }}
+                    }}
+
+                    // Check if already loaded, otherwise wait
+                    if (typeof Plotly !== 'undefined') {{
+                        initChart();
+                    }} else {{
+                        window.addEventListener('load', function() {{
+                            setTimeout(initChart, 100);
+                        }});
+                    }}
+                    </script>
+                </body>
+                </html>
+                """
+
+                f.write(complete_html)
                 temp_file = f.name
 
             # Load in web view
