@@ -8,6 +8,7 @@ from PyQt5.QtWidgets import (
     QStatusBar, QMenuBar, QMenu, QAction, QFileDialog, QMessageBox, QTreeWidgetItem
 )
 from PyQt5.QtCore import Qt
+from PyQt5.QtGui import QIcon
 import os
 import pandas as pd
 
@@ -26,6 +27,11 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("MessageIX Data Manager - message_ix Data Manager")
         self.setGeometry(100, 100, 1200, 800)
+
+        # Set window icon
+        icon_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "assets", "icons", "messageix_data_manager.ico")
+        if os.path.exists(icon_path):
+            self.setWindowIcon(QIcon(icon_path))
 
         # Initialize managers
         self.input_manager = InputManager()
@@ -157,11 +163,24 @@ class MainWindow(QMainWindow):
                 self.navigator.update_input_files([file_path])
                 self.navigator.add_recent_file(file_path, "input")
 
+                # Validate the loaded data
+                validation = self.input_manager.validate_scenario()
+
                 # Update parameter tree
                 self._update_parameter_tree()
 
-                self.console.append(f"Successfully loaded {len(scenario.parameters)} parameters")
-                self.status_bar.showMessage(f"Loaded {os.path.basename(file_path)}")
+                # Report validation results
+                if validation['valid']:
+                    self.console.append(f"✓ Successfully loaded {len(scenario.parameters)} parameters, {len(scenario.sets)} sets")
+                    self.console.append(f"  Total data points: {validation['summary']['total_data_points']}")
+                else:
+                    self.console.append(f"⚠ Loaded {len(scenario.parameters)} parameters with validation issues:")
+                    for issue in validation['issues'][:5]:  # Show first 5 issues
+                        self.console.append(f"  - {issue}")
+                    if len(validation['issues']) > 5:
+                        self.console.append(f"  ... and {len(validation['issues']) - 5} more issues")
+
+                self.status_bar.showMessage(f"Loaded {os.path.basename(file_path)} ({'Valid' if validation['valid'] else 'Issues found'})")
 
             except Exception as e:
                 error_msg = f"Error loading file: {str(e)}"
@@ -179,37 +198,96 @@ class MainWindow(QMainWindow):
         if not scenario:
             return
 
-        # Group parameters by category (simplified - would be more sophisticated)
+        # Group parameters by category with enhanced logic
         categories = {}
 
         for param_name in scenario.get_parameter_names():
-            # Simple categorization based on parameter name
-            if param_name.startswith(('cost', 'price', 'price')):
-                category = "Costs"
-            elif param_name.startswith(('demand', 'load')):
-                category = "Demands"
-            elif param_name.startswith(('capacity', 'cap')):
-                category = "Capacities"
-            elif param_name.startswith(('efficiency', 'eff')):
-                category = "Efficiencies"
-            else:
-                category = "Other"
+            parameter = scenario.get_parameter(param_name)
+            if not parameter:
+                continue
+
+            # Enhanced categorization based on parameter name and metadata
+            category = self._categorize_parameter(param_name, parameter)
 
             if category not in categories:
                 categories[category] = []
-            categories[category].append(param_name)
+            categories[category].append((param_name, parameter))
+
+        # Sort categories
+        sorted_categories = sorted(categories.keys())
 
         # Create tree items
-        for category, params in categories.items():
+        for category in sorted_categories:
+            params = categories[category]
             category_item = QTreeWidgetItem(self.param_tree)
             category_item.setText(0, f"{category} ({len(params)} parameters)")
 
-            for param_name in params:
+            # Sort parameters within category
+            params.sort(key=lambda x: x[0])
+
+            for param_name, parameter in params:
                 param_item = QTreeWidgetItem(category_item)
                 param_item.setText(0, param_name)
-                param_item.setToolTip(0, f"Parameter: {param_name}")
+
+                # Add metadata to tooltip
+                dims_info = f"Dimensions: {', '.join(parameter.metadata.get('dims', []))}" if parameter.metadata.get('dims') else "No dimensions"
+                shape_info = f"Shape: {parameter.metadata.get('shape', ('?', '?'))}"
+                tooltip = f"Parameter: {param_name}\n{dims_info}\n{shape_info}"
+                param_item.setToolTip(0, tooltip)
 
             category_item.setExpanded(True)
+
+        # Add sets information if available
+        if scenario.sets:
+            sets_item = QTreeWidgetItem(self.param_tree)
+            sets_item.setText(0, f"Sets ({len(scenario.sets)} sets)")
+
+            for set_name, set_values in sorted(scenario.sets.items()):
+                set_item = QTreeWidgetItem(sets_item)
+                set_item.setText(0, f"{set_name} ({len(set_values)} elements)")
+                set_item.setToolTip(0, f"Set: {set_name}\nElements: {len(set_values)}")
+
+            sets_item.setExpanded(False)
+
+    def _categorize_parameter(self, param_name: str, parameter) -> str:
+        """Categorize a parameter based on its name and properties"""
+        name_lower = param_name.lower()
+
+        # Economic parameters
+        if any(keyword in name_lower for keyword in ['cost', 'price', 'revenue', 'profit', 'subsidy']):
+            return "Economic"
+
+        # Capacity and investment
+        elif any(keyword in name_lower for keyword in ['capacity', 'cap', 'investment', 'inv']):
+            return "Capacity & Investment"
+
+        # Demand and consumption
+        elif any(keyword in name_lower for keyword in ['demand', 'load', 'consumption']):
+            return "Demand & Consumption"
+
+        # Technical parameters
+        elif any(keyword in name_lower for keyword in ['efficiency', 'eff', 'factor', 'ratio']):
+            return "Technical"
+
+        # Environmental
+        elif any(keyword in name_lower for keyword in ['emission', 'emiss', 'carbon', 'co2']):
+            return "Environmental"
+
+        # Temporal
+        elif any(keyword in name_lower for keyword in ['duration', 'lifetime', 'year']):
+            return "Temporal"
+
+        # Operational
+        elif any(keyword in name_lower for keyword in ['operation', 'oper', 'maintenance']):
+            return "Operational"
+
+        # Bounds and constraints
+        elif any(keyword in name_lower for keyword in ['bound', 'limit', 'max', 'min']):
+            return "Bounds & Constraints"
+
+        # Default category
+        else:
+            return "Other"
 
     def _on_parameter_selected(self):
         """Handle parameter selection in tree view"""
@@ -241,35 +319,74 @@ class MainWindow(QMainWindow):
         if df.empty:
             self.param_table.setRowCount(0)
             self.param_table.setColumnCount(0)
+            self.status_bar.showMessage(f"Parameter: {parameter.name} (empty)")
             return
 
         # Set table dimensions
         self.param_table.setRowCount(len(df))
         self.param_table.setColumnCount(len(df.columns))
 
-        # Set headers
-        self.param_table.setHorizontalHeaderLabels(df.columns.tolist())
+        # Set headers with better formatting
+        headers = []
+        for col in df.columns:
+            if col == parameter.metadata.get('value_column', 'value'):
+                headers.append(f"{col} ({parameter.metadata.get('units', 'N/A')})")
+            else:
+                headers.append(str(col))
+        self.param_table.setHorizontalHeaderLabels(headers)
 
-        # Fill table data
+        # Fill table data with better formatting
         for row_idx in range(len(df)):
             for col_idx in range(len(df.columns)):
                 value = df.iloc[row_idx, col_idx]
-                # Handle different data types
+                item = QTableWidgetItem()
+
+                # Handle different data types with proper formatting
                 if pd.isna(value):
-                    display_value = ""
-                elif isinstance(value, (int, float)):
-                    display_value = str(value)
+                    item.setText("")
+                    item.setToolTip("No data")
+                elif isinstance(value, float):
+                    # Format floats with reasonable precision
+                    if abs(value) < 0.01 or abs(value) > 1000000:
+                        item.setText(f"{value:.6g}")
+                    else:
+                        item.setText(f"{value:.4f}")
+                    item.setToolTip(f"Float: {value}")
+                elif isinstance(value, int):
+                    item.setText(str(value))
+                    item.setToolTip(f"Integer: {value}")
                 else:
-                    display_value = str(value)
+                    str_value = str(value).strip()
+                    item.setText(str_value)
+                    item.setToolTip(f"Text: {str_value}")
 
-                self.param_table.setItem(row_idx, col_idx,
-                                       QTableWidgetItem(display_value))
+                # Right-align numeric columns
+                col_name = df.columns[col_idx]
+                if col_name == parameter.metadata.get('value_column', 'value'):
+                    item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
 
-        # Resize columns to content
+                self.param_table.setItem(row_idx, col_idx, item)
+
+        # Resize columns to content with reasonable limits
         self.param_table.resizeColumnsToContents()
 
-        # Update status
-        self.status_bar.showMessage(f"Parameter: {parameter.name} ({len(df)} rows)")
+        # Limit maximum column width for readability
+        for col_idx in range(self.param_table.columnCount()):
+            width = self.param_table.columnWidth(col_idx)
+            if width > 200:  # Max width of 200 pixels
+                self.param_table.setColumnWidth(col_idx, 200)
+
+        # Update status with more detailed information
+        dims_info = f", dims: {len(parameter.metadata.get('dims', []))}" if parameter.metadata.get('dims') else ""
+        self.status_bar.showMessage(f"Parameter: {parameter.name} ({len(df)} rows{dims_info})")
+
+        # Update console with parameter info
+        self.console.append(f"Displayed parameter: {parameter.name}")
+        self.console.append(f"  Shape: {df.shape}")
+        if parameter.metadata.get('dims'):
+            self.console.append(f"  Dimensions: {', '.join(parameter.metadata['dims'])}")
+        if parameter.metadata.get('units') != 'N/A':
+            self.console.append(f"  Units: {parameter.metadata['units']}")
 
     def _append_to_console(self, message: str):
         """Append message to console from solver manager"""
