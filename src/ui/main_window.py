@@ -64,39 +64,52 @@ class MainWindow(QMainWindow):
         # Create splitter for resizable panels
         splitter = QSplitter(Qt.Horizontal)
 
-        # Left panel: Project navigator
+        # Left panel: Vertical splitter with files and parameters trees
+        left_panel = QWidget()
+        left_layout = QVBoxLayout(left_panel)
+        left_layout.setContentsMargins(0, 0, 0, 0)
+
+        # Left splitter (vertical)
+        left_splitter = QSplitter(Qt.Vertical)
+
+        # Top: Project navigator (files tree)
         self.navigator = ProjectNavigator()
         self.navigator.file_selected.connect(self._on_file_selected)
-        splitter.addWidget(self.navigator)
+        left_splitter.addWidget(self.navigator)
 
-        # Right panel: Main content area
+        # Bottom: Parameter tree
+        self.param_tree = QTreeWidget()
+        self.param_tree.setHeaderLabel("Parameters")
+        self.param_tree.itemSelectionChanged.connect(self._on_parameter_selected)
+        left_splitter.addWidget(self.param_tree)
+
+        # Set left splitter proportions (files tree ~25%, parameters tree ~75%)
+        left_splitter.setSizes([150, 450])
+
+        left_layout.addWidget(left_splitter)
+        splitter.addWidget(left_panel)
+
+        # Right panel: Main content area (table and console)
         content_widget = QWidget()
         content_layout = QVBoxLayout(content_widget)
 
         # Content splitter (vertical)
         content_splitter = QSplitter(Qt.Vertical)
 
-        # Top: Parameter views
-        self.param_tree = QTreeWidget()
-        self.param_tree.setHeaderLabel("Parameters")
-        self.param_tree.itemSelectionChanged.connect(self._on_parameter_selected)
-        content_splitter.addWidget(self.param_tree)
-
-        # Parameter table with title and controls
+        # Top: Parameter table with title and controls
         table_container = QWidget()
         table_layout = QVBoxLayout(table_container)
         table_layout.setContentsMargins(0, 0, 0, 0)
 
-        # Title and toggle button in horizontal layout
+        # Title layout with controls and filters
         title_layout = QHBoxLayout()
         title_layout.setContentsMargins(0, 0, 0, 0)
 
         self.param_title = QLabel("Select a parameter to view data")
         self.param_title.setStyleSheet("font-size: 12px; color: #333; padding: 5px; background-color: #f0f0f0;")
         title_layout.addWidget(self.param_title)
-        title_layout.addStretch()
 
-        # Toggle button for raw/advanced view
+        # Toggle button for raw/advanced view (right after parameter name)
         self.view_toggle_button = QPushButton("Raw Display")
         self.view_toggle_button.setCheckable(True)
         self.view_toggle_button.setChecked(False)  # Start with raw mode
@@ -117,17 +130,16 @@ class MainWindow(QMainWindow):
         """)
         title_layout.addWidget(self.view_toggle_button)
 
-        table_layout.addLayout(title_layout)
-
-        # Selector container for advanced mode (initially hidden)
+        # Selector container for advanced mode (positioned right of button, flushed to top)
         self.selector_container = QGroupBox("Data Filters")
         self.selector_container.setVisible(False)
         self.selector_container.setStyleSheet("""
             QGroupBox {
                 font-size: 11px;
                 font-weight: bold;
-                margin-top: 5px;
-                padding-top: 10px;
+                margin-top: 0px;
+                margin-left: 10px;
+                padding-top: 5px;
                 border: 1px solid #ccc;
                 border-radius: 3px;
             }
@@ -139,13 +151,16 @@ class MainWindow(QMainWindow):
         """)
 
         selector_layout = QHBoxLayout(self.selector_container)
-        selector_layout.setContentsMargins(10, 10, 10, 10)
+        selector_layout.setContentsMargins(10, 5, 10, 5)
 
         # Property selectors (will be populated dynamically)
         self.property_selectors = {}
         selector_layout.addStretch()
 
-        table_layout.addWidget(self.selector_container)
+        title_layout.addStretch()  # Push data filters to the right
+        title_layout.addWidget(self.selector_container)
+
+        table_layout.addLayout(title_layout)
 
         self.param_table = QTableWidget()
         self.param_table.setAlternatingRowColors(True)
@@ -168,15 +183,15 @@ class MainWindow(QMainWindow):
 
         # Bottom: Console/Dashboard area
         self.console = QTextEdit()
-        self.console.setMaximumHeight(200)
+        self.console.setMaximumHeight(120)
         self.console.setPlainText("Welcome to MessageIX Data Manager\n")
         content_splitter.addWidget(self.console)
 
         content_layout.addWidget(content_splitter)
         splitter.addWidget(content_widget)
 
-        # Set splitter proportions
-        splitter.setSizes([200, 1000])
+        # Set splitter proportions (left panel ~30%, right panel ~70%)
+        splitter.setSizes([300, 900])
 
         main_layout.addWidget(splitter)
 
