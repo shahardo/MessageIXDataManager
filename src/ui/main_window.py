@@ -28,11 +28,6 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("MessageIX Data Manager - message_ix Data Manager")
         self.setGeometry(100, 100, 1200, 800)
 
-        # Set window icon
-        icon_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "assets", "icons", "messageix_data_manager.ico")
-        if os.path.exists(icon_path):
-            self.setWindowIcon(QIcon(icon_path))
-
         # Initialize managers
         self.input_manager = InputManager()
         self.solver_manager = SolverManager()
