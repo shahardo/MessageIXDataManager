@@ -1,5 +1,6 @@
 # Core GUI Framework
 PyQt5>=5.15.0
+PyQtWebEngine>=5.15.0
 
 # Data Processing
 pandas>=1.5.0

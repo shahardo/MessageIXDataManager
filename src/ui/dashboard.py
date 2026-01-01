@@ -148,7 +148,7 @@ class ResultsDashboard(QWidget):
             )
 
             # Save to temporary HTML file
-            with tempfile.NamedTemporaryFile(mode='w', suffix='.html', delete=False) as f:
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.html', delete=False, encoding='utf-8') as f:
                 html_content = pio.to_html(fig, full_html=True)
                 f.write(html_content)
                 temp_file = f.name
@@ -185,7 +185,7 @@ class ResultsDashboard(QWidget):
         """
 
         # Save to temporary file
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.html', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.html', delete=False, encoding='utf-8') as f:
             f.write(html)
             temp_file = f.name
 

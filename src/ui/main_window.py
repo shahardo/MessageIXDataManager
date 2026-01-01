@@ -4,7 +4,7 @@ Main application window for Message Viewer
 
 from PyQt5.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QSplitter, QTableWidget, QTableWidgetItem, QTextEdit,
+    QSplitter, QTreeWidget, QTableWidget, QTableWidgetItem, QTextEdit,
     QStatusBar, QMenuBar, QMenu, QAction, QFileDialog, QMessageBox, QTreeWidgetItem
 )
 from PyQt5.QtCore import Qt
