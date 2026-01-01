@@ -5,7 +5,7 @@ Results Analyzer - handles loading and parsing of message_ix result Excel files
 import os
 import pandas as pd
 from openpyxl import load_workbook
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Callable
 
 from core.data_models import ScenarioData, Parameter
 
@@ -18,12 +18,13 @@ class ResultsAnalyzer:
         self.loaded_file_path: Optional[str] = None
         self.summary_stats: Dict[str, Any] = {}
 
-    def load_results_file(self, file_path: str) -> ScenarioData:
+    def load_results_file(self, file_path: str, progress_callback: Optional[Callable[[int, str], None]] = None) -> ScenarioData:
         """
         Load and parse a message_ix results Excel file
 
         Args:
             file_path: Path to the results Excel file
+            progress_callback: Optional callback function for progress updates (value, message)
 
         Returns:
             ScenarioData object containing parsed results
@@ -41,11 +42,21 @@ class ResultsAnalyzer:
         results = ScenarioData()
 
         try:
+            # Initialize progress
+            if progress_callback:
+                progress_callback(0, "Loading results workbook...")
+
             # Load workbook
             wb = load_workbook(file_path, data_only=True)
 
+            if progress_callback:
+                progress_callback(20, "Workbook loaded, parsing results...")
+
             # Parse results (typically in var_* and equ_* sheets)
-            self._parse_results(wb, results)
+            self._parse_results(wb, results, progress_callback)
+
+            if progress_callback:
+                progress_callback(80, "Calculating summary statistics...")
 
             # Calculate summary statistics
             self._calculate_summary_stats(results)
@@ -54,20 +65,31 @@ class ResultsAnalyzer:
             self.current_results = results
             self.loaded_file_path = file_path
 
+            if progress_callback:
+                progress_callback(100, "Results loading complete")
+
             print(f"Successfully loaded results with {len(results.parameters)} variables/equations")
 
         except Exception as e:
+            if progress_callback:
+                progress_callback(0, f"Error: {str(e)}")
             raise ValueError(f"Error parsing results file: {str(e)}")
 
         return results
 
-    def _parse_results(self, wb, results: ScenarioData):
+    def _parse_results(self, wb, results: ScenarioData, progress_callback: Optional[Callable[[int, str], None]] = None):
         """Parse results from workbook"""
         # Look for result sheets (typically var_* for variables, equ_* for equations)
-        for sheet_name in wb.sheetnames:
-            if sheet_name.startswith(('var_', 'equ_')):
-                sheet = wb[sheet_name]
-                self._parse_result_sheet(sheet, results, sheet_name)
+        result_sheets = [sheet_name for sheet_name in wb.sheetnames if sheet_name.startswith(('var_', 'equ_'))]
+        total_sheets = len(result_sheets)
+
+        for i, sheet_name in enumerate(result_sheets):
+            if progress_callback and total_sheets > 0:
+                progress = 20 + int((i / total_sheets) * 60)  # Progress from 20% to 80%
+                progress_callback(progress, f"Parsing result sheet: {sheet_name}")
+
+            sheet = wb[sheet_name]
+            self._parse_result_sheet(sheet, results, sheet_name)
 
     def _parse_result_sheet(self, sheet, results: ScenarioData, sheet_name: str):
         """Parse individual result sheet"""
@@ -77,7 +99,7 @@ class ResultsAnalyzer:
             if cell.value:
                 headers.append(str(cell.value))
 
-        if not headers:
+        if not headers or len(headers) == 0:
             return
 
         # Parse data
@@ -86,7 +108,7 @@ class ResultsAnalyzer:
             if row and any(cell is not None for cell in row):
                 data.append(row)
 
-        if data:
+        if data and len(data) > 0:
             df = pd.DataFrame(data, columns=headers)
 
             # Create parameter object for this result

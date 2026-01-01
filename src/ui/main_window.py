@@ -5,10 +5,10 @@ Main application window for MessageIX Data Manager
 from PyQt5.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QSplitter, QTreeWidget, QTableWidget, QTableWidgetItem, QTextEdit,
-    QStatusBar, QMenuBar, QMenu, QAction, QFileDialog, QMessageBox, QTreeWidgetItem
+    QStatusBar, QMenuBar, QMenu, QAction, QFileDialog, QMessageBox, QTreeWidgetItem, QLabel, QProgressBar
 )
-from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QIcon
+from PyQt5.QtCore import Qt, QSettings
+from PyQt5.QtGui import QIcon, QFont
 import os
 import pandas as pd
 
@@ -45,6 +45,9 @@ class MainWindow(QMainWindow):
         self._setup_menu()
         self._setup_status_bar()
 
+        # Auto-load last opened files
+        self._auto_load_last_files()
+
     def _setup_ui(self):
         """Set up the main UI layout"""
         central_widget = QWidget()
@@ -73,9 +76,31 @@ class MainWindow(QMainWindow):
         self.param_tree.itemSelectionChanged.connect(self._on_parameter_selected)
         content_splitter.addWidget(self.param_tree)
 
+        # Parameter table with title
+        table_container = QWidget()
+        table_layout = QVBoxLayout(table_container)
+        table_layout.setContentsMargins(0, 0, 0, 0)
+
+        self.param_title = QLabel("Select a parameter to view data")
+        self.param_title.setStyleSheet("font-size: 14px; color: #333; padding: 5px; background-color: #f0f0f0;")
+        table_layout.addWidget(self.param_title)
+
         self.param_table = QTableWidget()
         self.param_table.setAlternatingRowColors(True)
-        content_splitter.addWidget(self.param_table)
+        # Style the header to make it more distinct
+        header = self.param_table.horizontalHeader()
+        header.setStyleSheet("""
+            QHeaderView::section {
+                background-color: #e0e0e0;
+                padding: 4px;
+                border: 1px solid #ccc;
+                font-weight: bold;
+                font-size: 12px;
+            }
+        """)
+        table_layout.addWidget(self.param_table)
+
+        content_splitter.addWidget(table_container)
 
         # Bottom: Console/Dashboard area
         self.console = QTextEdit()
@@ -133,9 +158,115 @@ class MainWindow(QMainWindow):
         view_menu.addAction(dashboard_action)
 
     def _setup_status_bar(self):
-        """Set up the status bar"""
+        """Set up the status bar with progress bar"""
         self.status_bar = self.statusBar()
         self.status_bar.showMessage("Ready")
+
+        # Add progress bar to status bar
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setVisible(False)
+        self.progress_bar.setMaximumWidth(300)
+        self.progress_bar.setMinimumWidth(200)
+        self.status_bar.addPermanentWidget(self.progress_bar)
+
+    def show_progress_bar(self, maximum=100):
+        """Show and initialize the progress bar"""
+        self.progress_bar.setMaximum(maximum)
+        self.progress_bar.setValue(0)
+        self.progress_bar.setVisible(True)
+
+    def update_progress(self, value, message=None):
+        """Update progress bar value and optionally status message"""
+        self.progress_bar.setValue(value)
+        if message:
+            self.status_bar.showMessage(message)
+
+    def hide_progress_bar(self):
+        """Hide the progress bar"""
+        self.progress_bar.setVisible(False)
+        self.status_bar.showMessage("Ready")
+
+    def _save_last_opened_files(self, file_path, file_type):
+        """Save the last opened file path to settings"""
+        settings = QSettings("MessageIXDataManager", "MainWindow")
+        if file_type == "input":
+            settings.setValue("last_input_file", file_path)
+        elif file_type == "results":
+            settings.setValue("last_results_file", file_path)
+
+    def _get_last_opened_files(self):
+        """Get the last opened file paths from settings"""
+        settings = QSettings("MessageIXDataManager", "MainWindow")
+        input_file = settings.value("last_input_file", "")
+        results_file = settings.value("last_results_file", "")
+        return input_file, results_file
+
+    def _auto_load_last_files(self):
+        """Automatically load the last opened files on startup"""
+        input_file, results_file = self._get_last_opened_files()
+
+        # Load input file if it exists and is readable
+        if input_file and os.path.exists(input_file):
+            try:
+                self.console.append(f"Auto-loading last input file: {input_file}")
+
+                # Show progress bar for auto-loading
+                self.show_progress_bar(100)
+
+                # Define progress callback
+                def progress_callback(value, message):
+                    self.update_progress(value, message)
+
+                scenario = self.input_manager.load_excel_file(input_file, progress_callback)
+
+                # Hide progress bar
+                self.hide_progress_bar()
+
+                # Update UI
+                self.navigator.update_input_files([input_file])
+                self.navigator.add_recent_file(input_file, "input")
+
+                # Update parameter tree
+                self._update_parameter_tree()
+
+                self.console.append(f"✓ Auto-loaded input file with {len(scenario.parameters)} parameters")
+
+            except Exception as e:
+                # Hide progress bar on error
+                self.hide_progress_bar()
+                self.console.append(f"Failed to auto-load input file: {str(e)}")
+
+        # Load results file if it exists and is readable
+        if results_file and os.path.exists(results_file):
+            try:
+                self.console.append(f"Auto-loading last results file: {results_file}")
+
+                # Show progress bar for auto-loading results
+                self.show_progress_bar(100)
+
+                # Define progress callback
+                def progress_callback(value, message):
+                    self.update_progress(value, message)
+
+                results = self.results_analyzer.load_results_file(results_file, progress_callback)
+
+                # Hide progress bar
+                self.hide_progress_bar()
+
+                # Update UI
+                self.navigator.update_result_files([results_file])
+                self.navigator.add_recent_file(results_file, "results")
+
+                # Update dashboard
+                self.dashboard.update_results(True)
+
+                stats = self.results_analyzer.get_summary_stats()
+                self.console.append(f"✓ Auto-loaded results file with {stats['total_variables']} variables")
+
+            except Exception as e:
+                # Hide progress bar on error
+                self.hide_progress_bar()
+                self.console.append(f"Failed to auto-load results file: {str(e)}")
 
     def _open_input_file(self):
         """Handle opening input Excel file"""
@@ -148,11 +279,24 @@ class MainWindow(QMainWindow):
             try:
                 self.console.append(f"Loading input file: {file_path}")
 
+                # Show progress bar
+                self.show_progress_bar(100)
+
+                # Define progress callback
+                def progress_callback(value, message):
+                    self.update_progress(value, message)
+
                 # Load file with Input Manager
-                scenario = self.input_manager.load_excel_file(file_path)
+                scenario = self.input_manager.load_excel_file(file_path, progress_callback)
+
+                # Hide progress bar
+                self.hide_progress_bar()
 
                 # Log successful load
                 logging_manager.log_input_load(file_path, True)
+
+                # Save this file as the last opened input file
+                self._save_last_opened_files(file_path, "input")
 
                 # Update UI
                 self.navigator.update_input_files([file_path])
@@ -178,6 +322,9 @@ class MainWindow(QMainWindow):
                 self.status_bar.showMessage(f"Loaded {os.path.basename(file_path)} ({'Valid' if validation['valid'] else 'Issues found'})")
 
             except Exception as e:
+                # Hide progress bar on error
+                self.hide_progress_bar()
+
                 error_msg = f"Error loading file: {str(e)}"
                 self.console.append(error_msg)
                 QMessageBox.critical(self, "Load Error", error_msg)
@@ -295,6 +442,8 @@ class MainWindow(QMainWindow):
         # Check if it's a parameter item (not a category)
         if selected_item.parent() is None:
             # It's a category, don't display data
+            self.param_title.setText("Select a parameter to view data")
+            self.param_title.setStyleSheet("font-size: 12px; color: #333; padding: 5px; background-color: #f0f0f0;")
             self.param_table.setRowCount(0)
             self.param_table.setColumnCount(0)
             return
@@ -310,6 +459,10 @@ class MainWindow(QMainWindow):
     def _display_parameter_data(self, parameter):
         """Display parameter data in the table view"""
         df = parameter.df
+
+        # Update the table title
+        self.param_title.setText(f"Parameter: {parameter.name}")
+        self.param_title.setStyleSheet("font-weight: bold; font-size: 14px; color: #333; padding: 5px; background-color: #f0f0f0;")
 
         if df.empty:
             self.param_table.setRowCount(0)
@@ -402,8 +555,21 @@ class MainWindow(QMainWindow):
             try:
                 self.console.append(f"Loading results file: {file_path}")
 
+                # Show progress bar
+                self.show_progress_bar(100)
+
+                # Define progress callback
+                def progress_callback(value, message):
+                    self.update_progress(value, message)
+
                 # Load file with Results Analyzer
-                results = self.results_analyzer.load_results_file(file_path)
+                results = self.results_analyzer.load_results_file(file_path, progress_callback)
+
+                # Hide progress bar
+                self.hide_progress_bar()
+
+                # Save this file as the last opened results file
+                self._save_last_opened_files(file_path, "results")
 
                 # Update UI
                 self.navigator.update_result_files([file_path])
@@ -424,6 +590,9 @@ class MainWindow(QMainWindow):
                 self.status_bar.showMessage(f"Results loaded: {os.path.basename(file_path)}")
 
             except Exception as e:
+                # Hide progress bar on error
+                self.hide_progress_bar()
+
                 error_msg = f"Error loading results file: {str(e)}"
                 self.console.append(error_msg)
                 QMessageBox.critical(self, "Load Error", error_msg)
