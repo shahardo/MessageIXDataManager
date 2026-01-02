@@ -41,6 +41,19 @@ class MainWindow(QMainWindow):
         self.leftSplitter.setSizes([150, 450])
         self.dataSplitter.setSizes([600, 400])
 
+        # Set stretch factors for proper resizing
+        self.splitter.setStretchFactor(0, 0)  # left panel fixed
+        self.splitter.setStretchFactor(1, 1)  # content area stretches
+
+        self.leftSplitter.setStretchFactor(0, 0)  # navigator fixed
+        self.leftSplitter.setStretchFactor(1, 1)  # parameter tree stretches
+
+        self.contentSplitter.setStretchFactor(0, 1)  # data container stretches
+        self.contentSplitter.setStretchFactor(1, 0)  # console fixed
+
+        self.dataSplitter.setStretchFactor(0, 0)  # table container fixed
+        self.dataSplitter.setStretchFactor(1, 1)  # graph container stretches
+
         # Initialize managers
         self.input_manager = InputManager()
         self.solver_manager = SolverManager()

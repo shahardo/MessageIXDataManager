@@ -11,7 +11,7 @@
    </rect>
   </property>
   <property name="windowTitle">
-   <string>MessageIX Data Manager - message_ix Data Manager</string>
+   <string>MessageIX Data Manager</string>
   </property>
   <widget class="QWidget" name="centralwidget">
    <layout class="QHBoxLayout" name="horizontalLayout">
@@ -88,7 +88,19 @@
                     <property name="styleSheet">
                      <string>font-size: 11px; padding: 3px 8px; background-color: #e0e0e0; border: 1px solid #ccc; border-radius: 3px;</string>
                     </property>
-                   </widget>
+                    <property name="minimumSize">
+                     <size>
+                      <width>120</width>
+                      <height>0</height>
+                     </size>
+                    </property>
+                   <property name="maximumSize">
+                     <size>
+                      <width>120</width>
+                      <height>30</height>
+                     </size>
+                    </property>
+                    </widget>
                   </item>
                   <item>
                    <widget class="QGroupBox" name="selector_container">
