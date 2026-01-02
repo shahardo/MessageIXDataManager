@@ -115,6 +115,8 @@ class MainWindow(QMainWindow):
         self.view_toggle_button.setCheckable(True)
         self.view_toggle_button.setChecked(False)  # Start with raw mode
         self.view_toggle_button.clicked.connect(self._toggle_display_mode)
+        self.view_toggle_button.setCursor(Qt.PointingHandCursor)
+        self.view_toggle_button.setEnabled(False)
         self.view_toggle_button.setStyleSheet("""
             QPushButton {
                 font-size: 11px;
@@ -613,6 +615,7 @@ class MainWindow(QMainWindow):
         if df.empty:
             self.param_table.setRowCount(0)
             self.param_table.setColumnCount(0)
+            self.view_toggle_button.setEnabled(False)
             self.status_bar.showMessage(f"Parameter: {parameter.name} (empty)")
             return
 
@@ -731,6 +734,9 @@ class MainWindow(QMainWindow):
 
                 self.param_table.setItem(row_idx, col_idx, item)
 
+        # Enable the view toggle button since we have data
+        self.view_toggle_button.setEnabled(True)
+
         # Resize columns to content with reasonable limits
         self.param_table.resizeColumnsToContents()
 
@@ -779,6 +785,7 @@ class MainWindow(QMainWindow):
         if df.empty:
             self.param_table.setRowCount(0)
             self.param_table.setColumnCount(0)
+            self.view_toggle_button.setEnabled(False)
             self.status_bar.showMessage(f"Result: {result.name} (empty)")
             return
 
@@ -896,6 +903,9 @@ class MainWindow(QMainWindow):
                     item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
 
                 self.param_table.setItem(row_idx, col_idx, item)
+
+        # Enable the view toggle button since we have data
+        self.view_toggle_button.setEnabled(True)
 
         # Resize columns to content with reasonable limits
         self.param_table.resizeColumnsToContents()
@@ -1434,6 +1444,7 @@ class MainWindow(QMainWindow):
             self.table_display_mode = "raw"
             self.view_toggle_button.setChecked(False)
             self.view_toggle_button.setText("Raw Display")
+            self.view_toggle_button.setEnabled(False)
             self.selector_container.setVisible(False)
             # Clear existing selectors
             for selector in self.property_selectors.values():
@@ -1458,6 +1469,7 @@ class MainWindow(QMainWindow):
             self.table_display_mode = "raw"
             self.view_toggle_button.setChecked(False)
             self.view_toggle_button.setText("Raw Display")
+            self.view_toggle_button.setEnabled(False)
             self.selector_container.setVisible(False)
             # Clear existing selectors
             for selector in self.property_selectors.values():
