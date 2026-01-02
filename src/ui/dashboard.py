@@ -4,9 +4,10 @@ Dashboard component for displaying results visualizations
 
 import plotly.graph_objects as go
 import plotly.io as pio
-from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QComboBox, QPushButton
+from PyQt5.QtWidgets import QWidget
 from PyQt5.QtWebEngineWidgets import QWebEngineView
 from PyQt5.QtCore import QUrl
+from PyQt5 import uic
 import tempfile
 import os
 
@@ -20,47 +21,22 @@ class ResultsDashboard(QWidget):
         self.current_chart_type = 'line'
         self.current_result = None
 
-        self._setup_ui()
+        # Load UI from .ui file
+        uic.loadUi('src/ui/dashboard.ui', self)
 
-    def _setup_ui(self):
-        """Set up the dashboard UI"""
-        layout = QVBoxLayout(self)
-
-        # Controls
-        controls_layout = QHBoxLayout()
-
-        # Result selector
-        controls_layout.addWidget(QLabel("Result:"))
-        self.result_combo = QComboBox()
+        # Connect signals
         self.result_combo.currentTextChanged.connect(self._on_result_changed)
-        controls_layout.addWidget(self.result_combo)
-
-        # Chart type selector
-        controls_layout.addWidget(QLabel("Chart Type:"))
-        self.chart_type_combo = QComboBox()
-        self.chart_type_combo.addItems(['line', 'bar', 'area'])
         self.chart_type_combo.currentTextChanged.connect(self._on_chart_type_changed)
-        controls_layout.addWidget(self.chart_type_combo)
+        self.refresh_btn.clicked.connect(self._refresh_chart)
 
-        # Refresh button
-        refresh_btn = QPushButton("Refresh")
-        refresh_btn.clicked.connect(self._refresh_chart)
-        controls_layout.addWidget(refresh_btn)
+        # Set up chart type combo items
+        self.chart_type_combo.addItems(['line', 'bar', 'area'])
 
-        controls_layout.addStretch()
-        layout.addLayout(controls_layout)
-
-        # Chart display
-        self.chart_view = QWebEngineView()
-        self.chart_view.setMinimumHeight(400)
-
-        # Enable JavaScript and other web features
+        # Enable JavaScript and other web features for chart view
         from PyQt5.QtWebEngineWidgets import QWebEngineSettings
         settings = self.chart_view.settings()
         settings.setAttribute(QWebEngineSettings.JavascriptEnabled, True)
         settings.setAttribute(QWebEngineSettings.LocalContentCanAccessRemoteUrls, True)
-
-        layout.addWidget(self.chart_view)
 
         # Show placeholder
         self._show_placeholder()

@@ -11,6 +11,7 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import Qt, QSettings, QUrl
 from PyQt5.QtGui import QIcon, QFont
 from PyQt5.QtWebEngineWidgets import QWebEngineView, QWebEngineSettings
+from PyQt5 import uic
 import os
 import pandas as pd
 import plotly.graph_objects as go
@@ -31,8 +32,14 @@ class MainWindow(QMainWindow):
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("MessageIX Data Manager - message_ix Data Manager")
-        self.setGeometry(100, 100, 1200, 800)
+
+        # Load UI from .ui file
+        uic.loadUi('src/ui/main_window.ui', self)
+
+        # Set splitter sizes
+        self.splitter.setSizes([300, 900])
+        self.leftSplitter.setSizes([150, 450])
+        self.dataSplitter.setSizes([600, 400])
 
         # Initialize managers
         self.input_manager = InputManager()
@@ -47,88 +54,60 @@ class MainWindow(QMainWindow):
         self.table_display_mode = "raw"  # "raw" or "advanced"
         self.hide_empty_columns = False  # Whether to hide empty columns in advanced view
 
+        # Replace placeholder navigator with actual ProjectNavigator
+        self.navigator = ProjectNavigator()
+        placeholder = self.leftSplitter.widget(0)
+        placeholder.setParent(None)
+        self.leftSplitter.insertWidget(0, self.navigator)
+
+        # Connect navigator signals
+        self.navigator.file_selected.connect(self._on_file_selected)
+        self.navigator.load_files_requested.connect(self._on_load_files_requested)
+
         # Connect solver manager to console
         self.solver_manager.set_output_callback(self._append_to_console)
         self.solver_manager.set_status_callback(self._update_status_from_solver)
 
-        # Initialize components
-        self._setup_ui()
-        self._setup_menu()
-        self._setup_status_bar()
+        # Connect menu actions
+        self.actionOpen_Input_File.triggered.connect(self._open_input_file)
+        self.actionOpen_Results_File.triggered.connect(self._open_results_file)
+        self.actionExit.triggered.connect(self.close)
+        self.actionRun_Solver.triggered.connect(self._run_solver)
+        self.actionStop_Solver.triggered.connect(self._stop_solver)
+        self.actionDashboard.triggered.connect(self._show_dashboard)
 
-        # Auto-load last opened files
-        self._auto_load_last_files()
-
-    def _setup_ui(self):
-        """Set up the main UI layout"""
-        central_widget = QWidget()
-        self.setCentralWidget(central_widget)
-
-        # Main layout
-        main_layout = QHBoxLayout(central_widget)
-
-        # Create splitter for resizable panels
-        splitter = QSplitter(Qt.Horizontal)
-
-        # Left panel: Vertical splitter with files and parameters trees
-        left_panel = QWidget()
-        left_layout = QVBoxLayout(left_panel)
-        left_layout.setContentsMargins(0, 0, 0, 0)
-
-        # Left splitter (vertical)
-        left_splitter = QSplitter(Qt.Vertical)
-
-        # Top: Project navigator (files tree)
-        self.navigator = ProjectNavigator()
-        self.navigator.file_selected.connect(self._on_file_selected)
-        self.navigator.load_files_requested.connect(self._on_load_files_requested)
-        left_splitter.addWidget(self.navigator)
-
-        # Bottom: Parameter tree
-        self.param_tree = QTreeWidget()
-        self.param_tree.setHeaderLabel("Parameters")
+        # Connect other UI signals
         self.param_tree.itemSelectionChanged.connect(self._on_parameter_selected)
-        left_splitter.addWidget(self.param_tree)
-
-        # Set left splitter proportions (files tree ~25%, parameters tree ~75%)
-        left_splitter.setSizes([150, 450])
-
-        left_layout.addWidget(left_splitter)
-        splitter.addWidget(left_panel)
-
-        # Right panel: Main content area (table and console)
-        content_widget = QWidget()
-        content_layout = QVBoxLayout(content_widget)
-
-        # Content splitter (vertical)
-        content_splitter = QSplitter(Qt.Vertical)
-
-        # Top: Data container with horizontal splitter (table + chart)
-        data_container = QWidget()
-        data_layout = QVBoxLayout(data_container)
-        data_layout.setContentsMargins(0, 0, 0, 0)
-
-        # Create horizontal splitter for table and graph containers
-        data_splitter = QSplitter(Qt.Horizontal)
-
-        # Left side: Table container (title, filters, table)
-        table_container = QWidget()
-        table_layout = QVBoxLayout(table_container)
-        table_layout.setContentsMargins(0, 0, 0, 0)
-
-        # Title layout with controls and filters
-        title_layout = QHBoxLayout()
-        title_layout.setContentsMargins(0, 0, 0, 0)
-
-        self.param_title = QLabel("Select a parameter to view data")
-        self.param_title.setStyleSheet("font-size: 12px; color: #333; padding: 5px; background-color: #f0f0f0;")
-        title_layout.addWidget(self.param_title)
-
-        # Toggle button for raw/advanced view (right after parameter name)
-        self.view_toggle_button = QPushButton("Raw Display")
-        self.view_toggle_button.setCheckable(True)
-        self.view_toggle_button.setChecked(False)  # Start with raw mode
         self.view_toggle_button.clicked.connect(self._toggle_display_mode)
+
+        # Enable JavaScript for parameter chart
+        chart_settings = self.param_chart.settings()
+        chart_settings.setAttribute(QWebEngineSettings.JavascriptEnabled, True)
+        chart_settings.setAttribute(QWebEngineSettings.LocalContentCanAccessRemoteUrls, True)
+
+        # Set up status bar reference
+        self.status_bar = self.statusBar()
+
+        # Set up UI properties
+        self.property_selectors = {}
+
+        # Set table properties
+        self.param_table.setAlternatingRowColors(True)
+        self.param_table.verticalHeader().setDefaultSectionSize(22)
+        header = self.param_table.horizontalHeader()
+        header.setStyleSheet("""
+            QHeaderView::section {
+                background-color: #e0e0e0;
+                padding: 4px;
+                border: 1px solid #ccc;
+                font-weight: bold;
+                font-size: 12px;
+            }
+        """)
+
+        # Set view_toggle_button properties
+        self.view_toggle_button.setCheckable(True)
+        self.view_toggle_button.setChecked(False)
         self.view_toggle_button.setCursor(Qt.PointingHandCursor)
         self.view_toggle_button.setEnabled(False)
         self.view_toggle_button.setStyleSheet("""
@@ -145,11 +124,8 @@ class MainWindow(QMainWindow):
                 font-weight: bold;
             }
         """)
-        title_layout.addWidget(self.view_toggle_button)
 
-        # Selector container for advanced mode (positioned right of button, flushed to top)
-        self.selector_container = QGroupBox("Data Filters")
-        self.selector_container.setVisible(False)
+        # Set selector_container style
         self.selector_container.setStyleSheet("""
             QGroupBox {
                 font-size: 11px;
@@ -167,131 +143,11 @@ class MainWindow(QMainWindow):
             }
         """)
 
-        selector_layout = QHBoxLayout(self.selector_container)
-        selector_layout.setContentsMargins(10, 5, 10, 5)
+        # Set param_title style
+        self.param_title.setStyleSheet("font-size: 12px; color: #333; padding: 5px; background-color: #f0f0f0;")
 
-        # Property selectors (will be populated dynamically)
-        self.property_selectors = {}
-        selector_layout.addStretch()
-
-        title_layout.addStretch()  # Push data filters to the right
-        title_layout.addWidget(self.selector_container)
-
-        table_layout.addLayout(title_layout)
-
-        # Table
-        self.param_table = QTableWidget()
-        self.param_table.setAlternatingRowColors(True)
-        # Reduce row height for more compact display
-        self.param_table.verticalHeader().setDefaultSectionSize(22)
-        # Style the header to make it more distinct
-        header = self.param_table.horizontalHeader()
-        header.setStyleSheet("""
-            QHeaderView::section {
-                background-color: #e0e0e0;
-                padding: 4px;
-                border: 1px solid #ccc;
-                font-weight: bold;
-                font-size: 12px;
-            }
-        """)
-        table_layout.addWidget(self.param_table)
-
-        data_splitter.addWidget(table_container)
-
-        # Right side: Graph container (chart with future controls)
-        graph_container = QWidget()
-        graph_layout = QVBoxLayout(graph_container)
-        graph_layout.setContentsMargins(0, 0, 0, 0)
-
-        # Chart view
-        from PyQt5.QtWebEngineWidgets import QWebEngineView
-        self.param_chart = QWebEngineView()
-        self.param_chart.setMinimumWidth(300)
-
-        # Enable JavaScript for chart rendering
-        from PyQt5.QtWebEngineWidgets import QWebEngineSettings
-        chart_settings = self.param_chart.settings()
-        chart_settings.setAttribute(QWebEngineSettings.JavascriptEnabled, True)
-        chart_settings.setAttribute(QWebEngineSettings.LocalContentCanAccessRemoteUrls, True)
-
-        graph_layout.addWidget(self.param_chart)
-
-        data_splitter.addWidget(graph_container)
-
-        # Set initial splitter proportions (table ~60%, graph ~40%)
-        data_splitter.setSizes([600, 400])
-
-        data_layout.addWidget(data_splitter)
-
-        content_splitter.addWidget(data_container)
-
-        # Bottom: Console/Dashboard area
-        self.console = QTextEdit()
-        self.console.setMaximumHeight(120)
-        self.console.setPlainText("Welcome to MessageIX Data Manager\n")
-        content_splitter.addWidget(self.console)
-
-        content_layout.addWidget(content_splitter)
-        splitter.addWidget(content_widget)
-
-        # Set splitter proportions (left panel ~30%, right panel ~70%)
-        splitter.setSizes([300, 900])
-
-        main_layout.addWidget(splitter)
-
-    def _setup_menu(self):
-        """Set up the menu bar"""
-        menubar = self.menuBar()
-
-        # File menu
-        file_menu = menubar.addMenu("File")
-
-        open_action = QAction("Open Input File", self)
-        open_action.triggered.connect(self._open_input_file)
-        file_menu.addAction(open_action)
-
-        open_results_action = QAction("Open Results File", self)
-        open_results_action.triggered.connect(self._open_results_file)
-        file_menu.addAction(open_results_action)
-
-        file_menu.addSeparator()
-
-        exit_action = QAction("Exit", self)
-        exit_action.triggered.connect(self.close)
-        file_menu.addAction(exit_action)
-
-        # Run menu
-        run_menu = menubar.addMenu("Run")
-
-        solve_action = QAction("Run Solver", self)
-        solve_action.triggered.connect(self._run_solver)
-        solve_action.setShortcut("F5")
-        run_menu.addAction(solve_action)
-
-        stop_action = QAction("Stop Solver", self)
-        stop_action.triggered.connect(self._stop_solver)
-        stop_action.setShortcut("Ctrl+C")
-        run_menu.addAction(stop_action)
-
-        # View menu
-        view_menu = menubar.addMenu("View")
-
-        dashboard_action = QAction("Dashboard", self)
-        dashboard_action.triggered.connect(self._show_dashboard)
-        view_menu.addAction(dashboard_action)
-
-    def _setup_status_bar(self):
-        """Set up the status bar with progress bar"""
-        self.status_bar = self.statusBar()
-        self.status_bar.showMessage("Ready")
-
-        # Add progress bar to status bar
-        self.progress_bar = QProgressBar()
-        self.progress_bar.setVisible(False)
-        self.progress_bar.setMaximumWidth(300)
-        self.progress_bar.setMinimumWidth(200)
-        self.status_bar.addPermanentWidget(self.progress_bar)
+        # Auto-load last opened files
+        self._auto_load_last_files()
 
     def show_progress_bar(self, maximum=100):
         """Show and initialize the progress bar"""
