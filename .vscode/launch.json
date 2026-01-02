@@ -3,16 +3,13 @@
     "configurations": [
         {
             "name": "Python: MessageIX Data Manager",
-            "type": "python",
+            "type": "debugpy",
             "request": "launch",
-            "program": "${workspaceFolder}/src/main.py",
-            "console": "integratedTerminal",
+            "program": "main.py",
+            "console": "internalConsole",
             "justMyCode": true,
-            "python": "${workspaceFolder}/env/Scripts/python.exe",
-            "cwd": "${workspaceFolder}",
-            "env": {
-                "PYTHONPATH": "${workspaceFolder}/src"
-            }
+            "pythonPath": "${workspaceFolder}/env/Scripts/python.exe",
+            "cwd": "${workspaceFolder}/src"
         }
     ]
 }
