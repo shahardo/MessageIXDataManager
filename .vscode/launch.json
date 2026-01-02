@@ -5,11 +5,11 @@
             "name": "Python: MessageIX Data Manager",
             "type": "debugpy",
             "request": "launch",
-            "program": "main.py",
+            "program": "src/main.py",
             "console": "internalConsole",
             "justMyCode": true,
             "pythonPath": "${workspaceFolder}/env/Scripts/python.exe",
-            "cwd": "${workspaceFolder}/src"
+            "cwd": "${workspaceFolder}/"
         }
     ]
 }

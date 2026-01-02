@@ -13,7 +13,7 @@ import os
 class SQLiteHandler(logging.Handler):
     """Custom logging handler that writes to SQLite database"""
 
-    def __init__(self, db_path: str = "logs.db"):
+    def __init__(self, db_path: str = "db/logs.db"):
         super().__init__()
         self.db_path = db_path
         self._setup_database()
@@ -77,7 +77,7 @@ class SQLiteHandler(logging.Handler):
 class LoggingManager:
     """Centralized logging manager for the application"""
 
-    def __init__(self, log_file: str = "messageix_data_manager.log", db_file: str = "logs.db"):
+    def __init__(self, log_file: str = "messageix_data_manager.log", db_file: str = "db/logs.db"):
         self.log_file = log_file
         self.db_file = db_file
         self.logger = None
