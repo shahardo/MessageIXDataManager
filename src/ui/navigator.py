@@ -52,11 +52,9 @@ class ProjectNavigator(QTreeWidget):
         # Add some example items (these would be loaded from config)
         example_input = QTreeWidgetItem(inputs_item)
         example_input.setText(0, "No input files loaded")
-        example_input.setIcon(0, self.style().standardIcon(self.style().SP_FileIcon))
 
         example_result = QTreeWidgetItem(results_item)
         example_result.setText(0, "No result files loaded")
-        example_result.setIcon(0, self.style().standardIcon(self.style().SP_FileIcon))
 
         # Expand top-level items
         inputs_item.setExpanded(True)
@@ -87,7 +85,6 @@ class ProjectNavigator(QTreeWidget):
                 if not files_list:
                     no_files = QTreeWidgetItem(item)
                     no_files.setText(0, "No input files loaded")
-                    no_files.setIcon(0, self.style().standardIcon(self.style().SP_FileIcon))
                 else:
                     for file_path in files_list:
                         file_item = QTreeWidgetItem(item)
@@ -113,7 +110,6 @@ class ProjectNavigator(QTreeWidget):
                 if not files_list:
                     no_files = QTreeWidgetItem(item)
                     no_files.setText(0, "No result files loaded")
-                    no_files.setIcon(0, self.style().standardIcon(self.style().SP_FileIcon))
                 else:
                     for file_path in files_list:
                         file_item = QTreeWidgetItem(item)
