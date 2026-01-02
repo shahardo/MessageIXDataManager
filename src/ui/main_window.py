@@ -8,10 +8,15 @@ from PyQt5.QtWidgets import (
     QStatusBar, QMenuBar, QMenu, QAction, QFileDialog, QMessageBox, QTreeWidgetItem, QLabel, QProgressBar,
     QPushButton, QComboBox, QGroupBox, QFrame, QCheckBox
 )
-from PyQt5.QtCore import Qt, QSettings
+from PyQt5.QtCore import Qt, QSettings, QUrl
 from PyQt5.QtGui import QIcon, QFont
+from PyQt5.QtWebEngineWidgets import QWebEngineView, QWebEngineSettings
 import os
 import pandas as pd
+import plotly.graph_objects as go
+import plotly.io as pio
+import tempfile
+import threading
 
 from .navigator import ProjectNavigator
 from .dashboard import ResultsDashboard
@@ -98,7 +103,15 @@ class MainWindow(QMainWindow):
         # Content splitter (vertical)
         content_splitter = QSplitter(Qt.Vertical)
 
-        # Top: Parameter table with title and controls
+        # Top: Data container with horizontal splitter (table + chart)
+        data_container = QWidget()
+        data_layout = QVBoxLayout(data_container)
+        data_layout.setContentsMargins(0, 0, 0, 0)
+
+        # Create horizontal splitter for table and graph containers
+        data_splitter = QSplitter(Qt.Horizontal)
+
+        # Left side: Table container (title, filters, table)
         table_container = QWidget()
         table_layout = QVBoxLayout(table_container)
         table_layout.setContentsMargins(0, 0, 0, 0)
@@ -166,6 +179,7 @@ class MainWindow(QMainWindow):
 
         table_layout.addLayout(title_layout)
 
+        # Table
         self.param_table = QTableWidget()
         self.param_table.setAlternatingRowColors(True)
         # Reduce row height for more compact display
@@ -183,7 +197,34 @@ class MainWindow(QMainWindow):
         """)
         table_layout.addWidget(self.param_table)
 
-        content_splitter.addWidget(table_container)
+        data_splitter.addWidget(table_container)
+
+        # Right side: Graph container (chart with future controls)
+        graph_container = QWidget()
+        graph_layout = QVBoxLayout(graph_container)
+        graph_layout.setContentsMargins(0, 0, 0, 0)
+
+        # Chart view
+        from PyQt5.QtWebEngineWidgets import QWebEngineView
+        self.param_chart = QWebEngineView()
+        self.param_chart.setMinimumWidth(300)
+
+        # Enable JavaScript for chart rendering
+        from PyQt5.QtWebEngineWidgets import QWebEngineSettings
+        chart_settings = self.param_chart.settings()
+        chart_settings.setAttribute(QWebEngineSettings.JavascriptEnabled, True)
+        chart_settings.setAttribute(QWebEngineSettings.LocalContentCanAccessRemoteUrls, True)
+
+        graph_layout.addWidget(self.param_chart)
+
+        data_splitter.addWidget(graph_container)
+
+        # Set initial splitter proportions (table ~60%, graph ~40%)
+        data_splitter.setSizes([600, 400])
+
+        data_layout.addWidget(data_splitter)
+
+        content_splitter.addWidget(data_container)
 
         # Bottom: Console/Dashboard area
         self.console = QTextEdit()
@@ -586,6 +627,7 @@ class MainWindow(QMainWindow):
             self.param_title.setStyleSheet("font-size: 12px; color: #333; padding: 5px; background-color: #f0f0f0;")
             self.param_table.setRowCount(0)
             self.param_table.setColumnCount(0)
+            self._show_chart_placeholder()
             return
 
         # Get parameter/result name
@@ -751,6 +793,17 @@ class MainWindow(QMainWindow):
         dims_info = f", dims: {len(parameter.metadata.get('dims', []))}" if parameter.metadata.get('dims') else ""
         display_mode_info = f" ({self.table_display_mode} view)"
         self.status_bar.showMessage(f"Parameter: {parameter.name} ({len(display_df)} rows{dims_info}){display_mode_info}")
+
+        # Update the chart with pivoted data (always show advanced view for chart)
+        chart_filters = {}
+        for col, selector in self.property_selectors.items():
+            selected_value = selector.currentText()
+            if selected_value != "All":
+                chart_filters[col] = selected_value
+
+        # Always transform to advanced view for chart
+        chart_df = self._transform_to_advanced_view(df, chart_filters, is_results=False)
+        self._update_parameter_chart(chart_df, parameter.name)
 
         # Update console with parameter info
         self._append_to_console_with_scroll(f"Displayed parameter: {parameter.name} ({self.table_display_mode} view)")
@@ -921,6 +974,17 @@ class MainWindow(QMainWindow):
         dims_info = f", dims: {len(result.metadata.get('dims', []))}" if result.metadata.get('dims') else ""
         display_mode_info = f" ({self.table_display_mode} view)"
         self.status_bar.showMessage(f"Result: {result.name} ({len(display_df)} rows{dims_info}){display_mode_info}")
+
+        # Update the chart with pivoted data (always show advanced view for chart)
+        chart_filters = {}
+        for col, selector in self.property_selectors.items():
+            selected_value = selector.currentText()
+            if selected_value != "All":
+                chart_filters[col] = selected_value
+
+        # Always transform to advanced view for chart
+        chart_df = self._transform_to_advanced_view(df, chart_filters, is_results=True)
+        self._update_parameter_chart(chart_df, result.name)
 
         # Update console with result info
         self._append_to_console_with_scroll(f"Displayed result: {result.name} ({self.table_display_mode} view)")
@@ -1411,6 +1475,161 @@ class MainWindow(QMainWindow):
                 if data:
                     self._display_result_data(data)
 
+    def _update_parameter_chart(self, df: pd.DataFrame, parameter_name: str):
+        """Update the parameter chart with bar chart data from pivoted DataFrame"""
+        try:
+            if df.empty or df.shape[1] == 0:
+                self._show_chart_placeholder("No data available for chart")
+                return
+
+            # Create bar chart from the pivoted data
+            fig = go.Figure()
+
+            # Get years from index (should be years in advanced view)
+            if hasattr(df.index, 'name') and df.index.name == 'year':
+                years = df.index.tolist()
+            else:
+                # Fallback: try to extract years from first column if it's year-like
+                years = df.index.tolist()
+
+            # Add bars for each column (technology/commodity/etc.)
+            for col_idx, col_name in enumerate(df.columns):
+                values = df[col_name].fillna(0).tolist()
+
+                fig.add_trace(go.Bar(
+                    x=years,
+                    y=values,
+                    name=str(col_name),
+                    hovertemplate=f'{col_name}<br>Year: %{{x}}<br>Value: %{{y:.2f}}<extra></extra>'
+                ))
+
+            # Update layout
+            fig.update_layout(
+                title=f"{parameter_name} - Data Overview",
+                xaxis_title="Year",
+                yaxis_title="Value",
+                barmode='group',  # Grouped bars
+                template='plotly_white',
+                showlegend=True,
+                legend=dict(
+                    orientation="h",
+                    yanchor="bottom",
+                    y=1.02,
+                    xanchor="right",
+                    x=1
+                )
+            )
+
+            # Update axes
+            fig.update_xaxes(tickmode='linear')
+            fig.update_yaxes(automargin=True)
+
+            # Render the chart
+            self._render_chart_to_view(fig, self.param_chart, f"{parameter_name} Chart")
+
+        except Exception as e:
+            self._show_chart_placeholder(f"Error creating chart: {str(e)}")
+
+    def _render_chart_to_view(self, fig, chart_view: QWebEngineView, title: str):
+        """Render a Plotly figure to a QWebEngineView"""
+        try:
+            # Save to temporary HTML file
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.html', delete=False, encoding='utf-8') as f:
+                # Simple configuration
+                config = {
+                    'displayModeBar': True,
+                    'displaylogo': False,
+                    'responsive': True,
+                    'modeBarButtonsToRemove': ['pan2d', 'select2d', 'lasso2d', 'autoScale2d']
+                }
+
+                # Generate HTML content
+                html_content = pio.to_html(
+                    fig,
+                    full_html=False,
+                    include_plotlyjs=False,
+                    config=config,
+                    div_id='parameter-chart'
+                )
+
+                # Create complete HTML structure
+                plotly_js_url = "https://cdn.plot.ly/plotly-2.27.0.min.js"
+                complete_html = f"""
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <meta charset="utf-8">
+                    <title>{title}</title>
+                    <script src="{plotly_js_url}"></script>
+                    <style>
+                        body {{
+                            margin: 0;
+                            padding: 5px;
+                            font-family: Arial, sans-serif;
+                            overflow: hidden;
+                        }}
+                        #parameter-chart {{
+                            width: 100%;
+                            height: 100vh;
+                        }}
+                    </style>
+                </head>
+                <body>
+                    {html_content}
+                </body>
+                </html>
+                """
+
+                f.write(complete_html)
+                temp_file = f.name
+
+            # Load in web view
+            chart_view.setUrl(QUrl.fromLocalFile(temp_file))
+
+            # Schedule cleanup
+            def cleanup():
+                import time
+                time.sleep(2)  # Wait for chart to load
+                try:
+                    os.unlink(temp_file)
+                except:
+                    pass  # Ignore cleanup errors
+
+            threading.Thread(target=cleanup, daemon=True).start()
+
+        except Exception as e:
+            self._show_chart_placeholder(f"Error rendering chart: {str(e)}")
+
+    def _show_chart_placeholder(self, message: str = "Select a parameter to view chart"):
+        """Show placeholder in chart view when no data is available"""
+        html = f"""
+        <html>
+        <body style="display: flex; justify-content: center; align-items: center; height: 100vh; font-family: Arial, sans-serif; background-color: #f5f5f5;">
+            <div style="text-align: center; color: #666; padding: 20px;">
+                <h4>{message}</h4>
+            </div>
+        </body>
+        </html>
+        """
+
+        # Save to temporary file
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.html', delete=False, encoding='utf-8') as f:
+            f.write(html)
+            temp_file = f.name
+
+        self.param_chart.setUrl(QUrl.fromLocalFile(temp_file))
+
+        # Cleanup
+        def cleanup():
+            import time
+            time.sleep(1)
+            try:
+                os.unlink(temp_file)
+            except:
+                pass
+
+        threading.Thread(target=cleanup, daemon=True).start()
+
     def _show_dashboard(self):
         """Show results dashboard"""
         try:
@@ -1448,6 +1667,7 @@ class MainWindow(QMainWindow):
             # Clear the table and reset selectors
             self.param_table.setRowCount(0)
             self.param_table.setColumnCount(0)
+            self._show_chart_placeholder()
             # Reset display mode and hide selectors
             self.table_display_mode = "raw"
             self.view_toggle_button.setChecked(False)
@@ -1473,6 +1693,7 @@ class MainWindow(QMainWindow):
             # Clear the table and reset selectors
             self.param_table.setRowCount(0)
             self.param_table.setColumnCount(0)
+            self._show_chart_placeholder()
             # Reset display mode and hide selectors
             self.table_display_mode = "raw"
             self.view_toggle_button.setChecked(False)
