@@ -76,6 +76,7 @@ class MainWindow(QMainWindow):
         # Top: Project navigator (files tree)
         self.navigator = ProjectNavigator()
         self.navigator.file_selected.connect(self._on_file_selected)
+        self.navigator.load_files_requested.connect(self._on_load_files_requested)
         left_splitter.addWidget(self.navigator)
 
         # Bottom: Parameter tree
@@ -1428,6 +1429,13 @@ class MainWindow(QMainWindow):
             self._switch_to_input_view()
         elif file_type == "results":
             self._switch_to_results_view()
+
+    def _on_load_files_requested(self, file_type: str):
+        """Handle request to load files when 'no files loaded' is clicked"""
+        if file_type == "input":
+            self._open_input_file()
+        elif file_type == "results":
+            self._open_results_file()
 
     def _switch_to_input_view(self):
         """Switch to input parameters view"""

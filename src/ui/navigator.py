@@ -13,6 +13,9 @@ class ProjectNavigator(QTreeWidget):
     # Signal emitted when a file is selected (file_path, file_type)
     file_selected = pyqtSignal(str, str)
 
+    # Signal emitted when "no files loaded" is clicked (file_type: "input" or "results")
+    load_files_requested = pyqtSignal(str)
+
     def __init__(self):
         super().__init__()
         self.setHeaderLabel("Project Navigator")
@@ -52,9 +55,11 @@ class ProjectNavigator(QTreeWidget):
         # Add some example items (these would be loaded from config)
         example_input = QTreeWidgetItem(inputs_item)
         example_input.setText(0, "No input files loaded")
+        example_input.setData(0, Qt.UserRole, ("no_files", "input"))  # Mark as clickable
 
         example_result = QTreeWidgetItem(results_item)
         example_result.setText(0, "No result files loaded")
+        example_result.setData(0, Qt.UserRole, ("no_files", "results"))  # Mark as clickable
 
         # Expand top-level items
         inputs_item.setExpanded(True)
@@ -85,6 +90,7 @@ class ProjectNavigator(QTreeWidget):
                 if not files_list:
                     no_files = QTreeWidgetItem(item)
                     no_files.setText(0, "No input files loaded")
+                    no_files.setData(0, Qt.UserRole, ("no_files", "input"))  # Mark as clickable
                 else:
                     for file_path in files_list:
                         file_item = QTreeWidgetItem(item)
@@ -110,6 +116,7 @@ class ProjectNavigator(QTreeWidget):
                 if not files_list:
                     no_files = QTreeWidgetItem(item)
                     no_files.setText(0, "No result files loaded")
+                    no_files.setData(0, Qt.UserRole, ("no_files", "results"))  # Mark as clickable
                 else:
                     for file_path in files_list:
                         file_item = QTreeWidgetItem(item)
@@ -128,6 +135,15 @@ class ProjectNavigator(QTreeWidget):
             return
 
         selected_item = selected_items[0]
+
+        # Check if this is a "no files loaded" item
+        item_text = selected_item.text(0)
+        if item_text == "No input files loaded":
+            self.load_files_requested.emit("input")
+            return
+        elif item_text == "No result files loaded":
+            self.load_files_requested.emit("results")
+            return
 
         # Check if this is a file item (has user data)
         file_data = selected_item.data(0, Qt.UserRole)
