@@ -1129,7 +1129,7 @@ class MainWindow(QMainWindow):
                     # Check if column has any non-NaN, non-zero values
                     if hasattr(col_data, 'notna'):
                         # For pandas Series/DataFrame
-                        has_data = col_data.notna().any() and (col_data != 0).any()
+                        has_data = (col_data.notna() & (col_data != 0)).any(axis=None)
                     else:
                         # Fallback for other data types
                         has_data = any(val is not None and val != 0 for val in col_data.values.flatten())
@@ -1138,6 +1138,22 @@ class MainWindow(QMainWindow):
                 columns_to_keep = non_empty_columns
 
             pivot_df = pivot_df[columns_to_keep]
+
+            # Flatten MultiIndex columns if they exist
+            if isinstance(pivot_df.columns, pd.MultiIndex):
+                # Create clean column names by joining the levels, excluding units
+                new_columns = []
+                for col_tuple in pivot_df.columns:
+                    # Filter out None/NaN values, empty strings, and units-like values
+                    clean_parts = []
+                    for part in col_tuple:
+                        if part is not None and str(part).strip() and not str(part).lower().startswith(('unit', 'units')):
+                            clean_parts.append(str(part))
+                    if clean_parts:
+                        new_columns.append('_'.join(clean_parts))
+                    else:
+                        new_columns.append('_'.join(str(part) for part in col_tuple if part is not None))
+                pivot_df.columns = new_columns
 
         else:
             # Original pivot logic for data that needs transformation
@@ -1229,14 +1245,14 @@ class MainWindow(QMainWindow):
                 if is_results:
                     # For results: only hide columns that are completely NaN or all zeros
                     if hasattr(col_data, 'notna'):
-                        has_data = not col_data.isna().all()  # At least one non-NaN value
+                        has_data = not col_data.isna().all(axis=None)  # At least one non-NaN value
                     else:
                         has_data = any(val is not None for val in col_data.values.flatten())
                 else:
                     # For input: hide columns that are entirely empty (all NaN or all zeros)
                     if hasattr(col_data, 'isna'):
                         # Hide column if all values are NaN or zero
-                        all_empty = (col_data.isna() | (col_data == 0)).all()
+                        all_empty = (col_data.isna() | (col_data == 0)).all(axis=None)
                         has_data = not all_empty
                     else:
                         # Fallback for non-pandas data
@@ -1372,7 +1388,11 @@ class MainWindow(QMainWindow):
 
             # Add bars for each column (technology/commodity/etc.)
             for col_idx, col_name in enumerate(df.columns):
-                values = df[col_name].fillna(0).tolist()
+                col_data = df[col_name]
+                if isinstance(col_data, pd.DataFrame):
+                    # Handle duplicate column names by taking the first column
+                    col_data = col_data.iloc[:, 0]
+                values = col_data.fillna(0).tolist()
 
                 fig.add_trace(go.Bar(
                     x=years,
