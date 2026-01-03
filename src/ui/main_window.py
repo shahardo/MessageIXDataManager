@@ -1074,7 +1074,7 @@ class MainWindow(QMainWindow):
                              'mode', 'level', 'grade']:
                 # These become filter selectors (popup menus)
                 filter_columns.append(col)
-            elif col_lower in ['commodity', 'technology', 'type']:
+            elif col_lower in ['commodity', 'technology', 'type', 'relation']:
                 # These become columns in advanced view
                 property_columns.append(col)
             # Ignore units columns and other non-relevant columns
