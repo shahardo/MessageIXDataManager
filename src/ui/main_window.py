@@ -1069,7 +1069,7 @@ class MainWindow(QMainWindow):
             col_lower = col.lower()
             if col_lower in ['value', 'val']:
                 value_column = col
-            elif col_lower in ['year_vtg', 'year_act', 'year_rel', 'year']:
+            elif col_lower in ['year_vtg', 'year_act', 'year_rel', 'year', 'type_year', 'period', 'time']:
                 year_columns.append(col)
             elif col_lower in ['node_loc', 'node_rel', 'node_dest', 'node_origin', 'region',
                              'mode', 'level', 'grade']:
@@ -1355,11 +1355,20 @@ class MainWindow(QMainWindow):
             fig = go.Figure()
 
             # Get years from index (should be years in advanced view)
-            if hasattr(df.index, 'name') and df.index.name == 'year':
-                years = df.index.tolist()
-            else:
-                # Fallback: try to extract years from first column if it's year-like
-                years = df.index.tolist()
+            years = df.index.tolist()
+            
+            # Check if index is sequential integers starting from 1, and if so, map to actual years
+            if (len(years) > 0 and all(isinstance(y, (int, float)) and y == int(y) for y in years) and 
+                sorted(years) == list(range(1, len(years) + 1))):
+                # Try to get actual years from scenario
+                try:
+                    scenario = self.input_manager.get_current_scenario()
+                    if scenario and 'year' in scenario.sets:
+                        year_set = sorted(scenario.sets['year'])
+                        if len(year_set) >= len(years):
+                            years = year_set[:len(years)]
+                except:
+                    pass  # Keep original years if mapping fails
 
             # Add bars for each column (technology/commodity/etc.)
             for col_idx, col_name in enumerate(df.columns):
