@@ -671,7 +671,7 @@ class MainWindow(QMainWindow):
                 chart_filters[col] = selected_value
 
         # Always transform to advanced view for chart
-        chart_df = self._transform_to_advanced_view(df, chart_filters, is_results=False)
+        chart_df = self._transform_to_advanced_view(df, chart_filters, is_results=False, hide_empty=True)
         self._update_parameter_chart(chart_df, parameter.name)
 
         # Update console with parameter info
@@ -852,7 +852,7 @@ class MainWindow(QMainWindow):
                 chart_filters[col] = selected_value
 
         # Always transform to advanced view for chart
-        chart_df = self._transform_to_advanced_view(df, chart_filters, is_results=True)
+        chart_df = self._transform_to_advanced_view(df, chart_filters, is_results=True, hide_empty=True)
         self._update_parameter_chart(chart_df, result.name)
 
         # Update console with result info
@@ -1035,7 +1035,7 @@ class MainWindow(QMainWindow):
                 if data:
                     self._display_result_data(data)
 
-    def _transform_to_advanced_view(self, df: pd.DataFrame, current_filters: dict = None, is_results: bool = False) -> pd.DataFrame:
+    def _transform_to_advanced_view(self, df: pd.DataFrame, current_filters: dict = None, is_results: bool = False, hide_empty: bool = None) -> pd.DataFrame:
         """
         Transform parameter data into 2D advanced view format.
 
@@ -1054,9 +1054,8 @@ class MainWindow(QMainWindow):
         if df.empty:
             return df
 
-        # Default filters if none provided
-        if current_filters is None:
-            current_filters = {}
+        if hide_empty is None:
+            hide_empty = self.hide_empty_columns
 
         # Identify year columns and property columns
         year_columns = []
@@ -1090,6 +1089,22 @@ class MainWindow(QMainWindow):
             if filter_value and filter_value != "All" and filter_col in filtered_df.columns:
                 filtered_df = filtered_df[filtered_df[filter_col] == filter_value]
 
+        # Clean year columns that may contain tuple strings
+        def clean_year(x):
+            if isinstance(x, str) and x.startswith('(') and x.endswith(')'):
+                try:
+                    # Parse strings like "('1990', 'year')" to extract the year
+                    parsed = eval(x)
+                    if isinstance(parsed, tuple) and len(parsed) >= 1:
+                        return parsed[0]
+                except:
+                    pass
+            return x
+
+        for col in year_columns:
+            if col in filtered_df.columns:
+                filtered_df[col] = filtered_df[col].apply(clean_year)
+
         # Check if data is already in 2D format (typical for some results tables)
         # vs data that needs pivoting (typical for input files)
         # Input files are usually in long format with many rows per parameter
@@ -1122,7 +1137,7 @@ class MainWindow(QMainWindow):
             columns_to_keep = [col for col in pivot_df.columns if col not in year_columns]
 
             # Filter out empty columns if option is enabled
-            if self.hide_empty_columns:
+            if hide_empty:
                 non_empty_columns = []
                 for col in columns_to_keep:
                     col_data = pivot_df[col]
@@ -1163,15 +1178,23 @@ class MainWindow(QMainWindow):
                 pivot_df = filtered_df.copy()
             else:
                 # Determine index columns (years)
-                index_cols = year_columns.copy()
-
-                # If both year_vtg and year_act exist, create combined year column
                 if 'year_vtg' in year_columns and 'year_act' in year_columns:
-                    # Create a combined year identifier
+                    # Create combined year identifier for vintage-actual year pairs
                     filtered_df['year_combined'] = filtered_df.apply(
                         lambda row: f"{row['year_vtg']}_{row['year_act']}", axis=1
                     )
                     index_cols = ['year_combined']
+                elif year_columns:
+                    # Choose the best single year column for indexing
+                    priority = ['year', 'type_year', 'year_vtg', 'year_act', 'year_rel', 'period', 'time']
+                    for p in priority:
+                        if p in year_columns:
+                            index_cols = [p]
+                            break
+                    else:
+                        index_cols = [year_columns[0]]
+                else:
+                    index_cols = []
 
                 # Determine columns for pivoting (exclude filter columns and year columns)
                 pivot_cols = [col for col in property_columns if col in filtered_df.columns and col not in filter_columns and col not in year_columns]
@@ -1238,7 +1261,7 @@ class MainWindow(QMainWindow):
 
         # Filter out empty columns if option is enabled
         # For results data, be more conservative about what constitutes "empty"
-        if self.hide_empty_columns and not pivot_df.empty:
+        if hide_empty and not pivot_df.empty:
             non_empty_columns = []
             for col in pivot_df.columns:
                 col_data = pivot_df[col]
@@ -1411,11 +1434,12 @@ class MainWindow(QMainWindow):
                 showlegend=True,
                 legend=dict(
                     orientation="h",
-                    yanchor="bottom",
-                    y=1.02,
-                    xanchor="right",
-                    x=1
-                )
+                    yanchor="top",
+                    y=-0.3,
+                    xanchor="center",
+                    x=0.5
+                ),
+                margin=dict(b=120)  # Add bottom margin for legend space
             )
 
             # Update axes
@@ -1468,11 +1492,11 @@ class MainWindow(QMainWindow):
                         }}
                         #parameter-chart {{
                             width: 100%;
-                            height: 100vh;
+                            height: 100%;
                         }}
                     </style>
                 </head>
-                <body>
+                <body style="height: 100%; margin: 0;">
                     {html_content}
                 </body>
                 </html>
