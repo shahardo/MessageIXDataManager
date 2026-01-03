@@ -22,15 +22,27 @@ class ResultsDashboard(QWidget):
         self.current_result = None
 
         # Load UI from .ui file
-        uic.loadUi('src/ui/dashboard.ui', self)
+        try:
+            uic.loadUi('c:/Users/owner/code/MessageIXDataManager/src/ui/dashboard.ui', self)
+            print("UI loaded successfully")
+        except Exception as e:
+            print(f"Error loading UI: {e}")
+            return
 
         # Connect signals
         self.result_combo.currentTextChanged.connect(self._on_result_changed)
-        self.chart_type_combo.currentTextChanged.connect(self._on_chart_type_changed)
+        self.simple_bar_btn.clicked.connect(lambda: self._on_chart_type_changed('bar'))
+        self.stacked_bar_btn.clicked.connect(lambda: self._on_chart_type_changed('stacked_bar'))
+        self.line_chart_btn.clicked.connect(lambda: self._on_chart_type_changed('line'))
         self.refresh_btn.clicked.connect(self._refresh_chart)
 
-        # Set up chart type combo items
-        self.chart_type_combo.addItems(['line', 'bar', 'area'])
+        # Make buttons checkable
+        self.simple_bar_btn.setCheckable(True)
+        self.stacked_bar_btn.setCheckable(True)
+        self.line_chart_btn.setCheckable(True)
+
+        # Set default selection
+        self.line_chart_btn.setChecked(True)
 
         # Enable JavaScript and other web features for chart view
         from PyQt5.QtWebEngineWidgets import QWebEngineSettings
@@ -67,6 +79,10 @@ class ResultsDashboard(QWidget):
         """Handle chart type selection change"""
         if chart_type:
             self.current_chart_type = chart_type
+            # Update button states
+            self.simple_bar_btn.setChecked(chart_type == 'bar')
+            self.stacked_bar_btn.setChecked(chart_type == 'stacked_bar')
+            self.line_chart_btn.setChecked(chart_type == 'line')
             self._update_chart()
 
     def _refresh_chart(self):
@@ -110,6 +126,16 @@ class ResultsDashboard(QWidget):
                         y=trace_data['y'],
                         name=trace_data.get('name', 'Data')
                     ))
+
+            elif self.current_chart_type == 'stacked_bar':
+                fig = go.Figure()
+                for trace_data in chart_data['data']:
+                    fig.add_trace(go.Bar(
+                        x=trace_data['x'],
+                        y=trace_data['y'],
+                        name=trace_data.get('name', 'Data')
+                    ))
+                fig.update_layout(barmode='stack')
 
             elif self.current_chart_type == 'area':
                 fig = go.Figure()

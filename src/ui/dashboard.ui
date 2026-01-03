@@ -27,14 +27,25 @@
       <widget class="QComboBox" name="result_combo"/>
      </item>
      <item>
-      <widget class="QLabel" name="chartTypeLabel">
+      <widget class="QPushButton" name="simple_bar_btn">
        <property name="text">
-        <string>Chart Type:</string>
+        <string>Simple Bar</string>
        </property>
       </widget>
      </item>
      <item>
-      <widget class="QComboBox" name="chart_type_combo"/>
+      <widget class="QPushButton" name="stacked_bar_btn">
+       <property name="text">
+        <string>Stacked Bar</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="line_chart_btn">
+       <property name="text">
+        <string>Line Chart</string>
+       </property>
+      </widget>
      </item>
      <item>
       <widget class="QPushButton" name="refresh_btn">

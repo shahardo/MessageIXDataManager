@@ -62,6 +62,27 @@ class MainWindow(QMainWindow):
         # Initialize dashboard
         self.dashboard = ResultsDashboard(self.results_analyzer)
 
+        # Chart type for main window
+        self.current_chart_type = 'bar'  # 'bar', 'stacked_bar', 'line'
+
+        # Connect chart type buttons
+        self.simple_bar_btn.clicked.connect(lambda: self._on_chart_type_changed('bar'))
+        self.stacked_bar_btn.clicked.connect(lambda: self._on_chart_type_changed('stacked_bar'))
+        self.line_chart_btn.clicked.connect(lambda: self._on_chart_type_changed('line'))
+
+        # Make buttons checkable
+        self.simple_bar_btn.setCheckable(True)
+        self.stacked_bar_btn.setCheckable(True)
+        self.line_chart_btn.setCheckable(True)
+
+        # Set default selection
+        self.simple_bar_btn.setChecked(True)
+
+        # View state
+        self.current_view = "input"  # "input" or "results"
+        self.table_display_mode = "raw"  # "raw" or "advanced"
+        self.hide_empty_columns = False  # Whether to hide empty columns in advanced view
+
         # View state
         self.current_view = "input"  # "input" or "results"
         self.table_display_mode = "raw"  # "raw" or "advanced"
@@ -1392,6 +1413,34 @@ class MainWindow(QMainWindow):
                 if data:
                     self._display_result_data(data)
 
+    def _on_chart_type_changed(self, chart_type: str):
+        """Handle chart type selection change"""
+        if chart_type:
+            self.current_chart_type = chart_type
+            # Update button states
+            self.simple_bar_btn.setChecked(chart_type == 'bar')
+            self.stacked_bar_btn.setChecked(chart_type == 'stacked_bar')
+            self.line_chart_btn.setChecked(chart_type == 'line')
+            # Refresh the current chart
+            self._refresh_current_chart()
+
+    def _refresh_current_chart(self):
+        """Refresh the currently displayed chart"""
+        if self.current_view == "input":
+            selected_items = self.param_tree.selectedItems()
+            if selected_items and selected_items[0].parent() is not None:
+                item_name = selected_items[0].text(0)
+                data = self.input_manager.get_parameter(item_name)
+                if data:
+                    self._display_parameter_data(data)
+        else:  # results view
+            selected_items = self.param_tree.selectedItems()
+            if selected_items and selected_items[0].parent() is not None:
+                item_name = selected_items[0].text(0)
+                data = self.results_analyzer.get_result_data(item_name)
+                if data:
+                    self._display_result_data(data)
+
     def _update_parameter_chart(self, df: pd.DataFrame, parameter_name: str):
         """Update the parameter chart with bar chart data from pivoted DataFrame"""
         try:
@@ -1399,7 +1448,7 @@ class MainWindow(QMainWindow):
                 self._show_chart_placeholder("No data available for chart")
                 return
 
-            # Create bar chart from the pivoted data
+            # Create chart based on current chart type
             fig = go.Figure()
 
             # Get years from index (should be years in advanced view)
@@ -1418,7 +1467,7 @@ class MainWindow(QMainWindow):
                 except:
                     pass  # Keep original years if mapping fails
 
-            # Add bars for each column (technology/commodity/etc.)
+            # Add traces based on chart type
             for col_idx, col_name in enumerate(df.columns):
                 col_data = df[col_name]
                 if isinstance(col_data, pd.DataFrame):
@@ -1426,30 +1475,45 @@ class MainWindow(QMainWindow):
                     col_data = col_data.iloc[:, 0]
                 values = col_data.fillna(0).tolist()
 
-                fig.add_trace(go.Bar(
-                    x=years,
-                    y=values,
-                    name=str(col_name),
-                    hovertemplate=f'{col_name}<br>Year: %{{x}}<br>Value: %{{y:.2f}}<extra></extra>'
-                ))
+                if self.current_chart_type == 'line':
+                    fig.add_trace(go.Scatter(
+                        x=years,
+                        y=values,
+                        mode='lines+markers',
+                        name=str(col_name),
+                        hovertemplate=f'{col_name}<br>Year: %{{x}}<br>Value: %{{y:.2f}}<extra></extra>'
+                    ))
+                else:  # bar or stacked_bar
+                    fig.add_trace(go.Bar(
+                        x=years,
+                        y=values,
+                        name=str(col_name),
+                        hovertemplate=f'{col_name}<br>Year: %{{x}}<br>Value: %{{y:.2f}}<extra></extra>'
+                    ))
 
-            # Update layout
-            fig.update_layout(
-                title=f"{parameter_name} - Data Overview",
-                xaxis_title="Year",
-                yaxis_title="Value",
-                barmode='group',  # Grouped bars
-                template='plotly_white',
-                showlegend=True,
-                legend=dict(
+            # Update layout based on chart type
+            layout_kwargs = {
+                'title': f"{parameter_name} - Data Overview",
+                'xaxis_title': "Year",
+                'yaxis_title': "Value",
+                'template': 'plotly_white',
+                'showlegend': True,
+                'legend': dict(
                     orientation="h",
                     yanchor="top",
                     y=-0.3,
                     xanchor="center",
                     x=0.5
                 ),
-                margin=dict(b=120)  # Add bottom margin for legend space
-            )
+                'margin': dict(b=120)  # Add bottom margin for legend space
+            }
+
+            if self.current_chart_type == 'stacked_bar':
+                layout_kwargs['barmode'] = 'stack'
+            elif self.current_chart_type == 'bar':
+                layout_kwargs['barmode'] = 'group'
+
+            fig.update_layout(**layout_kwargs)
 
             # Update axes
             fig.update_xaxes(tickmode='linear')

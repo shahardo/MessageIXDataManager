@@ -146,6 +146,44 @@
               <widget class="QWidget" name="graphContainer">
                <layout class="QVBoxLayout" name="verticalLayout_5">
                 <item>
+                 <layout class="QHBoxLayout" name="chartControlsLayout">
+                  <item>
+                   <widget class="QPushButton" name="simple_bar_btn">
+                    <property name="text">
+                     <string>Simple Bar</string>
+                    </property>
+                   </widget>
+                  </item>
+                  <item>
+                   <widget class="QPushButton" name="stacked_bar_btn">
+                    <property name="text">
+                     <string>Stacked Bar</string>
+                    </property>
+                   </widget>
+                  </item>
+                  <item>
+                   <widget class="QPushButton" name="line_chart_btn">
+                    <property name="text">
+                     <string>Line Chart</string>
+                    </property>
+                   </widget>
+                  </item>
+                  <item>
+                   <spacer name="chartControlsSpacer">
+                    <property name="orientation">
+                     <enum>Qt::Horizontal</enum>
+                    </property>
+                    <property name="sizeHint" stdset="0">
+                     <size>
+                      <width>40</width>
+                      <height>20</height>
+                     </size>
+                    </property>
+                   </spacer>
+                  </item>
+                 </layout>
+                </item>
+                <item>
                  <widget class="QWebEngineView" name="param_chart">
                   <property name="minimumSize">
                    <size>

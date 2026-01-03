@@ -252,7 +252,7 @@ class ResultsAnalyzer:
 
         Args:
             result_name: Name of the result to chart
-            chart_type: Type of chart ('line', 'bar', 'area')
+            chart_type: Type of chart ('line', 'bar', 'stacked_bar', 'area')
 
         Returns:
             Dictionary with chart data or None if not available
@@ -271,19 +271,38 @@ class ResultsAnalyzer:
             'data': []
         }
 
-        # Simple line chart preparation
+        # Simple chart preparation
         if len(df.columns) >= 2:
-            # Assume last column is the value column
-            value_col = df.columns[-1]
+            # For line charts, use index as x
             x_data = list(range(len(df)))
 
             if chart_type == 'line':
+                # Assume last column is the value column
+                value_col = df.columns[-1]
                 chart_data['data'] = [{
                     'x': x_data,
                     'y': df[value_col].fillna(0).tolist(),
                     'type': 'line',
                     'name': result_name
                 }]
+            elif chart_type in ['bar', 'stacked_bar']:
+                # For bar charts, create traces for each numeric column
+                numeric_cols = df.select_dtypes(include=['number']).columns
+                if len(numeric_cols) > 0:
+                    for col in numeric_cols:
+                        chart_data['data'].append({
+                            'x': df.index.tolist() if hasattr(df, 'index') else x_data,
+                            'y': df[col].fillna(0).tolist(),
+                            'name': str(col)
+                        })
+                else:
+                    # Fallback to last column
+                    value_col = df.columns[-1]
+                    chart_data['data'] = [{
+                        'x': x_data,
+                        'y': df[value_col].fillna(0).tolist(),
+                        'name': result_name
+                    }]
 
         return chart_data
 
