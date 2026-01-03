@@ -1071,7 +1071,7 @@ class MainWindow(QMainWindow):
             elif col_lower in ['year_vtg', 'year_act', 'year_rel', 'year', 'type_year', 'period', 'time']:
                 year_columns.append(col)
             elif col_lower in ['node_loc', 'node_rel', 'node_dest', 'node_origin', 'region',
-                             'mode', 'level', 'grade']:
+                             'mode', 'level', 'grade', 'node']:
                 # These become filter selectors (popup menus)
                 filter_columns.append(col)
             elif col_lower in ['commodity', 'technology', 'type', 'relation']:
@@ -1299,7 +1299,7 @@ class MainWindow(QMainWindow):
         for col in df.columns:
             col_lower = col.lower()
             if col_lower in ['node_loc', 'node_rel', 'node_dest', 'node_origin', 'region',
-                           'mode', 'level', 'grade']:
+                           'mode', 'level', 'grade', 'node']:
                 filter_columns.append(col)
 
         # Create selectors for filter columns
