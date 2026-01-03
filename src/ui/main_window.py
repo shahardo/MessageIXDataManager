@@ -1289,6 +1289,11 @@ class MainWindow(QMainWindow):
 
     def _setup_property_selectors(self, df: pd.DataFrame):
         """Set up property selectors for advanced view based on DataFrame columns"""
+        # Save current selections before clearing
+        current_selections = {}
+        for col_name, selector in self.property_selectors.items():
+            current_selections[col_name] = selector.currentText()
+
         # Clear existing selectors
         for selector in self.property_selectors.values():
             selector.setParent(None)
@@ -1336,6 +1341,10 @@ class MainWindow(QMainWindow):
 
             # Set default to "All"
             combo.setCurrentText("All")
+
+            # Restore previous selection if available
+            if col in current_selections and current_selections[col] in [combo.itemText(i) for i in range(combo.count())]:
+                combo.setCurrentText(current_selections[col])
 
             # Connect signal
             combo.currentTextChanged.connect(self._on_selector_changed)
