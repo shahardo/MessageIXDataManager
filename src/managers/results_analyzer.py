@@ -252,7 +252,7 @@ class ResultsAnalyzer:
 
         Args:
             result_name: Name of the result to chart
-            chart_type: Type of chart ('line', 'bar', 'stacked_bar', 'area')
+            chart_type: Type of chart ('line', 'bar', 'stacked_bar', 'stacked_area', 'area')
 
         Returns:
             Dictionary with chart data or None if not available

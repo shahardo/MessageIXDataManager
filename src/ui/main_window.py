@@ -63,17 +63,19 @@ class MainWindow(QMainWindow):
         self.dashboard = ResultsDashboard(self.results_analyzer)
 
         # Chart type for main window
-        self.current_chart_type = 'bar'  # 'bar', 'stacked_bar', 'line'
+        self.current_chart_type = 'bar'  # 'bar', 'stacked_bar', 'line', 'stacked_area'
 
         # Connect chart type buttons
         self.simple_bar_btn.clicked.connect(lambda: self._on_chart_type_changed('bar'))
         self.stacked_bar_btn.clicked.connect(lambda: self._on_chart_type_changed('stacked_bar'))
         self.line_chart_btn.clicked.connect(lambda: self._on_chart_type_changed('line'))
+        self.stacked_area_btn.clicked.connect(lambda: self._on_chart_type_changed('stacked_area'))
 
         # Make buttons checkable
         self.simple_bar_btn.setCheckable(True)
         self.stacked_bar_btn.setCheckable(True)
         self.line_chart_btn.setCheckable(True)
+        self.stacked_area_btn.setCheckable(True)
 
         # Set default selection
         self.simple_bar_btn.setChecked(True)
@@ -1421,6 +1423,7 @@ class MainWindow(QMainWindow):
             self.simple_bar_btn.setChecked(chart_type == 'bar')
             self.stacked_bar_btn.setChecked(chart_type == 'stacked_bar')
             self.line_chart_btn.setChecked(chart_type == 'line')
+            self.stacked_area_btn.setChecked(chart_type == 'stacked_area')
             # Refresh the current chart
             self._refresh_current_chart()
 
@@ -1480,6 +1483,15 @@ class MainWindow(QMainWindow):
                         x=years,
                         y=values,
                         mode='lines+markers',
+                        name=str(col_name),
+                        hovertemplate=f'{col_name}<br>Year: %{{x}}<br>Value: %{{y:.2f}}<extra></extra>'
+                    ))
+                elif self.current_chart_type == 'stacked_area':
+                    fig.add_trace(go.Scatter(
+                        x=years,
+                        y=values,
+                        mode='lines',
+                        stackgroup='one',  # This enables stacking
                         name=str(col_name),
                         hovertemplate=f'{col_name}<br>Year: %{{x}}<br>Value: %{{y:.2f}}<extra></extra>'
                     ))

@@ -137,6 +137,17 @@ class ResultsDashboard(QWidget):
                     ))
                 fig.update_layout(barmode='stack')
 
+            elif self.current_chart_type == 'stacked_area':
+                fig = go.Figure()
+                for trace_data in chart_data['data']:
+                    fig.add_trace(go.Scatter(
+                        x=trace_data['x'],
+                        y=trace_data['y'],
+                        mode='lines',
+                        stackgroup='one',  # This enables stacking
+                        name=trace_data.get('name', 'Data')
+                    ))
+
             elif self.current_chart_type == 'area':
                 fig = go.Figure()
                 for trace_data in chart_data['data']:
