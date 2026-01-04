@@ -15,8 +15,8 @@ class ResultsAnalyzer:
     """Analyzes message_ix result Excel files and prepares data for visualization"""
 
     def __init__(self):
-        self.current_results: Optional[ScenarioData] = None
-        self.loaded_file_path: Optional[str] = None
+        self.results: List[ScenarioData] = []
+        self.loaded_file_paths: List[str] = []
         self.summary_stats: Dict[str, Any] = {}
 
     def load_results_file(self, file_path: str, progress_callback: Optional[Callable[[int, str], None]] = None) -> ScenarioData:
@@ -59,12 +59,14 @@ class ResultsAnalyzer:
             if progress_callback:
                 progress_callback(80, "Calculating summary statistics...")
 
-            # Calculate summary statistics
-            self._calculate_summary_stats(results)
+            # Calculate summary statistics for all loaded results
+            combined_results = self.get_current_results()
+            if combined_results:
+                self._calculate_summary_stats(combined_results)
 
             # Store reference
-            self.current_results = results
-            self.loaded_file_path = file_path
+            self.results.append(results)
+            self.loaded_file_paths.append(file_path)
 
             if progress_callback:
                 progress_callback(100, "Results loading complete")
@@ -236,14 +238,16 @@ class ResultsAnalyzer:
 
     def get_result_data(self, result_name: str) -> Optional[Parameter]:
         """Get specific result data by name"""
-        if self.current_results:
-            return self.current_results.get_parameter(result_name)
+        results = self.get_current_results()
+        if results:
+            return results.get_parameter(result_name)
         return None
 
     def get_all_result_names(self) -> List[str]:
         """Get list of all result names"""
-        if self.current_results:
-            return self.current_results.get_parameter_names()
+        results = self.get_current_results()
+        if results:
+            return results.get_parameter_names()
         return []
 
     def prepare_chart_data(self, result_name: str, chart_type: str = 'line') -> Optional[Dict[str, Any]]:
@@ -307,5 +311,48 @@ class ResultsAnalyzer:
         return chart_data
 
     def get_current_results(self) -> Optional[ScenarioData]:
-        """Get the currently loaded results"""
-        return self.current_results
+        """Get the combined results from all loaded files"""
+        if not self.results:
+            return None
+
+        if len(self.results) == 1:
+            return self.results[0]
+
+        # Combine multiple results
+        combined = ScenarioData()
+        for result in self.results:
+            # Merge sets (avoid duplicates)
+            for set_name, set_data in result.sets.items():
+                if set_name not in combined.sets:
+                    combined.sets[set_name] = set_data.copy()
+                else:
+                    # Merge set elements - concatenate Series and drop duplicates
+                    combined.sets[set_name] = pd.concat([combined.sets[set_name], set_data]).drop_duplicates().reset_index(drop=True)
+
+            # Merge parameters (results are typically variables and equations)
+            for param_name, param in result.parameters.items():
+                if param_name not in combined.parameters:
+                    combined.parameters[param_name] = param
+                else:
+                    # Merge result data (append rows)
+                    existing_data = combined.parameters[param_name].df
+                    new_data = param.df
+                    combined.parameters[param_name].df = pd.concat([existing_data, new_data], ignore_index=True)
+
+        return combined
+
+    def get_loaded_file_paths(self) -> List[str]:
+        """Get list of all loaded file paths"""
+        return self.loaded_file_paths.copy()
+
+    def get_results_by_file_path(self, file_path: str) -> Optional[ScenarioData]:
+        """Get specific results by file path"""
+        if file_path in self.loaded_file_paths:
+            index = self.loaded_file_paths.index(file_path)
+            return self.results[index]
+        return None
+
+    def clear_results(self):
+        """Clear all loaded results"""
+        self.results.clear()
+        self.loaded_file_paths.clear()

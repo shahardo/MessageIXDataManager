@@ -55,7 +55,7 @@ class ResultsDashboard(QWidget):
 
     def update_results(self, results_available: bool = True):
         """Update dashboard when results are loaded"""
-        if results_available and self.results_analyzer.current_results:
+        if results_available and self.results_analyzer.get_current_results():
             result_names = self.results_analyzer.get_all_result_names()
             self.result_combo.clear()
             self.result_combo.addItems(result_names)

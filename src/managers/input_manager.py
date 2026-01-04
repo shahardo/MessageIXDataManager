@@ -15,8 +15,8 @@ class InputManager:
     """Manages loading and parsing of message_ix input Excel files"""
 
     def __init__(self):
-        self.current_scenario: Optional[ScenarioData] = None
-        self.loaded_file_path: Optional[str] = None
+        self.scenarios: List[ScenarioData] = []
+        self.loaded_file_paths: List[str] = []
 
     def load_excel_file(self, file_path: str, progress_callback: Optional[Callable[[int, str], None]] = None) -> ScenarioData:
         """
@@ -62,8 +62,8 @@ class InputManager:
             self._parse_parameters(wb, scenario, progress_callback)
 
             # Store reference
-            self.current_scenario = scenario
-            self.loaded_file_path = file_path
+            self.scenarios.append(scenario)
+            self.loaded_file_paths.append(file_path)
 
             if progress_callback:
                 progress_callback(100, "Loading complete")
@@ -282,19 +282,64 @@ class InputManager:
             traceback.print_exc()
 
     def get_current_scenario(self) -> Optional[ScenarioData]:
-        """Get the currently loaded scenario"""
-        return self.current_scenario
+        """Get the combined scenario from all loaded files"""
+        if not self.scenarios:
+            return None
+
+        if len(self.scenarios) == 1:
+            return self.scenarios[0]
+
+        # Combine multiple scenarios
+        combined = ScenarioData()
+        for scenario in self.scenarios:
+            # Merge sets (avoid duplicates)
+            for set_name, set_data in scenario.sets.items():
+                if set_name not in combined.sets:
+                    combined.sets[set_name] = set_data.copy()
+                else:
+                    # Merge set elements - concatenate Series and drop duplicates
+                    combined.sets[set_name] = pd.concat([combined.sets[set_name], set_data]).drop_duplicates().reset_index(drop=True)
+
+            # Merge parameters
+            for param_name, param in scenario.parameters.items():
+                if param_name not in combined.parameters:
+                    combined.parameters[param_name] = param
+                else:
+                    # Merge parameter data (append rows)
+                    existing_data = combined.parameters[param_name].df
+                    new_data = param.df
+                    combined.parameters[param_name].df = pd.concat([existing_data, new_data], ignore_index=True)
+
+        return combined
+
+    def get_loaded_file_paths(self) -> List[str]:
+        """Get list of all loaded file paths"""
+        return self.loaded_file_paths.copy()
+
+    def get_scenario_by_file_path(self, file_path: str) -> Optional[ScenarioData]:
+        """Get a specific scenario by file path"""
+        if file_path in self.loaded_file_paths:
+            index = self.loaded_file_paths.index(file_path)
+            return self.scenarios[index]
+        return None
+
+    def clear_scenarios(self):
+        """Clear all loaded scenarios"""
+        self.scenarios.clear()
+        self.loaded_file_paths.clear()
 
     def get_parameter_names(self) -> List[str]:
         """Get list of parameter names from current scenario"""
-        if self.current_scenario:
-            return self.current_scenario.get_parameter_names()
+        scenario = self.get_current_scenario()
+        if scenario:
+            return scenario.get_parameter_names()
         return []
 
     def get_parameter(self, name: str) -> Optional[Parameter]:
         """Get a parameter by name"""
-        if self.current_scenario:
-            return self.current_scenario.get_parameter(name)
+        scenario = self.get_current_scenario()
+        if scenario:
+            return scenario.get_parameter(name)
         return None
 
     def validate_scenario(self) -> dict:
@@ -304,22 +349,23 @@ class InputManager:
         Returns:
             dict: Validation results with 'valid' boolean and 'issues' list
         """
-        if not self.current_scenario:
+        scenario = self.get_current_scenario()
+        if not scenario:
             return {'valid': False, 'issues': ['No scenario loaded']}
 
         issues = []
 
         # Check for empty scenario
-        if not self.current_scenario.parameters and not self.current_scenario.sets:
+        if not scenario.parameters and not scenario.sets:
             issues.append('Scenario contains no parameters or sets')
 
         # Check parameters
-        for param_name, parameter in self.current_scenario.parameters.items():
+        for param_name, parameter in scenario.parameters.items():
             param_issues = self._validate_parameter(parameter)
             issues.extend([f"Parameter '{param_name}': {issue}" for issue in param_issues])
 
         # Check sets
-        for set_name, set_values in self.current_scenario.sets.items():
+        for set_name, set_values in scenario.sets.items():
             if set_values.empty:
                 issues.append(f"Set '{set_name}' is empty")
             elif set_values.duplicated().any():
@@ -329,9 +375,9 @@ class InputManager:
             'valid': len(issues) == 0,
             'issues': issues,
             'summary': {
-                'parameters': len(self.current_scenario.parameters),
-                'sets': len(self.current_scenario.sets),
-                'total_data_points': sum(len(p.df) for p in self.current_scenario.parameters.values())
+                'parameters': len(scenario.parameters),
+                'sets': len(scenario.sets),
+                'total_data_points': sum(len(p.df) for p in scenario.parameters.values())
             }
         }
 

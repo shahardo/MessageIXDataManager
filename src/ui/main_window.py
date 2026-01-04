@@ -18,6 +18,7 @@ import plotly.graph_objects as go
 import plotly.io as pio
 import tempfile
 import threading
+from typing import Optional
 
 from .navigator import ProjectNavigator
 from .dashboard import ResultsDashboard
@@ -25,6 +26,7 @@ from managers.input_manager import InputManager
 from managers.solver_manager import SolverManager
 from managers.results_analyzer import ResultsAnalyzer
 from managers.logging_manager import logging_manager
+from core.data_models import ScenarioData
 
 
 class MainWindow(QMainWindow):
@@ -85,10 +87,9 @@ class MainWindow(QMainWindow):
         self.table_display_mode = "raw"  # "raw" or "advanced"
         self.hide_empty_columns = False  # Whether to hide empty columns in advanced view
 
-        # View state
-        self.current_view = "input"  # "input" or "results"
-        self.table_display_mode = "raw"  # "raw" or "advanced"
-        self.hide_empty_columns = False  # Whether to hide empty columns in advanced view
+        # Selected file tracking
+        self.selected_input_file = None  # Currently selected input file path
+        self.selected_results_file = None  # Currently selected results file path
 
         # Replace placeholder navigator with actual ProjectNavigator
         self.navigator = ProjectNavigator()
@@ -206,15 +207,34 @@ class MainWindow(QMainWindow):
         """Save the last opened file path to settings"""
         settings = QSettings("MessageIXDataManager", "MainWindow")
         if file_type == "input":
-            settings.setValue("last_input_file", file_path)
+            # Get existing input files and add the new one if not already there
+            input_files = settings.value("last_input_files", [])
+            if isinstance(input_files, str):
+                input_files = [input_files]
+            if file_path not in input_files:
+                input_files.append(file_path)
+                # Keep only the last 5 files
+                input_files = input_files[-5:]
+            settings.setValue("last_input_files", input_files)
         elif file_type == "results":
-            settings.setValue("last_results_file", file_path)
+            # Get existing results files and add the new one if not already there
+            results_files = settings.value("last_results_files", [])
+            if isinstance(results_files, str):
+                results_files = [results_files]
+            if file_path not in results_files:
+                results_files.append(file_path)
+                # Keep only the last 5 files
+                results_files = results_files[-5:]
+            settings.setValue("last_results_files", results_files)
 
     def _get_last_opened_files(self):
         """Get the last opened file paths from settings"""
         settings = QSettings("MessageIXDataManager", "MainWindow")
-        input_file = settings.value("last_input_file", "")
-        results_file = settings.value("last_results_file", "")
+        input_files = settings.value("last_input_files", [])
+        results_files = settings.value("last_results_files", [])
+        # Return the last file from each list, or empty string if none
+        input_file = input_files[-1] if input_files else ""
+        results_file = results_files[-1] if results_files else ""
         return input_file, results_file
 
     def _auto_load_last_files(self):
@@ -285,74 +305,105 @@ class MainWindow(QMainWindow):
                 self.console.append(f"Failed to auto-load results file: {str(e)}")
 
     def _open_input_file(self):
-        """Handle opening input Excel file"""
-        file_path, _ = QFileDialog.getOpenFileName(
-            self, "Open Input Excel File", "",
+        """Handle opening input Excel file(s)"""
+        file_paths, _ = QFileDialog.getOpenFileNames(
+            self, "Open Input Excel File(s)", "",
             "Excel Files (*.xlsx *.xls);;All Files (*)"
         )
 
-        if file_path:
-            try:
-                self._append_to_console_with_scroll(f"Loading input file: {file_path}")
+        if file_paths:
+            loaded_files = []
+            total_parameters = 0
+            total_sets = 0
+            total_data_points = 0
+            all_validation_issues = []
 
-                # Show progress bar
-                self.show_progress_bar(100)
+            for file_path in file_paths:
+                try:
+                    self._append_to_console_with_scroll(f"Loading input file: {file_path}")
 
-                # Define progress callback
-                def progress_callback(value, message):
-                    self.update_progress(value, message)
+                    # Show progress bar
+                    self.show_progress_bar(100)
 
-                # Load file with Input Manager
-                scenario = self.input_manager.load_excel_file(file_path, progress_callback)
+                    # Define progress callback
+                    def progress_callback(value, message):
+                        self.update_progress(value, message)
 
-                # Hide progress bar
-                self.hide_progress_bar()
+                    # Load file with Input Manager
+                    scenario = self.input_manager.load_excel_file(file_path, progress_callback)
 
-                # Log successful load
-                logging_manager.log_input_load(file_path, True)
+                    # Hide progress bar
+                    self.hide_progress_bar()
 
-                # Save this file as the last opened input file
-                self._save_last_opened_files(file_path, "input")
+                    # Log successful load
+                    logging_manager.log_input_load(file_path, True)
 
-                # Update UI
-                self.navigator.update_input_files([file_path])
-                self.navigator.add_recent_file(file_path, "input")
+                    # Validate the loaded data
+                    validation = self.input_manager.validate_scenario()
 
-                # Validate the loaded data
-                validation = self.input_manager.validate_scenario()
+                    # Accumulate statistics
+                    loaded_files.append(file_path)
+                    total_parameters += len(scenario.parameters)
+                    total_sets += len(scenario.sets)
+                    total_data_points += validation['summary']['total_data_points']
+                    if not validation['valid']:
+                        all_validation_issues.extend(validation['issues'])
 
-                # Update parameter tree
+                    # Report validation results for this file
+                    if validation['valid']:
+                        self._append_to_console_with_scroll(f"✓ Successfully loaded {len(scenario.parameters)} parameters, {len(scenario.sets)} sets")
+                        self._append_to_console_with_scroll(f"  Total data points: {validation['summary']['total_data_points']}")
+                    else:
+                        self.console.append(f"⚠ Loaded {len(scenario.parameters)} parameters with validation issues:")
+                        for issue in validation['issues'][:3]:  # Show first 3 issues per file
+                            self.console.append(f"  - {issue}")
+                        if len(validation['issues']) > 3:
+                            self.console.append(f"  ... and {len(validation['issues']) - 3} more issues for this file")
+
+                except Exception as e:
+                    # Hide progress bar on error
+                    self.hide_progress_bar()
+
+                    error_msg = f"Error loading file {file_path}: {str(e)}"
+                    self.console.append(error_msg)
+                    QMessageBox.critical(self, "Load Error", error_msg)
+
+                    # Log failed load
+                    logging_manager.log_input_load(file_path, False, error_msg)
+
+            if loaded_files:
+                # Clear file selection to show combined view
+                self.selected_input_file = None
+
+                # Save the last opened file for auto-load
+                self._save_last_opened_files(loaded_files[-1], "input")
+
+                # Update UI with all loaded files
+                self.navigator.update_input_files(self.input_manager.get_loaded_file_paths())
+                for file_path in loaded_files:
+                    self.navigator.add_recent_file(file_path, "input")
+
+                # Update parameter tree (will show combined data)
                 self._update_parameter_tree()
 
-                # Report validation results
-                if validation['valid']:
-                    self._append_to_console_with_scroll(f"✓ Successfully loaded {len(scenario.parameters)} parameters, {len(scenario.sets)} sets")
-                    self._append_to_console_with_scroll(f"  Total data points: {validation['summary']['total_data_points']}")
+                # Report overall results
+                if all_validation_issues:
+                    self.console.append(f"⚠ Loaded {len(loaded_files)} file(s) with {len(all_validation_issues)} total validation issues")
                 else:
-                    self.console.append(f"⚠ Loaded {len(scenario.parameters)} parameters with validation issues:")
-                    for issue in validation['issues'][:5]:  # Show first 5 issues
-                        self.console.append(f"  - {issue}")
-                    if len(validation['issues']) > 5:
-                        self.console.append(f"  ... and {len(validation['issues']) - 5} more issues")
+                    self._append_to_console_with_scroll(f"✓ Successfully loaded {len(loaded_files)} file(s) with {total_parameters} parameters, {total_sets} sets")
+                    self._append_to_console_with_scroll(f"  Total data points: {total_data_points}")
 
-                self.status_bar.showMessage(f"Loaded {os.path.basename(file_path)} ({'Valid' if validation['valid'] else 'Issues found'})")
-
-            except Exception as e:
-                # Hide progress bar on error
-                self.hide_progress_bar()
-
-                error_msg = f"Error loading file: {str(e)}"
-                self.console.append(error_msg)
-                QMessageBox.critical(self, "Load Error", error_msg)
-
-                # Log failed load
-                logging_manager.log_input_load(file_path, False, error_msg)
+                self.status_bar.showMessage(f"Loaded {len(loaded_files)} input file(s) ({'Valid' if not all_validation_issues else 'Issues found'})")
 
     def _update_parameter_tree(self):
         """Update the parameter tree with loaded parameters"""
         self.param_tree.clear()
 
-        scenario = self.input_manager.get_current_scenario()
+        if self.current_view == "input":
+            scenario = self._get_current_input_scenario()
+        else:
+            scenario = self._get_current_results_scenario()
+
         if not scenario:
             return
 
@@ -411,7 +462,7 @@ class MainWindow(QMainWindow):
         """Update the parameter tree with loaded results"""
         self.param_tree.clear()
 
-        results = self.results_analyzer.get_current_results()
+        results = self._get_current_results_scenario()
         if not results:
             return
 
@@ -527,17 +578,21 @@ class MainWindow(QMainWindow):
 
         # Get data based on current view
         if self.current_view == "input":
-            data = self.input_manager.get_parameter(item_name)
-            if data:
-                self._display_parameter_data(data)
-                # Reset table view to top when switching parameters
-                self.param_table.scrollToTop()
+            scenario = self._get_current_input_scenario()
+            if scenario:
+                data = scenario.get_parameter(item_name)
+                if data:
+                    self._display_parameter_data(data)
+                    # Reset table view to top when switching parameters
+                    self.param_table.scrollToTop()
         else:  # results view
-            data = self.results_analyzer.get_result_data(item_name)
-            if data:
-                self._display_result_data(data)
-                # Reset table view to top when switching parameters
-                self.param_table.scrollToTop()
+            scenario = self._get_current_results_scenario()
+            if scenario:
+                data = scenario.get_parameter(item_name)
+                if data:
+                    self._display_result_data(data)
+                    # Reset table view to top when switching parameters
+                    self.param_table.scrollToTop()
 
     def _display_parameter_data(self, parameter):
         """Display parameter data in the table view"""
@@ -928,60 +983,78 @@ class MainWindow(QMainWindow):
         self.status_bar.showMessage(status)
 
     def _open_results_file(self):
-        """Handle opening results Excel file"""
-        file_path, _ = QFileDialog.getOpenFileName(
-            self, "Open Results Excel File", "",
+        """Handle opening results Excel file(s)"""
+        file_paths, _ = QFileDialog.getOpenFileNames(
+            self, "Open Results Excel File(s)", "",
             "Excel Files (*.xlsx *.xls);;All Files (*)"
         )
 
-        if file_path:
-            try:
-                self.console.append(f"Loading results file: {file_path}")
+        if file_paths:
+            loaded_files = []
+            total_variables = 0
+            total_equations = 0
+            total_data_points = 0
 
-                # Show progress bar
-                self.show_progress_bar(100)
+            for file_path in file_paths:
+                try:
+                    self.console.append(f"Loading results file: {file_path}")
 
-                # Define progress callback
-                def progress_callback(value, message):
-                    self.update_progress(value, message)
+                    # Show progress bar
+                    self.show_progress_bar(100)
 
-                # Load file with Results Analyzer
-                results = self.results_analyzer.load_results_file(file_path, progress_callback)
+                    # Define progress callback
+                    def progress_callback(value, message):
+                        self.update_progress(value, message)
 
-                # Hide progress bar
-                self.hide_progress_bar()
+                    # Load file with Results Analyzer
+                    results = self.results_analyzer.load_results_file(file_path, progress_callback)
 
-                # Save this file as the last opened results file
-                self._save_last_opened_files(file_path, "results")
+                    # Hide progress bar
+                    self.hide_progress_bar()
 
-                # Update UI
-                self.navigator.update_result_files([file_path])
-                self.navigator.add_recent_file(file_path, "results")
+                    # Log successful results load
+                    logging_manager.log_results_load(file_path, True, self.results_analyzer.get_summary_stats())
+
+                    loaded_files.append(file_path)
+
+                    # Accumulate statistics
+                    stats = self.results_analyzer.get_summary_stats()
+                    total_variables += stats['total_variables']
+                    total_equations += stats['total_equations']
+                    total_data_points += stats['total_data_points']
+
+                except Exception as e:
+                    # Hide progress bar on error
+                    self.hide_progress_bar()
+
+                    error_msg = f"Error loading results file {file_path}: {str(e)}"
+                    self.console.append(error_msg)
+                    QMessageBox.critical(self, "Load Error", error_msg)
+
+                    # Log failed results load
+                    logging_manager.log_results_load(file_path, False, {'error': error_msg})
+
+            if loaded_files:
+                # Clear file selection to show combined view
+                self.selected_results_file = None
+
+                # Save the last opened file for auto-load
+                self._save_last_opened_files(loaded_files[-1], "results")
+
+                # Update UI with all loaded files
+                self.navigator.update_result_files(self.results_analyzer.get_loaded_file_paths())
+                for file_path in loaded_files:
+                    self.navigator.add_recent_file(file_path, "results")
 
                 # Show summary
-                stats = self.results_analyzer.get_summary_stats()
-                self.console.append(f"Loaded {stats['total_variables']} variables, "
-                                  f"{stats['total_equations']} equations")
-                self.console.append(f"Total data points: {stats['total_data_points']}")
-
-                # Log successful results load
-                logging_manager.log_results_load(file_path, True, stats)
+                self.console.append(f"Loaded {len(loaded_files)} result file(s) with {total_variables} variables, "
+                                  f"{total_equations} equations")
+                self.console.append(f"Total data points: {total_data_points}")
 
                 # Update dashboard with new results
                 self.dashboard.update_results(True)
 
-                self.status_bar.showMessage(f"Results loaded: {os.path.basename(file_path)}")
-
-            except Exception as e:
-                # Hide progress bar on error
-                self.hide_progress_bar()
-
-                error_msg = f"Error loading results file: {str(e)}"
-                self.console.append(error_msg)
-                QMessageBox.critical(self, "Load Error", error_msg)
-
-                # Log failed results load
-                logging_manager.log_results_load(file_path, False, {'error': error_msg})
+                self.status_bar.showMessage(f"Results loaded: {len(loaded_files)} file(s)")
 
     def _run_solver(self):
         """Handle running the solver"""
@@ -995,11 +1068,14 @@ class MainWindow(QMainWindow):
                               "Please load an input Excel file first.")
             return
 
-        input_path = self.input_manager.loaded_file_path
-        if not input_path:
+        input_paths = self.input_manager.get_loaded_file_paths()
+        if not input_paths:
             QMessageBox.warning(self, "No Input File",
                               "Please load an input Excel file first.")
             return
+
+        # Use the last loaded input file for solver
+        input_path = input_paths[-1]
 
         # Get available solvers
         solvers = self.solver_manager.get_available_solvers()
@@ -1047,16 +1123,20 @@ class MainWindow(QMainWindow):
             selected_items = self.param_tree.selectedItems()
             if selected_items and selected_items[0].parent() is not None:
                 item_name = selected_items[0].text(0)
-                data = self.input_manager.get_parameter(item_name)
-                if data:
-                    self._display_parameter_data(data)
+                scenario = self._get_current_input_scenario()
+                if scenario:
+                    data = scenario.get_parameter(item_name)
+                    if data:
+                        self._display_parameter_data(data)
         else:  # results view
             selected_items = self.param_tree.selectedItems()
             if selected_items and selected_items[0].parent() is not None:
                 item_name = selected_items[0].text(0)
-                data = self.results_analyzer.get_result_data(item_name)
-                if data:
-                    self._display_result_data(data)
+                scenario = self._get_current_results_scenario()
+                if scenario:
+                    data = scenario.get_parameter(item_name)
+                    if data:
+                        self._display_result_data(data)
 
     def _transform_to_advanced_view(self, df: pd.DataFrame, current_filters: dict = None, is_results: bool = False, hide_empty: bool = None) -> pd.DataFrame:
         """
@@ -1385,16 +1465,20 @@ class MainWindow(QMainWindow):
             selected_items = self.param_tree.selectedItems()
             if selected_items and selected_items[0].parent() is not None:
                 item_name = selected_items[0].text(0)
-                data = self.input_manager.get_parameter(item_name)
-                if data:
-                    self._display_parameter_data(data)
+                scenario = self._get_current_input_scenario()
+                if scenario:
+                    data = scenario.get_parameter(item_name)
+                    if data:
+                        self._display_parameter_data(data)
         else:  # results view
             selected_items = self.param_tree.selectedItems()
             if selected_items and selected_items[0].parent() is not None:
                 item_name = selected_items[0].text(0)
-                data = self.results_analyzer.get_result_data(item_name)
-                if data:
-                    self._display_result_data(data)
+                scenario = self._get_current_results_scenario()
+                if scenario:
+                    data = scenario.get_parameter(item_name)
+                    if data:
+                        self._display_result_data(data)
 
     def _on_hide_empty_changed(self):
         """Handle hide empty columns checkbox state change"""
@@ -1404,16 +1488,20 @@ class MainWindow(QMainWindow):
             selected_items = self.param_tree.selectedItems()
             if selected_items and selected_items[0].parent() is not None:
                 item_name = selected_items[0].text(0)
-                data = self.input_manager.get_parameter(item_name)
-                if data:
-                    self._display_parameter_data(data)
+                scenario = self._get_current_input_scenario()
+                if scenario:
+                    data = scenario.get_parameter(item_name)
+                    if data:
+                        self._display_parameter_data(data)
         else:  # results view
             selected_items = self.param_tree.selectedItems()
             if selected_items and selected_items[0].parent() is not None:
                 item_name = selected_items[0].text(0)
-                data = self.results_analyzer.get_result_data(item_name)
-                if data:
-                    self._display_result_data(data)
+                scenario = self._get_current_results_scenario()
+                if scenario:
+                    data = scenario.get_parameter(item_name)
+                    if data:
+                        self._display_result_data(data)
 
     def _on_chart_type_changed(self, chart_type: str):
         """Handle chart type selection change"""
@@ -1433,16 +1521,20 @@ class MainWindow(QMainWindow):
             selected_items = self.param_tree.selectedItems()
             if selected_items and selected_items[0].parent() is not None:
                 item_name = selected_items[0].text(0)
-                data = self.input_manager.get_parameter(item_name)
-                if data:
-                    self._display_parameter_data(data)
+                scenario = self._get_current_input_scenario()
+                if scenario:
+                    data = scenario.get_parameter(item_name)
+                    if data:
+                        self._display_parameter_data(data)
         else:  # results view
             selected_items = self.param_tree.selectedItems()
             if selected_items and selected_items[0].parent() is not None:
                 item_name = selected_items[0].text(0)
-                data = self.results_analyzer.get_result_data(item_name)
-                if data:
-                    self._display_result_data(data)
+                scenario = self._get_current_results_scenario()
+                if scenario:
+                    data = scenario.get_parameter(item_name)
+                    if data:
+                        self._display_result_data(data)
 
     def _update_parameter_chart(self, df: pd.DataFrame, parameter_name: str):
         """Update the parameter chart with bar chart data from pivoted DataFrame"""
@@ -1640,7 +1732,7 @@ class MainWindow(QMainWindow):
     def _show_dashboard(self):
         """Show results dashboard"""
         try:
-            self.dashboard.update_results(bool(self.results_analyzer.current_results))
+            self.dashboard.update_results(bool(self.results_analyzer.get_current_results()))
             self.dashboard.show()
             self.dashboard.raise_()
             self.dashboard.activateWindow()
@@ -1652,9 +1744,31 @@ class MainWindow(QMainWindow):
     def _on_file_selected(self, file_path: str, file_type: str):
         """Handle file selection in navigator"""
         if file_type == "input":
+            self.selected_input_file = file_path
             self._switch_to_input_view()
+            # Clear current parameter selection and data display
+            self.param_table.setRowCount(0)
+            self.param_table.setColumnCount(0)
+            self._show_chart_placeholder()
         elif file_type == "results":
+            self.selected_results_file = file_path
             self._switch_to_results_view()
+            # Clear current result selection and data display
+            self.param_table.setRowCount(0)
+            self.param_table.setColumnCount(0)
+            self._show_chart_placeholder()
+
+    def _get_current_input_scenario(self) -> Optional[ScenarioData]:
+        """Get the current input scenario (selected file or combined)"""
+        if self.selected_input_file:
+            return self.input_manager.get_scenario_by_file_path(self.selected_input_file)
+        return self.input_manager.get_current_scenario()
+
+    def _get_current_results_scenario(self) -> Optional[ScenarioData]:
+        """Get the current results scenario (selected file or combined)"""
+        if self.selected_results_file:
+            return self.results_analyzer.get_results_by_file_path(self.selected_results_file)
+        return self.results_analyzer.get_current_results()
 
     def _on_load_files_requested(self, file_type: str):
         """Handle request to load files when 'no files loaded' is clicked"""
@@ -1665,9 +1779,13 @@ class MainWindow(QMainWindow):
 
     def _switch_to_input_view(self):
         """Switch to input parameters view"""
-        if self.current_view != "input":
-            self.current_view = "input"
-            self._update_parameter_tree()
+        view_changed = self.current_view != "input"
+        self.current_view = "input"
+        
+        # Always update the parameter tree when switching to input view
+        self._update_parameter_tree()
+        
+        if view_changed:
             self.param_tree.setHeaderLabel("Parameters")
             self.param_title.setText("Select a parameter to view data")
             self.param_title.setStyleSheet("font-size: 12px; color: #333; padding: 5px; background-color: #f0f0f0;")
@@ -1691,9 +1809,13 @@ class MainWindow(QMainWindow):
 
     def _switch_to_results_view(self):
         """Switch to results view"""
-        if self.current_view != "results":
-            self.current_view = "results"
-            self._update_results_tree()
+        view_changed = self.current_view != "results"
+        self.current_view = "results"
+        
+        # Always update the results tree when switching to results view
+        self._update_results_tree()
+        
+        if view_changed:
             self.param_tree.setHeaderLabel("Results")
             self.param_title.setText("Select a result to view data")
             self.param_title.setStyleSheet("font-size: 12px; color: #333; padding: 5px; background-color: #f0f0f0;")
