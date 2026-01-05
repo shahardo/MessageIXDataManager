@@ -173,6 +173,18 @@ class ResultsAnalyzer:
         if not headers:
             return
 
+        # Make headers unique, as duplicate column names can cause issues with pandas
+        unique_headers = []
+        counts = {}
+        for col in headers:
+            if col in counts:
+                counts[col] += 1
+                unique_headers.append(f"{col}.{counts[col]-1}")
+            else:
+                counts[col] = 1
+                unique_headers.append(col)
+        headers = unique_headers
+
         # Parse data, keeping only columns with valid headers
         data = []
         for row in sheet.iter_rows(min_row=2, values_only=True):
@@ -332,9 +344,11 @@ class ResultsAnalyzer:
             # Merge parameters (results are typically variables and equations)
             for param_name, param in result.parameters.items():
                 if param_name not in combined.parameters:
-                    combined.parameters[param_name] = param
+                    # Create a copy of the parameter with copied DataFrame
+                    param_copy = Parameter(param.name, param.df.copy(), param.metadata.copy())
+                    combined.parameters[param_name] = param_copy
                 else:
-                    # Merge result data (append rows)
+                    # Merge result data (append rows) - create new DataFrame
                     existing_data = combined.parameters[param_name].df
                     new_data = param.df
                     combined.parameters[param_name].df = pd.concat([existing_data, new_data], ignore_index=True)
@@ -356,3 +370,26 @@ class ResultsAnalyzer:
         """Clear all loaded results"""
         self.results.clear()
         self.loaded_file_paths.clear()
+
+    def remove_file(self, file_path: str) -> bool:
+        """
+        Remove a loaded results file and its associated data
+
+        Args:
+            file_path: Path to the file to remove
+
+        Returns:
+            True if file was found and removed, False otherwise
+        """
+        if file_path in self.loaded_file_paths:
+            # Find the index of the file
+            index = self.loaded_file_paths.index(file_path)
+
+            # Remove from both lists
+            self.loaded_file_paths.pop(index)
+            self.results.pop(index)
+
+            print(f"Removed results file: {file_path}")
+            return True
+
+        return False

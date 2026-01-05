@@ -303,9 +303,11 @@ class InputManager:
             # Merge parameters
             for param_name, param in scenario.parameters.items():
                 if param_name not in combined.parameters:
-                    combined.parameters[param_name] = param
+                    # Create a copy of the parameter with copied DataFrame
+                    param_copy = Parameter(param.name, param.df.copy(), param.metadata.copy())
+                    combined.parameters[param_name] = param_copy
                 else:
-                    # Merge parameter data (append rows)
+                    # Merge parameter data (append rows) - create new DataFrame
                     existing_data = combined.parameters[param_name].df
                     new_data = param.df
                     combined.parameters[param_name].df = pd.concat([existing_data, new_data], ignore_index=True)
@@ -315,6 +317,16 @@ class InputManager:
     def get_loaded_file_paths(self) -> List[str]:
         """Get list of all loaded file paths"""
         return self.loaded_file_paths.copy()
+
+    def get_number_of_scenarios(self) -> int:
+        """Get the number of loaded scenarios"""
+        return len(self.scenarios)
+
+    def get_scenario_by_index(self, index: int) -> Optional[ScenarioData]:
+        """Get a scenario by index"""
+        if 0 <= index < len(self.scenarios):
+            return self.scenarios[index]
+        return None
 
     def get_scenario_by_file_path(self, file_path: str) -> Optional[ScenarioData]:
         """Get a specific scenario by file path"""
@@ -412,3 +424,26 @@ class InputManager:
                 issues.append(f"{duplicates} duplicate dimension combinations found")
 
         return issues
+
+    def remove_file(self, file_path: str) -> bool:
+        """
+        Remove a loaded file and its associated scenario data
+
+        Args:
+            file_path: Path to the file to remove
+
+        Returns:
+            True if file was found and removed, False otherwise
+        """
+        if file_path in self.loaded_file_paths:
+            # Find the index of the file
+            index = self.loaded_file_paths.index(file_path)
+
+            # Remove from both lists
+            self.loaded_file_paths.pop(index)
+            self.scenarios.pop(index)
+
+            print(f"Removed input file: {file_path}")
+            return True
+
+        return False

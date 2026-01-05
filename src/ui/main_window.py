@@ -100,6 +100,7 @@ class MainWindow(QMainWindow):
         # Connect navigator signals
         self.navigator.file_selected.connect(self._on_file_selected)
         self.navigator.load_files_requested.connect(self._on_load_files_requested)
+        self.navigator.file_removed.connect(self._on_file_removed)
 
         # Connect solver manager to console
         self.solver_manager.set_output_callback(self._append_to_console)
@@ -227,82 +228,114 @@ class MainWindow(QMainWindow):
                 results_files = results_files[-5:]
             settings.setValue("last_results_files", results_files)
 
+    def _remove_last_opened_file(self, file_path, file_type):
+        """Remove a file from the last opened files settings"""
+        settings = QSettings("MessageIXDataManager", "MainWindow")
+        if file_type == "input":
+            # Get existing input files and remove the specified one
+            input_files = settings.value("last_input_files", [])
+            if isinstance(input_files, str):
+                input_files = [input_files]
+            if file_path in input_files:
+                input_files.remove(file_path)
+            settings.setValue("last_input_files", input_files)
+        elif file_type == "results":
+            # Get existing results files and remove the specified one
+            results_files = settings.value("last_results_files", [])
+            if isinstance(results_files, str):
+                results_files = [results_files]
+            if file_path in results_files:
+                results_files.remove(file_path)
+            settings.setValue("last_results_files", results_files)
+
     def _get_last_opened_files(self):
         """Get the last opened file paths from settings"""
         settings = QSettings("MessageIXDataManager", "MainWindow")
         input_files = settings.value("last_input_files", [])
         results_files = settings.value("last_results_files", [])
-        # Return the last file from each list, or empty string if none
-        input_file = input_files[-1] if input_files else ""
-        results_file = results_files[-1] if results_files else ""
-        return input_file, results_file
+        # Ensure they are lists
+        if isinstance(input_files, str):
+            input_files = [input_files]
+        if isinstance(results_files, str):
+            results_files = [results_files]
+        return input_files, results_files
 
     def _auto_load_last_files(self):
         """Automatically load the last opened files on startup"""
-        input_file, results_file = self._get_last_opened_files()
+        input_files, results_files = self._get_last_opened_files()
 
-        # Load input file if it exists and is readable
-        if input_file and os.path.exists(input_file):
-            try:
-                self._append_to_console_with_scroll(f"Auto-loading last input file: {input_file}")
+        # Load all input files
+        loaded_input_files = []
+        for input_file in input_files:
+            if input_file and os.path.exists(input_file):
+                try:
+                    self._append_to_console_with_scroll(f"Auto-loading input file: {input_file}")
 
-                # Show progress bar for auto-loading
-                self.show_progress_bar(100)
+                    # Show progress bar for auto-loading
+                    self.show_progress_bar(100)
 
-                # Define progress callback
-                def progress_callback(value, message):
-                    self.update_progress(value, message)
+                    # Define progress callback
+                    def progress_callback(value, message):
+                        self.update_progress(value, message)
 
-                scenario = self.input_manager.load_excel_file(input_file, progress_callback)
+                    scenario = self.input_manager.load_excel_file(input_file, progress_callback)
 
-                # Hide progress bar
-                self.hide_progress_bar()
+                    # Hide progress bar
+                    self.hide_progress_bar()
 
-                # Update UI
-                self.navigator.update_input_files([input_file])
-                self.navigator.add_recent_file(input_file, "input")
+                    loaded_input_files.append(input_file)
 
-                # Update parameter tree
-                self._update_parameter_tree()
+                    self._append_to_console_with_scroll(f"✓ Auto-loaded input file with {len(scenario.parameters)} parameters")
 
-                self._append_to_console_with_scroll(f"✓ Auto-loaded input file with {len(scenario.parameters)} parameters")
+                except Exception as e:
+                    # Hide progress bar on error
+                    self.hide_progress_bar()
+                    self.console.append(f"Failed to auto-load input file {input_file}: {str(e)}")
 
-            except Exception as e:
-                # Hide progress bar on error
-                self.hide_progress_bar()
-                self.console.append(f"Failed to auto-load input file: {str(e)}")
+        if loaded_input_files:
+            # Update UI with all loaded input files
+            self.navigator.update_input_files(loaded_input_files)
+            for file_path in loaded_input_files:
+                self.navigator.add_recent_file(file_path, "input")
+            # Update parameter tree
+            self._update_parameter_tree()
 
-        # Load results file if it exists and is readable
-        if results_file and os.path.exists(results_file):
-            try:
-                self.console.append(f"Auto-loading last results file: {results_file}")
+        # Load all results files
+        loaded_results_files = []
+        for results_file in results_files:
+            if results_file and os.path.exists(results_file):
+                try:
+                    self.console.append(f"Auto-loading results file: {results_file}")
 
-                # Show progress bar for auto-loading results
-                self.show_progress_bar(100)
+                    # Show progress bar for auto-loading results
+                    self.show_progress_bar(100)
 
-                # Define progress callback
-                def progress_callback(value, message):
-                    self.update_progress(value, message)
+                    # Define progress callback
+                    def progress_callback(value, message):
+                        self.update_progress(value, message)
 
-                results = self.results_analyzer.load_results_file(results_file, progress_callback)
+                    results = self.results_analyzer.load_results_file(results_file, progress_callback)
 
-                # Hide progress bar
-                self.hide_progress_bar()
+                    # Hide progress bar
+                    self.hide_progress_bar()
 
-                # Update UI
-                self.navigator.update_result_files([results_file])
-                self.navigator.add_recent_file(results_file, "results")
+                    loaded_results_files.append(results_file)
 
-                # Update dashboard
-                self.dashboard.update_results(True)
+                    stats = self.results_analyzer.get_summary_stats()
+                    self.console.append(f"✓ Auto-loaded results file with {stats['total_variables']} variables")
 
-                stats = self.results_analyzer.get_summary_stats()
-                self.console.append(f"✓ Auto-loaded results file with {stats['total_variables']} variables")
+                except Exception as e:
+                    # Hide progress bar on error
+                    self.hide_progress_bar()
+                    self.console.append(f"Failed to auto-load results file {results_file}: {str(e)}")
 
-            except Exception as e:
-                # Hide progress bar on error
-                self.hide_progress_bar()
-                self.console.append(f"Failed to auto-load results file: {str(e)}")
+        if loaded_results_files:
+            # Update UI with all loaded results files
+            self.navigator.update_result_files(self.results_analyzer.get_loaded_file_paths())
+            for file_path in loaded_results_files:
+                self.navigator.add_recent_file(file_path, "results")
+            # Update dashboard
+            self.dashboard.update_results(True)
 
     def _open_input_file(self):
         """Handle opening input Excel file(s)"""
@@ -375,8 +408,9 @@ class MainWindow(QMainWindow):
                 # Clear file selection to show combined view
                 self.selected_input_file = None
 
-                # Save the last opened file for auto-load
-                self._save_last_opened_files(loaded_files[-1], "input")
+                # Save all opened files for auto-load
+                for file_path in loaded_files:
+                    self._save_last_opened_files(file_path, "input")
 
                 # Update UI with all loaded files
                 self.navigator.update_input_files(self.input_manager.get_loaded_file_paths())
@@ -1038,8 +1072,9 @@ class MainWindow(QMainWindow):
                 # Clear file selection to show combined view
                 self.selected_results_file = None
 
-                # Save the last opened file for auto-load
-                self._save_last_opened_files(loaded_files[-1], "results")
+                # Save all opened files for auto-load
+                for file_path in loaded_files:
+                    self._save_last_opened_files(file_path, "results")
 
                 # Update UI with all loaded files
                 self.navigator.update_result_files(self.results_analyzer.get_loaded_file_paths())
@@ -1776,6 +1811,48 @@ class MainWindow(QMainWindow):
             self._open_input_file()
         elif file_type == "results":
             self._open_results_file()
+
+    def _on_file_removed(self, file_path: str, file_type: str):
+        """Handle file removal from navigator"""
+        removed = False
+        if file_type == "input":
+            removed = self.input_manager.remove_file(file_path)
+            if removed:
+                # Remove from settings so it won't auto-load on restart
+                self._remove_last_opened_file(file_path, file_type)
+
+                # Update navigator
+                self.navigator.update_input_files(self.input_manager.get_loaded_file_paths())
+
+                # Clear selection if this was the selected file
+                if self.selected_input_file == file_path:
+                    self.selected_input_file = None
+                    # Clear the display
+                    self.param_table.setRowCount(0)
+                    self.param_table.setColumnCount(0)
+                    self._show_chart_placeholder()
+
+        elif file_type == "results":
+            removed = self.results_analyzer.remove_file(file_path)
+            if removed:
+                # Remove from settings so it won't auto-load on restart
+                self._remove_last_opened_file(file_path, file_type)
+
+                # Update navigator
+                self.navigator.update_result_files(self.results_analyzer.get_loaded_file_paths())
+
+                # Clear selection if this was the selected file
+                if self.selected_results_file == file_path:
+                    self.selected_results_file = None
+                    # Clear the display
+                    self.param_table.setRowCount(0)
+                    self.param_table.setColumnCount(0)
+                    self._show_chart_placeholder()
+
+        if removed:
+            self.status_bar.showMessage(f"Removed {file_type} file: {os.path.basename(file_path)}")
+        else:
+            self.status_bar.showMessage(f"Failed to remove {file_type} file: {os.path.basename(file_path)}")
 
     def _switch_to_input_view(self):
         """Switch to input parameters view"""

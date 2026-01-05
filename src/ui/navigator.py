@@ -3,8 +3,9 @@ Project Navigator component
 """
 
 import os
-from PyQt5.QtWidgets import QTreeWidget, QTreeWidgetItem
+from PyQt5.QtWidgets import QTreeWidget, QTreeWidgetItem, QPushButton, QHBoxLayout, QWidget
 from PyQt5.QtCore import Qt, pyqtSignal
+from PyQt5.QtGui import QIcon
 
 
 class ProjectNavigator(QTreeWidget):
@@ -16,9 +17,12 @@ class ProjectNavigator(QTreeWidget):
     # Signal emitted when "no files loaded" is clicked (file_type: "input" or "results")
     load_files_requested = pyqtSignal(str)
 
+    # Signal emitted when a file is removed (file_path, file_type)
+    file_removed = pyqtSignal(str, str)
+
     def __init__(self):
         super().__init__()
-        self.setHeaderLabel("Project Navigator")
+        self.setHeaderLabels(["Files", ""])  # Two columns: filename and action
         self.input_files = []  # Store input file paths
         self.results_files = []  # Store results file paths
         self._setup_ui()
@@ -30,9 +34,13 @@ class ProjectNavigator(QTreeWidget):
         self.setMinimumWidth(200)
         self.setMaximumWidth(300)
 
+        # Set column widths
+        self.setColumnWidth(0, 180)  # File name column
+        self.setColumnWidth(1, 30)   # Action column
+
         # Enable context menu
-        self.setContextMenuPolicy(Qt.CustomContextMenu)
-        self.customContextMenuRequested.connect(self._show_context_menu)
+        # self.setContextMenuPolicy(Qt.CustomContextMenu)
+        # self.customContextMenuRequested.connect(self._show_context_menu)
 
     def _load_recent_files(self):
         """Load and display recent files"""
@@ -71,10 +79,9 @@ class ProjectNavigator(QTreeWidget):
         # TODO: Implement actual recent files management
         print(f"Adding recent file: {file_path} (type: {file_type})")
 
-    def _show_context_menu(self, position):
-        """Show context menu for navigator items"""
-        # TODO: Implement context menu
-        pass
+    def _remove_file(self, file_path, file_type):
+        """Handle file removal request"""
+        self.file_removed.emit(file_path, file_type)
 
     def update_input_files(self, files_list):
         """Update the inputs section with loaded files"""
@@ -98,6 +105,25 @@ class ProjectNavigator(QTreeWidget):
                         file_item.setToolTip(0, file_path)
                         file_item.setData(0, Qt.UserRole, ("input", file_path))  # Store file type and path
                         file_item.setIcon(0, self.style().standardIcon(self.style().SP_FileIcon))
+
+                        # Add remove button in second column
+                        remove_btn = QPushButton("×")
+                        remove_btn.setFixedSize(20, 20)
+                        remove_btn.setStyleSheet("""
+                            QPushButton {
+                                border: none;
+                                background: transparent;
+                                color: #666;
+                                font-weight: bold;
+                                font-size: 14px;
+                            }
+                            QPushButton:hover {
+                                color: #f00;
+                                background: #f5f5f5;
+                            }
+                        """)
+                        remove_btn.clicked.connect(lambda checked, fp=file_path, ft="input": self._remove_file(fp, ft))
+                        self.setItemWidget(file_item, 1, remove_btn)
 
                 item.setExpanded(True)
                 break
@@ -124,6 +150,25 @@ class ProjectNavigator(QTreeWidget):
                         file_item.setToolTip(0, file_path)
                         file_item.setData(0, Qt.UserRole, ("results", file_path))  # Store file type and path
                         file_item.setIcon(0, self.style().standardIcon(self.style().SP_FileIcon))
+
+                        # Add remove button in second column
+                        remove_btn = QPushButton("×")
+                        remove_btn.setFixedSize(20, 20)
+                        remove_btn.setStyleSheet("""
+                            QPushButton {
+                                border: none;
+                                background: transparent;
+                                color: #666;
+                                font-weight: bold;
+                                font-size: 14px;
+                            }
+                            QPushButton:hover {
+                                color: #f00;
+                                background: #f5f5f5;
+                            }
+                        """)
+                        remove_btn.clicked.connect(lambda checked, fp=file_path, ft="results": self._remove_file(fp, ft))
+                        self.setItemWidget(file_item, 1, remove_btn)
 
                 item.setExpanded(True)
                 break
