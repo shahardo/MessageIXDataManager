@@ -20,6 +20,11 @@ class ResultsAnalyzer(BaseDataManager):
         super().__init__()
         self.summary_stats: Dict[str, Any] = {}
 
+    @property
+    def results(self):
+        """Backward compatibility property for results (same as scenarios)"""
+        return self.scenarios
+
     def load_results_file(self, file_path: str, progress_callback: Optional[Callable[[int, str], None]] = None) -> ScenarioData:
         """
         Load and parse a message_ix results Excel file
@@ -44,10 +49,10 @@ class ResultsAnalyzer(BaseDataManager):
 
         return scenario
 
-    def _parse_workbook(self, wb, results: ScenarioData, progress_callback: Optional[Callable[[int, str], None]] = None):
+    def _parse_workbook(self, wb, scenario: ScenarioData, progress_callback: Optional[Callable[[int, str], None]] = None):
         """Parse workbook for results data - implements abstract method"""
         # Parse results (typically in var_* and equ_* sheets)
-        self._parse_results(wb, results, progress_callback)
+        self._parse_results(wb, scenario, progress_callback)
 
     def _parse_results(self, wb, results: ScenarioData, progress_callback: Optional[Callable[[int, str], None]] = None):
         """Parse results from workbook"""
