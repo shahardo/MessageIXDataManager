@@ -56,6 +56,10 @@ class ResultsAnalyzer:
             # Parse results (typically in var_* and equ_* sheets)
             self._parse_results(wb, results, progress_callback)
 
+            # Store reference
+            self.results.append(results)
+            self.loaded_file_paths.append(file_path)
+
             if progress_callback:
                 progress_callback(80, "Calculating summary statistics...")
 
@@ -63,10 +67,6 @@ class ResultsAnalyzer:
             combined_results = self.get_current_results()
             if combined_results:
                 self._calculate_summary_stats(combined_results)
-
-            # Store reference
-            self.results.append(results)
-            self.loaded_file_paths.append(file_path)
 
             if progress_callback:
                 progress_callback(100, "Results loading complete")

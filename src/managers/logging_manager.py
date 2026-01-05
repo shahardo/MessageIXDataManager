@@ -16,33 +16,54 @@ class SQLiteHandler(logging.Handler):
     def __init__(self, db_path: str = "db/logs.db"):
         super().__init__()
         self.db_path = db_path
-        self._setup_database()
+        self._conn = None
+        self._db_available = True
+        try:
+            self._setup_database()
+        except Exception as e:
+            # Database setup failed, mark as unavailable
+            self._db_available = False
+            print(f"Database setup failed for {db_path}: {e}")
 
     def _setup_database(self):
         """Create logs table if it doesn't exist"""
-        with sqlite3.connect(self.db_path) as conn:
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS logs (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    timestamp TEXT NOT NULL,
-                    level TEXT NOT NULL,
-                    category TEXT NOT NULL,
-                    message TEXT NOT NULL,
-                    details TEXT,
-                    config_id INTEGER
-                )
-            """)
+        # For in-memory databases, keep a persistent connection
+        if self.db_path == ':memory:':
+            if self._conn is None:
+                self._conn = sqlite3.connect(self.db_path)
+            conn = self._conn
+        else:
+            conn = sqlite3.connect(self.db_path)
 
-            # Create index for faster queries
-            conn.execute("""
-                CREATE INDEX IF NOT EXISTS idx_logs_timestamp
-                ON logs(timestamp)
-            """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp TEXT NOT NULL,
+                level TEXT NOT NULL,
+                category TEXT NOT NULL,
+                message TEXT NOT NULL,
+                details TEXT,
+                config_id INTEGER
+            )
+        """)
 
-            conn.commit()
+        # Create index for faster queries
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_logs_timestamp
+            ON logs(timestamp)
+        """)
+
+        conn.commit()
+
+        # Don't close in-memory connection
+        if self.db_path != ':memory:':
+            conn.close()
 
     def emit(self, record):
         """Write log record to database"""
+        if not self._db_available:
+            return  # Silently ignore if database is not available
+
         try:
             # Format the record
             timestamp = datetime.fromtimestamp(record.created).isoformat()
@@ -55,23 +76,39 @@ class SQLiteHandler(logging.Handler):
             # Get config_id if available
             config_id = getattr(record, 'config_id', None)
 
-            with sqlite3.connect(self.db_path) as conn:
-                conn.execute("""
-                    INSERT INTO logs (timestamp, level, category, message, details, config_id)
-                    VALUES (?, ?, ?, ?, ?, ?)
-                """, (
-                    timestamp,
-                    record.levelname,
-                    getattr(record, 'category', 'GENERAL'),
-                    record.getMessage(),
-                    details,
-                    config_id
-                ))
-                conn.commit()
+            # Use persistent connection for in-memory databases
+            if self.db_path == ':memory:' and self._conn:
+                conn = self._conn
+            else:
+                conn = sqlite3.connect(self.db_path)
+
+            conn.execute("""
+                INSERT INTO logs (timestamp, level, category, message, details, config_id)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (
+                timestamp,
+                record.levelname,
+                getattr(record, 'category', 'GENERAL'),
+                record.getMessage(),
+                details,
+                config_id
+            ))
+            conn.commit()
+
+            # Don't close in-memory connection
+            if self.db_path != ':memory:' or not self._conn:
+                conn.close()
 
         except Exception as e:
             # Don't let logging errors break the application
             print(f"Logging error: {e}")
+
+    def close(self):
+        """Close the handler and release resources"""
+        if self._conn:
+            self._conn.close()
+            self._conn = None
+        super().close()
 
 
 class LoggingManager:
@@ -81,6 +118,7 @@ class LoggingManager:
         self.log_file = log_file
         self.db_file = db_file
         self.logger = None
+        self._sqlite_handler = None
         self._setup_logging()
 
     def _setup_logging(self):
@@ -105,6 +143,7 @@ class LoggingManager:
         sqlite_handler = SQLiteHandler(self.db_file)
         sqlite_handler.setLevel(logging.DEBUG)
         self.logger.addHandler(sqlite_handler)
+        self._sqlite_handler = sqlite_handler
 
         # Console handler for development
         console_handler = logging.StreamHandler()
@@ -179,7 +218,15 @@ class LoggingManager:
     def get_recent_logs(self, limit: int = 100, category: Optional[str] = None) -> list:
         """Get recent log entries from database"""
         try:
-            with sqlite3.connect(self.db_file) as conn:
+            # Use persistent connection for in-memory databases
+            if self.db_file == ':memory:' and self._sqlite_handler and self._sqlite_handler._conn:
+                conn = self._sqlite_handler._conn
+                close_conn = False
+            else:
+                conn = sqlite3.connect(self.db_file)
+                close_conn = True
+
+            try:
                 cursor = conn.cursor()
 
                 if category:
@@ -213,6 +260,10 @@ class LoggingManager:
 
                 return logs
 
+            finally:
+                if close_conn:
+                    conn.close()
+
         except Exception as e:
             print(f"Error retrieving logs: {e}")
             return []
@@ -223,13 +274,24 @@ class LoggingManager:
             from datetime import datetime, timedelta
             cutoff_date = (datetime.now() - timedelta(days=days_to_keep)).isoformat()
 
-            with sqlite3.connect(self.db_file) as conn:
+            # Use persistent connection for in-memory databases
+            if self.db_file == ':memory:' and self._sqlite_handler and self._sqlite_handler._conn:
+                conn = self._sqlite_handler._conn
+                close_conn = False
+            else:
+                conn = sqlite3.connect(self.db_file)
+                close_conn = True
+
+            try:
                 conn.execute("DELETE FROM logs WHERE timestamp < ?", (cutoff_date,))
                 deleted_count = conn.total_changes
                 conn.commit()
 
-            self.log('INFO', 'LOG_MAINTENANCE',
-                    f"Cleaned up {deleted_count} old log entries")
+                self.log('INFO', 'LOG_MAINTENANCE',
+                        f"Cleaned up {deleted_count} old log entries")
+            finally:
+                if close_conn:
+                    conn.close()
 
         except Exception as e:
             self.log('ERROR', 'LOG_MAINTENANCE', f"Log cleanup failed: {str(e)}")
