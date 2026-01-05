@@ -102,44 +102,62 @@ class DataDisplayWidget(QWidget):
         self.setLayout(layout)
 
     def display_parameter_data(self, parameter: Parameter, is_results: bool = False):
-        """Display parameter data in the table view"""
-        df = parameter.df
+        """Display parameter/result data in the table view"""
+        self.display_data_table(parameter, "Result" if is_results else "Parameter", is_results)
 
-        # Update the table title
-        title_prefix = "Result" if is_results else "Parameter"
-        self.param_title.setText(f"{title_prefix}: {parameter.name}")
+    def display_data_table(self, data: Parameter, title_prefix: str, is_results: bool = False):
+        """
+        Unified method for displaying parameter/result data in table and chart views.
+
+        Args:
+            data: Parameter object to display
+            title_prefix: "Parameter" or "Result" for titles
+            is_results: Whether this is results data (affects some logic)
+        """
+        df = data.df
+
+        # Update title
+        self.param_title.setText(f"{title_prefix}: {data.name}")
         self.param_title.setStyleSheet("font-weight: bold; font-size: 14px; color: #333; padding: 5px; background-color: #f0f0f0;")
 
         if df.empty:
-            self.param_table.setRowCount(0)
-            self.param_table.setColumnCount(0)
-            self.view_toggle_button.setEnabled(False)
+            self._clear_table_display()
             return
 
-        # Handle display mode
+        # Handle view mode (raw vs advanced)
         if self.table_display_mode == "advanced":
-            # Get current filter selections
-            current_filters = {}
-            for col, selector in self.property_selectors.items():
-                selected_value = selector.currentText()
-                if selected_value != "All":
-                    current_filters[col] = selected_value
-
-            # Transform data for advanced view
+            current_filters = self._get_current_filters()
             display_df = self._transform_to_advanced_view(df, current_filters, is_results)
-
-            # Always recalculate selectors for the current parameter data
             self._setup_property_selectors(df)
         else:
-            # Raw mode - use original data
             display_df = df
 
-        # Set up table with the display data
+        # Set up table dimensions and headers
         self._configure_table(display_df, is_results)
 
-        # Fill table data with formatting
-        self._populate_table(display_df, parameter)
+        # Format and populate table data
+        self._populate_table(display_df, data)
 
+        # Enable controls and update status
+        self._finalize_display(display_df, data, title_prefix, is_results)
+
+    def _clear_table_display(self):
+        """Clear the table display when no data is available"""
+        self.param_table.setRowCount(0)
+        self.param_table.setColumnCount(0)
+        self.view_toggle_button.setEnabled(False)
+
+    def _get_current_filters(self) -> Dict[str, str]:
+        """Get current filter selections from property selectors"""
+        current_filters = {}
+        for col, selector in self.property_selectors.items():
+            selected_value = selector.currentText()
+            if selected_value != "All":
+                current_filters[col] = selected_value
+        return current_filters
+
+    def _finalize_display(self, display_df: pd.DataFrame, data: Parameter, title_prefix: str, is_results: bool):
+        """Finalize the display after populating table data"""
         # Enable the view toggle button since we have data
         self.view_toggle_button.setEnabled(True)
 

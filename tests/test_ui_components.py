@@ -102,6 +102,93 @@ class TestDataDisplayWidget:
         assert widget.view_toggle_button.isEnabled()
 
     @patch('PyQt5.QtWidgets.QApplication')
+    def test_display_data_table_parameter(self, mock_app, sample_parameter):
+        """Test unified display_data_table method for parameters"""
+        from ui.components.data_display_widget import DataDisplayWidget
+
+        widget = DataDisplayWidget()
+        widget.display_data_table(sample_parameter, "Parameter", is_results=False)
+
+        # Check title was updated correctly
+        assert "Parameter: test_param" in widget.param_title.text()
+        assert widget.view_toggle_button.isEnabled()
+
+    @patch('PyQt5.QtWidgets.QApplication')
+    def test_display_data_table_result(self, mock_app, sample_parameter):
+        """Test unified display_data_table method for results"""
+        from ui.components.data_display_widget import DataDisplayWidget
+
+        widget = DataDisplayWidget()
+        widget.display_data_table(sample_parameter, "Result", is_results=True)
+
+        # Check title was updated correctly
+        assert "Result: test_param" in widget.param_title.text()
+        assert widget.view_toggle_button.isEnabled()
+
+    @patch('PyQt5.QtWidgets.QApplication')
+    def test_display_data_table_empty_dataframe(self, mock_app):
+        """Test unified display_data_table method with empty DataFrame"""
+        from ui.components.data_display_widget import DataDisplayWidget
+        from core.data_models import Parameter
+        import pandas as pd
+
+        # Create parameter with empty DataFrame
+        empty_df = pd.DataFrame()
+        empty_param = Parameter('empty_param', empty_df, {})
+
+        widget = DataDisplayWidget()
+        widget.display_data_table(empty_param, "Parameter", is_results=False)
+
+        # Check that table is cleared and button is disabled
+        assert not widget.view_toggle_button.isEnabled()
+
+    @patch('PyQt5.QtWidgets.QApplication')
+    def test_clear_table_display(self, mock_app, sample_parameter):
+        """Test _clear_table_display method"""
+        from ui.components.data_display_widget import DataDisplayWidget
+
+        widget = DataDisplayWidget()
+
+        # First populate the table
+        widget.display_data_table(sample_parameter, "Parameter", is_results=False)
+        assert widget.view_toggle_button.isEnabled()
+
+        # Then clear it
+        widget._clear_table_display()
+        assert not widget.view_toggle_button.isEnabled()
+
+    @patch('PyQt5.QtWidgets.QApplication')
+    def test_get_current_filters(self, mock_app):
+        """Test _get_current_filters method"""
+        from ui.components.data_display_widget import DataDisplayWidget
+        from PyQt5.QtWidgets import QComboBox
+
+        widget = DataDisplayWidget()
+
+        # Mock property selectors
+        mock_combo1 = QComboBox()
+        mock_combo1.addItem("All")
+        mock_combo1.addItem("value1")
+        mock_combo1.setCurrentText("value1")
+
+        mock_combo2 = QComboBox()
+        mock_combo2.addItem("All")
+        mock_combo2.addItem("value2")
+        mock_combo2.setCurrentText("All")
+
+        widget.property_selectors = {
+            'col1': mock_combo1,
+            'col2': mock_combo2
+        }
+
+        filters = widget._get_current_filters()
+
+        # Should only include non-"All" selections
+        assert 'col1' in filters
+        assert filters['col1'] == 'value1'
+        assert 'col2' not in filters
+
+    @patch('PyQt5.QtWidgets.QApplication')
     def test_toggle_display_mode(self, mock_app):
         """Test toggling between raw and advanced display modes"""
         from ui.components.data_display_widget import DataDisplayWidget
