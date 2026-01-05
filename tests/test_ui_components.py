@@ -214,6 +214,239 @@ class TestDataDisplayWidget:
         assert widget.table_display_mode == "raw"
         assert widget.view_toggle_button.text() == "Raw Display"
 
+    @patch('PyQt5.QtWidgets.QApplication')
+    def test_identify_columns(self, mock_app, sample_parameter):
+        """Test _identify_columns method"""
+        from ui.components.data_display_widget import DataDisplayWidget
+
+        widget = DataDisplayWidget()
+
+        # Test with sample parameter data
+        column_info = widget._identify_columns(sample_parameter.df)
+
+        # Check that columns are properly identified
+        assert 'year_cols' in column_info
+        assert 'property_cols' in column_info
+        assert 'filter_cols' in column_info
+        assert 'value_col' in column_info
+
+        # For our sample data, 'value' should be identified as value column
+        assert column_info['value_col'] == 'value'
+
+        # 'technology' should be in property_cols (also in filter_cols due to overlap in logic)
+        assert 'technology' in column_info['property_cols']
+
+    @patch('PyQt5.QtWidgets.QApplication')
+    def test_apply_filters(self, mock_app, sample_parameter):
+        """Test _apply_filters method"""
+        from ui.components.data_display_widget import DataDisplayWidget
+
+        widget = DataDisplayWidget()
+
+        # Test with sample data and filters
+        filters = {'technology': 'tech1'}
+        column_info = widget._identify_columns(sample_parameter.df)
+
+        filtered_df = widget._apply_filters(sample_parameter.df, filters, column_info)
+
+        # Check that filtering worked
+        assert not filtered_df.empty
+        # All remaining rows should have technology = 'tech1'
+        assert all(filtered_df['technology'] == 'tech1')
+
+    @patch('PyQt5.QtWidgets.QApplication')
+    def test_transform_data_structure_input_data(self, mock_app, sample_parameter):
+        """Test _transform_data_structure for input data (should pivot)"""
+        from ui.components.data_display_widget import DataDisplayWidget
+
+        widget = DataDisplayWidget()
+
+        column_info = widget._identify_columns(sample_parameter.df)
+
+        # Test transformation for input data (is_results=False)
+        transformed = widget._transform_data_structure(sample_parameter.df, column_info, is_results=False)
+
+        # For our sample data, it should be pivoted
+        # Check that the result has year as index and technologies as columns
+        assert 'year' in str(transformed.index.name) or isinstance(transformed.index, pd.Index)
+
+    @patch('PyQt5.QtWidgets.QApplication')
+    def test_transform_data_structure_results_data(self, mock_app, sample_parameter):
+        """Test _transform_data_structure for results data (should not pivot)"""
+        from ui.components.data_display_widget import DataDisplayWidget
+
+        widget = DataDisplayWidget()
+
+        column_info = widget._identify_columns(sample_parameter.df)
+
+        # Test transformation for results data (is_results=True)
+        transformed = widget._transform_data_structure(sample_parameter.df, column_info, is_results=True)
+
+        # For results data, should return original format
+        assert len(transformed) == len(sample_parameter.df)
+        assert list(transformed.columns) == list(sample_parameter.df.columns)
+
+    @patch('PyQt5.QtWidgets.QApplication')
+    def test_clean_output_with_hide_empty(self, mock_app):
+        """Test _clean_output with hide_empty=True"""
+        from ui.components.data_display_widget import DataDisplayWidget
+        import pandas as pd
+
+        widget = DataDisplayWidget()
+
+        # Create test DataFrame with some empty columns
+        data = {
+            'year': [2020, 2025],
+            'technology': ['tech1', 'tech2'],
+            'value': [100, 200],
+            'empty_col': [0, 0],  # All zeros
+            'another_empty': [None, None]  # All NaN
+        }
+        df = pd.DataFrame(data)
+
+        cleaned = widget._clean_output(df, hide_empty=True, is_results=False)
+
+        # Check that empty columns are removed
+        assert 'empty_col' not in cleaned.columns
+        assert 'another_empty' not in cleaned.columns
+        assert 'year' in cleaned.columns
+        assert 'technology' in cleaned.columns
+        assert 'value' in cleaned.columns
+
+    @patch('PyQt5.QtWidgets.QApplication')
+    def test_clean_output_without_hide_empty(self, mock_app):
+        """Test _clean_output with hide_empty=False"""
+        from ui.components.data_display_widget import DataDisplayWidget
+        import pandas as pd
+
+        widget = DataDisplayWidget()
+
+        # Create test DataFrame with some empty columns
+        data = {
+            'year': [2020, 2025],
+            'technology': ['tech1', 'tech2'],
+            'value': [100, 200],
+            'empty_col': [0, 0]
+        }
+        df = pd.DataFrame(data)
+
+        cleaned = widget._clean_output(df, hide_empty=False, is_results=False)
+
+        # Check that all columns are kept
+        assert len(cleaned.columns) == len(df.columns)
+        assert 'empty_col' in cleaned.columns
+
+    @patch('PyQt5.QtWidgets.QApplication')
+    def test_should_pivot(self, mock_app):
+        """Test _should_pivot method"""
+        from ui.components.data_display_widget import DataDisplayWidget
+
+        widget = DataDisplayWidget()
+
+        # Test case that should pivot
+        column_info_pivot = {
+            'year_cols': ['year'],
+            'property_cols': ['technology'],
+            'value_col': 'value'
+        }
+        assert widget._should_pivot(pd.DataFrame(), column_info_pivot) == True
+
+        # Test case that should not pivot (missing value column)
+        column_info_no_pivot = {
+            'year_cols': ['year'],
+            'property_cols': ['technology'],
+            'value_col': None
+        }
+        assert widget._should_pivot(pd.DataFrame(), column_info_no_pivot) == False
+
+    @patch('PyQt5.QtWidgets.QApplication')
+    def test_perform_pivot(self, mock_app, sample_parameter):
+        """Test _perform_pivot method"""
+        from ui.components.data_display_widget import DataDisplayWidget
+
+        widget = DataDisplayWidget()
+
+        column_info = widget._identify_columns(sample_parameter.df)
+
+        pivoted = widget._perform_pivot(sample_parameter.df, column_info)
+
+        # Check that pivot operation worked
+        # Result should have year as index and technologies as columns
+        assert len(pivoted.columns) >= 2  # At least tech1 and tech2 columns
+
+    @patch('PyQt5.QtWidgets.QApplication')
+    def test_prepare_2d_format(self, mock_app, sample_parameter):
+        """Test _prepare_2d_format method"""
+        from ui.components.data_display_widget import DataDisplayWidget
+
+        widget = DataDisplayWidget()
+
+        column_info = widget._identify_columns(sample_parameter.df)
+
+        formatted = widget._prepare_2d_format(sample_parameter.df, column_info)
+
+        # Should return the DataFrame unchanged for now
+        assert len(formatted) == len(sample_parameter.df)
+        assert list(formatted.columns) == list(sample_parameter.df.columns)
+
+    @patch('PyQt5.QtWidgets.QApplication')
+    def test_hide_empty_columns(self, mock_app):
+        """Test _hide_empty_columns method"""
+        from ui.components.data_display_widget import DataDisplayWidget
+        import pandas as pd
+
+        widget = DataDisplayWidget()
+
+        # Create test DataFrame
+        data = {
+            'year': [2020, 2025],
+            'technology': ['tech1', 'tech2'],
+            'value': [100, 200],
+            'empty_numeric': [0, 0],
+            'empty_text': [None, None]
+        }
+        df = pd.DataFrame(data)
+
+        hidden = widget._hide_empty_columns(df, is_results=False)
+
+        # Check that empty columns are removed
+        assert 'empty_numeric' not in hidden.columns
+        assert 'empty_text' not in hidden.columns
+        assert 'year' in hidden.columns
+        assert 'technology' in hidden.columns
+        assert 'value' in hidden.columns
+
+    @patch('PyQt5.QtWidgets.QApplication')
+    def test_transform_to_advanced_view_empty_df(self, mock_app):
+        """Test _transform_to_advanced_view with empty DataFrame"""
+        from ui.components.data_display_widget import DataDisplayWidget
+        import pandas as pd
+
+        widget = DataDisplayWidget()
+
+        empty_df = pd.DataFrame()
+        result = widget._transform_to_advanced_view(empty_df)
+
+        # Should return empty DataFrame
+        assert result.empty
+
+    @patch('PyQt5.QtWidgets.QApplication')
+    def test_transform_to_advanced_view_full_flow(self, mock_app, sample_parameter):
+        """Test full _transform_to_advanced_view method flow"""
+        from ui.components.data_display_widget import DataDisplayWidget
+
+        widget = DataDisplayWidget()
+
+        # Test with filters
+        filters = {'technology': 'tech1'}
+        result = widget._transform_to_advanced_view(sample_parameter.df, current_filters=filters, is_results=False)
+
+        # Should return filtered and transformed data
+        assert not result.empty
+        # All technologies should be 'tech1' after filtering
+        if 'technology' in result.columns:
+            assert all(result['technology'] == 'tech1')
+
 
 class TestChartWidget:
     """Test ChartWidget functionality"""

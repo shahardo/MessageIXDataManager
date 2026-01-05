@@ -6,11 +6,12 @@ Extracted from MainWindow to provide focused data display functionality.
 
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QTableWidget, QTableWidgetItem,
-    QLabel, QPushButton, QComboBox, QGroupBox, QCheckBox, QFrame
+    QLabel, QPushButton, QComboBox, QGroupBox, QCheckBox, QFrame, QHeaderView
 )
 from PyQt5.QtCore import Qt
 import pandas as pd
-from typing import Optional, Dict, List
+import numpy as np
+from typing import Optional, Dict, List, Union, Any
 
 from core.data_models import Parameter
 
@@ -357,23 +358,138 @@ class DataDisplayWidget(QWidget):
         # Emit signal to refresh display (will be connected by parent)
         self.display_mode_changed.emit()
 
-    def _transform_to_advanced_view(self, df: pd.DataFrame, current_filters: dict = None, is_results: bool = False) -> pd.DataFrame:
-        """
-        Transform parameter data into 2D advanced view format.
-
-        This is a simplified version - the full implementation will be moved from MainWindow.
-        """
+    def _transform_to_advanced_view(self, df: pd.DataFrame, current_filters: dict = None,
+                                   is_results: bool = False, hide_empty: bool = None) -> pd.DataFrame:
+        """Transform data to advanced 2D view format"""
         if df.empty:
             return df
 
+        if hide_empty is None:
+            hide_empty = self.hide_empty_columns
+
+        # Identify column types
+        column_info = self._identify_columns(df)
+
         # Apply filters
+        filtered_df = self._apply_filters(df, current_filters, column_info)
+
+        # Transform data structure
+        transformed_df = self._transform_data_structure(filtered_df, column_info, is_results)
+
+        # Clean and finalize output
+        final_df = self._clean_output(transformed_df, hide_empty, is_results)
+
+        return final_df
+
+    def _identify_columns(self, df: pd.DataFrame) -> Dict[str, Union[List[str], Optional[str]]]:
+        """Identify different types of columns in the DataFrame"""
+        year_cols = []
+        property_cols = []
+        filter_cols = []
+        value_col = None
+
+        for col in df.columns:
+            col_lower = col.lower()
+            if col_lower in ['value', 'val']:
+                value_col = col
+            elif col_lower in ['year_vtg', 'year_act', 'year', 'period']:
+                year_cols.append(col)
+            elif col_lower in ['node_loc', 'technology', 'commodity']:
+                filter_cols.append(col)
+            elif col_lower in ['technology', 'commodity', 'type']:
+                property_cols.append(col)
+
+        return {
+            'year_cols': year_cols,
+            'property_cols': property_cols,
+            'filter_cols': filter_cols,
+            'value_col': value_col
+        }
+
+    def _apply_filters(self, df: pd.DataFrame, filters: dict, column_info: dict) -> pd.DataFrame:
+        """Apply current filter selections to DataFrame"""
         filtered_df = df.copy()
-        for filter_col, filter_value in current_filters.items():
+        for filter_col, filter_value in filters.items():
             if filter_value and filter_value != "All" and filter_col in filtered_df.columns:
                 filtered_df = filtered_df[filtered_df[filter_col] == filter_value]
-
-        # For now, return filtered data - full pivot logic will be moved later
         return filtered_df
+
+    def _transform_data_structure(self, df: pd.DataFrame, column_info: dict, is_results: bool) -> pd.DataFrame:
+        """Transform DataFrame structure based on data type"""
+        # Pivoting logic for input data
+        if not is_results and self._should_pivot(df, column_info):
+            return self._perform_pivot(df, column_info)
+        else:
+            return self._prepare_2d_format(df, column_info)
+
+    def _clean_output(self, df: pd.DataFrame, hide_empty: bool, is_results: bool) -> pd.DataFrame:
+        """Clean and filter final output DataFrame"""
+        if hide_empty:
+            df = self._hide_empty_columns(df, is_results)
+
+        # Additional cleaning logic
+        return df
+
+    def _should_pivot(self, df: pd.DataFrame, column_info: dict) -> bool:
+        """Determine if DataFrame should be pivoted based on column structure"""
+        # Pivoting logic - simplified for now
+        year_cols = column_info.get('year_cols', [])
+        property_cols = column_info.get('property_cols', [])
+        value_col = column_info.get('value_col')
+
+        # Pivot if we have year columns, property columns, and a value column
+        return bool(year_cols and property_cols and value_col)
+
+    def _perform_pivot(self, df: pd.DataFrame, column_info: dict) -> pd.DataFrame:
+        """Perform pivot operation on DataFrame"""
+        year_cols = column_info.get('year_cols', [])
+        property_cols = column_info.get('property_cols', [])
+        value_col = column_info.get('value_col')
+
+        if not (year_cols and property_cols and value_col):
+            return df
+
+        # Use first year column and first property column for pivoting
+        index_col = year_cols[0]
+        columns_col = property_cols[0]
+
+        try:
+            pivoted = df.pivot_table(
+                values=value_col,
+                index=index_col,
+                columns=columns_col,
+                aggfunc=lambda x: x.iloc[0] if len(x) > 0 else 0
+            ).fillna(0)
+            return pivoted
+        except Exception:
+            # Fallback to original data if pivot fails
+            return df
+
+    def _prepare_2d_format(self, df: pd.DataFrame, column_info: dict) -> pd.DataFrame:
+        """Prepare DataFrame in 2D format without pivoting"""
+        # For now, return the DataFrame as-is
+        # Could add additional formatting logic here
+        return df
+
+    def _hide_empty_columns(self, df: pd.DataFrame, is_results: bool) -> pd.DataFrame:
+        """Hide columns that are entirely empty or zero"""
+        if df.empty:
+            return df
+
+        # Identify columns to keep
+        columns_to_keep = []
+        for col in df.columns:
+            col_data = df[col]
+            if col_data.dtype in ['int64', 'float64']:
+                # Keep numeric columns that have at least one non-zero, non-NaN value
+                if not (col_data.dropna() == 0).all():
+                    columns_to_keep.append(col)
+            else:
+                # Keep non-numeric columns that have at least one non-empty value
+                if not col_data.isna().all():
+                    columns_to_keep.append(col)
+
+        return df[columns_to_keep] if columns_to_keep else df
 
     # Signals (will be implemented when PyQt signals are added)
     display_mode_changed = None  # Placeholder for signal
