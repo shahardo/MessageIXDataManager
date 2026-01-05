@@ -9,14 +9,15 @@ from openpyxl import load_workbook
 from typing import Dict, List, Optional, Any, Callable
 
 from core.data_models import ScenarioData, Parameter
+from managers.base_data_manager import BaseDataManager
+from utils.parameter_utils import create_parameter_from_data
 
 
-class ResultsAnalyzer:
+class ResultsAnalyzer(BaseDataManager):
     """Analyzes message_ix result Excel files and prepares data for visualization"""
 
     def __init__(self):
-        self.results: List[ScenarioData] = []
-        self.loaded_file_paths: List[str] = []
+        super().__init__()
         self.summary_stats: Dict[str, Any] = {}
 
     def load_results_file(self, file_path: str, progress_callback: Optional[Callable[[int, str], None]] = None) -> ScenarioData:
@@ -34,51 +35,19 @@ class ResultsAnalyzer:
             FileNotFoundError: If file doesn't exist
             ValueError: If file format is invalid
         """
-        if not os.path.exists(file_path):
-            raise FileNotFoundError(f"Results file not found: {file_path}")
+        scenario = self.load_file(file_path, progress_callback)
 
-        print(f"Loading results file: {file_path}")
+        # Calculate summary statistics for all loaded results
+        combined_results = self.get_current_scenario()
+        if combined_results:
+            self._calculate_summary_stats(combined_results)
 
-        # Create new results data
-        results = ScenarioData()
+        return scenario
 
-        try:
-            # Initialize progress
-            if progress_callback:
-                progress_callback(0, "Loading results workbook...")
-
-            # Load workbook
-            wb = load_workbook(file_path, data_only=True)
-
-            if progress_callback:
-                progress_callback(20, "Workbook loaded, parsing results...")
-
-            # Parse results (typically in var_* and equ_* sheets)
-            self._parse_results(wb, results, progress_callback)
-
-            # Store reference
-            self.results.append(results)
-            self.loaded_file_paths.append(file_path)
-
-            if progress_callback:
-                progress_callback(80, "Calculating summary statistics...")
-
-            # Calculate summary statistics for all loaded results
-            combined_results = self.get_current_results()
-            if combined_results:
-                self._calculate_summary_stats(combined_results)
-
-            if progress_callback:
-                progress_callback(100, "Results loading complete")
-
-            print(f"Successfully loaded results with {len(results.parameters)} variables/equations")
-
-        except Exception as e:
-            if progress_callback:
-                progress_callback(0, f"Error: {str(e)}")
-            raise ValueError(f"Error parsing results file: {str(e)}")
-
-        return results
+    def _parse_workbook(self, wb, results: ScenarioData, progress_callback: Optional[Callable[[int, str], None]] = None):
+        """Parse workbook for results data - implements abstract method"""
+        # Parse results (typically in var_* and equ_* sheets)
+        self._parse_results(wb, results, progress_callback)
 
     def _parse_results(self, wb, results: ScenarioData, progress_callback: Optional[Callable[[int, str], None]] = None):
         """Parse results from workbook"""
@@ -195,35 +164,13 @@ class ResultsAnalyzer:
                     data.append(filtered_row)
 
         if data and len(data) > 0:
-            df = pd.DataFrame(data, columns=headers)
-            # Ensure None values are converted to NaN to preserve empty cells
-            df = df.replace({None: np.nan})
-
-            # Convert any integer columns that contain NaN to float to preserve NaN values
-            for col in df.columns:
-                col_data = df[col]
-                if hasattr(col_data, 'dtype') and col_data.dtype in ['int64', 'int32', 'int16', 'int8'] and col_data.isna().any():
-                    df[col] = col_data.astype('float64')
-
-            # Convert columns that are all zeros to NaN (treat as empty)
-            for col in df.columns:
-                col_data = df[col]
-                if hasattr(col_data, 'dtype') and col_data.dtype in ['int64', 'int32', 'int16', 'int8', 'float64', 'float32']:
-                    # Check if all non-NaN values are 0
-                    non_nan_values = col_data.dropna()
-                    if len(non_nan_values) > 0 and (non_nan_values == 0).all():
-                        df[col] = col_data.replace(0, np.nan)
-
-            # Create parameter object for this result
-            metadata = {
-                'units': 'N/A',
-                'desc': f'Result {sheet_name}',
-                'dims': headers[:-1] if len(headers) > 1 else [],
+            # Use parameter utilities to create the parameter
+            metadata_overrides = {
                 'result_type': 'variable' if sheet_name.startswith('var_') else 'equation'
             }
-
-            parameter = Parameter(sheet_name, df, metadata)
-            results.add_parameter(parameter)
+            parameter = create_parameter_from_data(sheet_name, data, headers, metadata_overrides)
+            if parameter:
+                results.add_parameter(parameter)
 
     def _calculate_summary_stats(self, results: ScenarioData):
         """Calculate summary statistics from results"""
@@ -250,17 +197,11 @@ class ResultsAnalyzer:
 
     def get_result_data(self, result_name: str) -> Optional[Parameter]:
         """Get specific result data by name"""
-        results = self.get_current_results()
-        if results:
-            return results.get_parameter(result_name)
-        return None
+        return self.get_parameter(result_name)
 
     def get_all_result_names(self) -> List[str]:
         """Get list of all result names"""
-        results = self.get_current_results()
-        if results:
-            return results.get_parameter_names()
-        return []
+        return self.get_parameter_names()
 
     def prepare_chart_data(self, result_name: str, chart_type: str = 'line') -> Optional[Dict[str, Any]]:
         """
@@ -322,74 +263,18 @@ class ResultsAnalyzer:
 
         return chart_data
 
+    # Override get_current_scenario to maintain backward compatibility naming
     def get_current_results(self) -> Optional[ScenarioData]:
         """Get the combined results from all loaded files"""
-        if not self.results:
-            return None
+        return self.get_current_scenario()
 
-        if len(self.results) == 1:
-            return self.results[0]
-
-        # Combine multiple results
-        combined = ScenarioData()
-        for result in self.results:
-            # Merge sets (avoid duplicates)
-            for set_name, set_data in result.sets.items():
-                if set_name not in combined.sets:
-                    combined.sets[set_name] = set_data.copy()
-                else:
-                    # Merge set elements - concatenate Series and drop duplicates
-                    combined.sets[set_name] = pd.concat([combined.sets[set_name], set_data]).drop_duplicates().reset_index(drop=True)
-
-            # Merge parameters (results are typically variables and equations)
-            for param_name, param in result.parameters.items():
-                if param_name not in combined.parameters:
-                    # Create a copy of the parameter with copied DataFrame
-                    param_copy = Parameter(param.name, param.df.copy(), param.metadata.copy())
-                    combined.parameters[param_name] = param_copy
-                else:
-                    # Merge result data (append rows) - create new DataFrame
-                    existing_data = combined.parameters[param_name].df
-                    new_data = param.df
-                    combined.parameters[param_name].df = pd.concat([existing_data, new_data], ignore_index=True)
-
-        return combined
-
-    def get_loaded_file_paths(self) -> List[str]:
-        """Get list of all loaded file paths"""
-        return self.loaded_file_paths.copy()
-
+    # Override other methods for backward compatibility
     def get_results_by_file_path(self, file_path: str) -> Optional[ScenarioData]:
         """Get specific results by file path"""
-        if file_path in self.loaded_file_paths:
-            index = self.loaded_file_paths.index(file_path)
-            return self.results[index]
-        return None
+        return self.get_scenario_by_file_path(file_path)
 
     def clear_results(self):
         """Clear all loaded results"""
-        self.results.clear()
-        self.loaded_file_paths.clear()
+        self.clear_scenarios()
 
-    def remove_file(self, file_path: str) -> bool:
-        """
-        Remove a loaded results file and its associated data
-
-        Args:
-            file_path: Path to the file to remove
-
-        Returns:
-            True if file was found and removed, False otherwise
-        """
-        if file_path in self.loaded_file_paths:
-            # Find the index of the file
-            index = self.loaded_file_paths.index(file_path)
-
-            # Remove from both lists
-            self.loaded_file_paths.pop(index)
-            self.results.pop(index)
-
-            print(f"Removed results file: {file_path}")
-            return True
-
-        return False
+    # Keep remove_file method for backward compatibility (inherited from BaseDataManager)
