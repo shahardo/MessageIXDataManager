@@ -17,6 +17,7 @@ import os
 from typing import Optional
 
 from core.data_models import Parameter
+from ..ui_styler import UIStyler
 
 
 class ChartWidget(QWidget):
@@ -37,27 +38,24 @@ class ChartWidget(QWidget):
 
         # Chart type buttons
         button_layout = QHBoxLayout()
+        button_layout.setContentsMargins(0, 5, 0, 5)  # Add space above and below
 
         self.simple_bar_btn = QPushButton("Simple Bar")
-        self.simple_bar_btn.setCheckable(True)
+        UIStyler.setup_chart_button(self.simple_bar_btn)
         self.simple_bar_btn.setChecked(True)
         self.simple_bar_btn.clicked.connect(lambda: self._on_chart_type_changed('bar'))
 
         self.stacked_bar_btn = QPushButton("Stacked Bar")
-        self.stacked_bar_btn.setCheckable(True)
+        UIStyler.setup_chart_button(self.stacked_bar_btn)
         self.stacked_bar_btn.clicked.connect(lambda: self._on_chart_type_changed('stacked_bar'))
 
         self.line_chart_btn = QPushButton("Line Chart")
-        self.line_chart_btn.setCheckable(True)
+        UIStyler.setup_chart_button(self.line_chart_btn)
         self.line_chart_btn.clicked.connect(lambda: self._on_chart_type_changed('line'))
 
         self.stacked_area_btn = QPushButton("Stacked Area")
-        self.stacked_area_btn.setCheckable(True)
+        UIStyler.setup_chart_button(self.stacked_area_btn)
         self.stacked_area_btn.clicked.connect(lambda: self._on_chart_type_changed('stacked_area'))
-
-        # Make buttons checkable and set cursor
-        for btn in [self.simple_bar_btn, self.stacked_bar_btn, self.line_chart_btn, self.stacked_area_btn]:
-            btn.setCursor(Qt.PointingHandCursor)
 
         button_layout.addWidget(self.simple_bar_btn)
         button_layout.addWidget(self.stacked_bar_btn)
@@ -98,12 +96,9 @@ class ChartWidget(QWidget):
         self.line_chart_btn.setChecked(False)
         self.stacked_area_btn.setChecked(False)
 
-        # Make buttons checkable and set cursor
+        # Apply chart button styling using UIStyler
         for btn in [self.simple_bar_btn, self.stacked_bar_btn, self.line_chart_btn, self.stacked_area_btn]:
-            if hasattr(btn, 'setCheckable'):
-                btn.setCheckable(True)
-            if hasattr(btn, 'setCursor'):
-                btn.setCursor(Qt.PointingHandCursor)
+            UIStyler.setup_chart_button(btn)
 
     def update_chart(self, df: pd.DataFrame, parameter_name: str, is_results: bool = False):
         """Update the chart with data from a DataFrame"""

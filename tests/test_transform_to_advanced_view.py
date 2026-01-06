@@ -49,6 +49,66 @@ def complex_dataframe():
 class TestTransformToAdvancedView:
     """Test the advanced view transformation functionality"""
 
+    def test_advanced_view_results_year_handling(self, sample_widget):
+        """Test that in advanced view for results, year column is hidden and years are used as row indices"""
+        # Create test data similar to results data with year column
+        results_data = [
+            ['region1', 'tech1', 2020, 100.0],
+            ['region1', 'tech1', 2025, 120.0],
+            ['region1', 'tech2', 2020, 80.0],
+            ['region1', 'tech2', 2025, 90.0],
+        ]
+        results_df = pd.DataFrame(results_data, columns=['region', 'technology', 'year', 'value'])
+
+        # Transform to advanced view as results (is_results=True)
+        transformed_df = sample_widget._transform_to_advanced_view(results_df, is_results=True)
+
+        # For results in advanced view, year should be the index (row labels)
+        # and year column should not be visible in columns
+        assert 'year' not in transformed_df.columns, "Year column should be hidden in advanced view for results"
+        assert transformed_df.index.name == 'year' or 'year' in str(transformed_df.index.name), "Year should be used as index"
+
+        # The index values should be the actual year values
+        expected_years = [2020, 2025]
+        actual_years = sorted(transformed_df.index.unique())
+        assert actual_years == expected_years, f"Expected index {expected_years}, got {actual_years}"
+
+    def test_advanced_view_results_table_configuration(self, sample_widget):
+        """Test that table is configured correctly for results in advanced view"""
+        from unittest.mock import patch
+
+        # Create test data
+        results_data = [
+            ['region1', 'tech1', 2020, 100.0],
+            ['region1', 'tech1', 2025, 120.0],
+        ]
+        results_df = pd.DataFrame(results_data, columns=['region', 'technology', 'year', 'value'])
+
+        # Transform using the same logic as the chart (what the table now uses)
+        transformed_df = sample_widget.transform_to_display_format(
+            results_df,
+            is_results=True,
+            current_filters=None,
+            hide_empty=False,
+            for_chart=True
+        )
+
+        # Mock the table methods to capture calls
+        with patch.object(sample_widget.param_table, 'setRowCount') as mock_set_row_count, \
+             patch.object(sample_widget.param_table, 'setColumnCount') as mock_set_column_count, \
+             patch.object(sample_widget.param_table, 'setVerticalHeaderLabels') as mock_set_vertical_headers, \
+             patch.object(sample_widget.param_table, 'setHorizontalHeaderLabels') as mock_set_horizontal_headers:
+
+            # Set to advanced mode
+            sample_widget.table_display_mode = "advanced"
+
+            # Configure table with the transformed data
+            sample_widget._configure_table(transformed_df, is_results=True)
+
+            # Verify that vertical headers are set to years
+            mock_set_vertical_headers.assert_called_with(['2020', '2025'])  # Years as row labels
+            mock_set_horizontal_headers.assert_called_with(['region', 'technology', 'value'])  # Year column hidden
+
     def test_identify_columns_basic(self, sample_widget, sample_dataframe):
         """Test basic column identification"""
         column_info = sample_widget._identify_columns(sample_dataframe)

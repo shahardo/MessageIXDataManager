@@ -8,7 +8,7 @@ import pytest
 import pandas as pd
 import sys
 import os
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, patch, mock_open
 
 # Add src directory to path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
@@ -642,3 +642,228 @@ class TestFileNavigatorWidget:
 
         # This should not raise an exception
         widget.add_recent_file('/path/to/test.xlsx', 'input')
+
+
+class TestUIStyler:
+    """Test UIStyler functionality"""
+
+    @patch('os.path.exists')
+    @patch('builtins.open', new_callable=mock_open, read_data="/* Test stylesheet */")
+    @patch('PyQt5.QtWidgets.QApplication')
+    def test_apply_stylesheet_success(self, mock_app, mock_file, mock_exists):
+        """Test applying stylesheet successfully"""
+        from ui.ui_styler import UIStyler
+
+        mock_exists.return_value = True
+        mock_app_instance = MagicMock()
+        mock_app.return_value = mock_app_instance
+
+        UIStyler.apply_stylesheet(mock_app_instance)
+
+        # Check that setStyleSheet was called
+        mock_app_instance.setStyleSheet.assert_called_once_with("/* Test stylesheet */")
+
+    @patch('os.path.exists')
+    @patch('PyQt5.QtWidgets.QApplication')
+    def test_apply_stylesheet_file_not_found(self, mock_app, mock_exists):
+        """Test applying stylesheet when file doesn't exist"""
+        from ui.ui_styler import UIStyler
+
+        mock_exists.return_value = False
+        mock_app_instance = MagicMock()
+        mock_app.return_value = mock_app_instance
+
+        # This should not raise an exception
+        UIStyler.apply_stylesheet(mock_app_instance)
+
+        # setStyleSheet should still be called (with empty string or not at all)
+        # We just verify no exception was raised
+
+    @patch('PyQt5.QtWidgets.QApplication')
+    def test_setup_table_widget(self, mock_app):
+        """Test setting up table widget"""
+        from ui.ui_styler import UIStyler
+        from PyQt5.QtWidgets import QTableWidget
+
+        table = QTableWidget()
+
+        UIStyler.setup_table_widget(table)
+
+        # Check that alternating row colors was set
+        assert table.alternatingRowColors() == True
+
+    @patch('PyQt5.QtWidgets.QApplication')
+    def test_setup_parameter_title_label_small(self, mock_app):
+        """Test setting up parameter title label with small styling"""
+        from ui.ui_styler import UIStyler
+        from PyQt5.QtWidgets import QLabel
+
+        label = QLabel()
+
+        UIStyler.setup_parameter_title_label(label, is_small=True)
+
+        # Check that the CSS class was set
+        assert label.property("class") == "parameter-title-small"
+
+    @patch('PyQt5.QtWidgets.QApplication')
+    def test_setup_parameter_title_label_normal(self, mock_app):
+        """Test setting up parameter title label with normal styling"""
+        from ui.ui_styler import UIStyler
+        from PyQt5.QtWidgets import QLabel
+
+        label = QLabel()
+
+        UIStyler.setup_parameter_title_label(label, is_small=False)
+
+        # Check that the CSS class was set
+        assert label.property("class") == "parameter-title"
+
+    @patch('PyQt5.QtWidgets.QApplication')
+    def test_setup_view_toggle_button(self, mock_app):
+        """Test setting up view toggle button"""
+        from ui.ui_styler import UIStyler
+        from PyQt5.QtWidgets import QPushButton
+
+        button = QPushButton()
+
+        UIStyler.setup_view_toggle_button(button)
+
+        # Check button properties
+        assert button.isCheckable() == True
+        assert button.isChecked() == False
+        assert button.isEnabled() == False
+
+    @patch('PyQt5.QtWidgets.QApplication')
+    def test_setup_filter_label(self, mock_app):
+        """Test setting up filter label"""
+        from ui.ui_styler import UIStyler
+        from PyQt5.QtWidgets import QLabel
+
+        label = QLabel()
+
+        UIStyler.setup_filter_label(label)
+
+        # Check that the CSS class was set
+        assert label.property("class") == "filter-label"
+
+    @patch('PyQt5.QtWidgets.QApplication')
+    def test_setup_remove_button(self, mock_app):
+        """Test setting up remove button"""
+        from ui.ui_styler import UIStyler
+        from PyQt5.QtWidgets import QPushButton
+
+        button = QPushButton()
+
+        UIStyler.setup_remove_button(button)
+
+        # Check that the CSS class was set and size was set
+        assert button.property("class") == "remove-button"
+        assert button.size().width() == 20
+        assert button.size().height() == 20
+
+    @patch('PyQt5.QtWidgets.QApplication')
+    def test_setup_tree_widget(self, mock_app):
+        """Test setting up tree widget"""
+        from ui.ui_styler import UIStyler
+        from PyQt5.QtWidgets import QTreeWidget
+
+        tree = QTreeWidget()
+
+        UIStyler.setup_tree_widget(tree)
+
+        # Check that alternating row colors was set
+        assert tree.alternatingRowColors() == True
+
+    @patch('PyQt5.QtWidgets.QApplication')
+    def test_apply_class_styling(self, mock_app):
+        """Test applying CSS class to widget"""
+        from ui.ui_styler import UIStyler
+        from PyQt5.QtWidgets import QLabel
+
+        label = QLabel()
+        class_name = "test-class"
+
+        UIStyler.apply_class_styling(label, class_name)
+
+        # Check that the CSS class was set
+        assert label.property("class") == class_name
+
+
+class TestMainWindowUI:
+    """Test MainWindowUI functionality"""
+
+    @patch('PyQt5.QtWidgets.QApplication')
+    def test_initialization(self, mock_app):
+        """Test MainWindowUI initializes correctly"""
+        from ui.ui_styler import MainWindowUI
+        from unittest.mock import MagicMock
+
+        mock_main_window = MagicMock()
+        ui_helper = MainWindowUI(mock_main_window)
+
+        # Check that main_window reference is stored
+        assert ui_helper.main_window == mock_main_window
+
+    @patch('PyQt5.QtWidgets.QApplication')
+    def test_setup_splitters(self, mock_app):
+        """Test setting up splitters"""
+        from ui.ui_styler import MainWindowUI
+        from unittest.mock import MagicMock
+
+        mock_main_window = MagicMock()
+        ui_helper = MainWindowUI(mock_main_window)
+
+        ui_helper.setup_splitters()
+
+        # Check that splitter methods were called
+        mock_main_window.leftSplitter.setStretchFactor.assert_called()
+        mock_main_window.splitter.setStretchFactor.assert_called()
+        mock_main_window.contentSplitter.setStretchFactor.assert_called()
+        mock_main_window.dataSplitter.setStretchFactor.assert_called()
+
+    @patch('PyQt5.QtWidgets.QApplication')
+    def test_setup_table_styling(self, mock_app):
+        """Test setting up table styling"""
+        from ui.ui_styler import MainWindowUI
+        from unittest.mock import MagicMock
+
+        mock_main_window = MagicMock()
+        mock_table = MagicMock()
+        mock_header = MagicMock()
+        mock_main_window.param_table = mock_table
+        mock_table.horizontalHeader.return_value = mock_header
+
+        ui_helper = MainWindowUI(mock_main_window)
+
+        ui_helper.setup_table_styling()
+
+        # Check that UIStyler methods were called
+        # (The actual method calls are tested in TestUIStyler)
+
+    @patch('PyQt5.QtWidgets.QApplication')
+    def test_setup_chart_buttons(self, mock_app):
+        """Test setting up chart buttons"""
+        from ui.ui_styler import MainWindowUI
+        from unittest.mock import MagicMock
+
+        mock_main_window = MagicMock()
+        ui_helper = MainWindowUI(mock_main_window)
+
+        ui_helper.setup_chart_buttons()
+
+        # Check that button setup was called
+        # (The actual method calls are tested in TestUIStyler)
+
+    @patch('PyQt5.QtWidgets.QApplication')
+    def test_apply_all_styling(self, mock_app):
+        """Test applying all styling"""
+        from ui.ui_styler import MainWindowUI
+        from unittest.mock import MagicMock
+
+        mock_main_window = MagicMock()
+        ui_helper = MainWindowUI(mock_main_window)
+
+        ui_helper.apply_all_styling()
+
+        # Check that all styling methods were called
+        # (The actual method calls are tested in TestUIStyler)

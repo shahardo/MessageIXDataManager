@@ -12,6 +12,7 @@ from PyQt5.QtGui import QIcon
 from PyQt5.QtCore import QSize
 
 from ui.main_window import MainWindow
+from ui.ui_styler import UIStyler
 
 
 def set_windows_taskbar_icon(window, icon_path):
@@ -65,6 +66,9 @@ def main():
     app.setApplicationName("MessageIX Data Manager")
     app.setApplicationVersion("1.0.0")
     app.setApplicationDisplayName("MessageIX Data Manager")
+
+    # Apply application stylesheet
+    UIStyler.apply_stylesheet(app)
 
     # Set application icon using PNG files with multiple sizes
     app_icon = QIcon()

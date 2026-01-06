@@ -1,0 +1,345 @@
+/* MessageIX Data Manager - Application Stylesheet */
+
+/* Main application window */
+QMainWindow {
+    background-color: #f5f5f5;
+}
+
+/* Parameter title styling */
+.parameter-title {
+    font-weight: bold;
+    font-size: 14px;
+    color: #333;
+    padding: 5px;
+    background-color: #f0f0f0;
+}
+
+.parameter-title-small {
+    font-size: 12px;
+    color: #333;
+    padding: 5px;
+    background-color: #f0f0f0;
+}
+
+/* Table styling */
+QTableWidget {
+    gridline-color: #ddd;
+    background-color: white;
+    alternate-background-color: #f9f9f9;
+}
+
+QTableWidget::item {
+    padding: 4px;
+}
+
+QTableWidget::item:selected {
+    background-color: #e3f2fd;
+}
+
+/* Table header styling */
+QHeaderView::section {
+    background-color: #e0e0e0;
+    padding: 4px;
+    border: 1px solid #ccc;
+    font-weight: bold;
+    font-size: 12px;
+}
+
+/* Button styling */
+QPushButton {
+    font-size: 11px;
+    padding: 3px 8px;
+    background-color: #e0e0e0;
+    border: 1px solid #ccc;
+    border-radius: 3px;
+    color: #333;
+}
+
+QPushButton:hover {
+    background-color: #d0d0d0;
+}
+
+QPushButton:pressed {
+    background-color: #c0c0c0;
+}
+
+QPushButton:checked {
+    background-color: #c0c0c0;
+    color: #333;
+    font-weight: bold;
+}
+
+/* Chart type buttons - should be green when selected */
+.chart-button:checked {
+    background-color: #4CAF50;
+    color: white;
+    font-weight: bold;
+}
+
+/* View toggle buttons - should be green when selected */
+.view-toggle-button:checked {
+    background-color: #4CAF50;
+    color: white;
+    font-weight: bold;
+}
+
+QPushButton:disabled {
+    background-color: #f0f0f0;
+    color: #999;
+    border: 1px solid #ddd;
+}
+
+/* Remove button styling for navigator */
+.remove-button {
+    border: none;
+    background: transparent;
+    color: #666;
+    font-weight: bold;
+    font-size: 14px;
+}
+
+.remove-button:hover {
+    color: #f00;
+    background: #f5f5f5;
+}
+
+/* Combo box styling */
+QComboBox {
+    font-size: 11px;
+    padding: 2px;
+    border: 1px solid #ccc;
+    border-radius: 3px;
+    background-color: white;
+}
+
+QComboBox:hover {
+    border-color: #999;
+}
+
+QComboBox::drop-down {
+    border: none;
+}
+
+QComboBox::down-arrow {
+    image: url(down_arrow.png); /* Could add custom arrow */
+}
+
+/* Checkbox styling */
+QCheckBox {
+    font-size: 11px;
+    font-weight: bold;
+    border: none;
+    outline: none;
+    margin: 0px;
+    padding: 0px;
+}
+
+QCheckBox::indicator {
+    width: 13px;
+    height: 13px;
+}
+
+QCheckBox:focus {
+    outline: none;
+    border: none;
+}
+
+QCheckBox:hover {
+    outline: none;
+    border: none;
+}
+
+/* Widget container styling */
+QWidget {
+    outline: none;
+    border: none;
+}
+
+/* Label styling */
+QLabel {
+    color: #333;
+    outline: none;
+}
+
+QLabel:focus {
+    outline: none;
+}
+
+.filter-label {
+    font-size: 11px;
+    font-weight: bold;
+    margin: 0px;
+    padding: 0px;
+    border: none;
+    outline: none;
+    margin-left: 8px;
+}
+
+.filter-label:focus {
+    outline: none;
+    border: none;
+}
+
+.filter-label:hover {
+    outline: none;
+    border: none;
+}
+
+/* Group box styling for selectors */
+QGroupBox {
+    font-size: 11px;
+    font-weight: bold;
+    margin-top: 0px;
+    margin-left: 10px;
+    padding-top: 5px;
+    border: 1px solid #ccc;
+    border-radius: 3px;
+}
+
+QGroupBox::title {
+    subcontrol-origin: margin;
+    left: 10px;
+    padding: 0 5px 0 5px;
+}
+
+/* Progress bar styling */
+QProgressBar {
+    border: 1px solid #ccc;
+    border-radius: 3px;
+    text-align: center;
+}
+
+QProgressBar::chunk {
+    background-color: #4CAF50;
+    border-radius: 2px;
+}
+
+/* Tree widget styling */
+QTreeWidget {
+    background-color: white;
+    alternate-background-color: #f9f9f9;
+}
+
+QTreeWidget::item {
+    padding: 2px;
+}
+
+QTreeWidget::item:selected {
+    background-color: #e3f2fd;
+}
+
+/* Status bar styling */
+QStatusBar {
+    background-color: #f0f0f0;
+    border-top: 1px solid #ccc;
+}
+
+/* Splitter styling */
+QSplitter::handle {
+    background-color: #e0e0e0;
+}
+
+QSplitter::handle:hover {
+    background-color: #d0d0d0;
+}
+
+/* Chart container styling */
+.chart-container {
+    border: 1px solid #ccc;
+    border-radius: 3px;
+}
+
+/* Console text area styling */
+QTextEdit {
+    background-color: white;
+    border: 1px solid #ccc;
+    font-family: 'Segoe UI', 'Arial', sans-serif;
+    font-size: 11px;
+}
+
+/* Menu bar styling */
+QMenuBar {
+    background-color: #f0f0f0;
+    border-bottom: 1px solid #ccc;
+}
+
+QMenuBar::item {
+    padding: 4px 8px;
+}
+
+QMenuBar::item:selected {
+    background-color: #e0e0e0;
+}
+
+/* Menu styling */
+QMenu {
+    background-color: white;
+    border: 1px solid #ccc;
+}
+
+QMenu::item {
+    padding: 4px 20px;
+}
+
+QMenu::item:selected {
+    background-color: #e3f2fd;
+}
+
+/* Scroll bar styling */
+QScrollBar:vertical {
+    background-color: #f0f0f0;
+    width: 12px;
+}
+
+QScrollBar::handle:vertical {
+    background-color: #c0c0c0;
+    border-radius: 6px;
+}
+
+QScrollBar::handle:vertical:hover {
+    background-color: #a0a0a0;
+}
+
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+    border: none;
+    background: none;
+}
+
+QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
+    background: none;
+}
+
+/* Dialog styling */
+QDialog {
+    background-color: #f5f5f5;
+}
+
+QMessageBox {
+    background-color: #f5f5f5;
+}
+
+/* Additional custom classes can be added here */
+
+/* Placeholder styling for empty states */
+.placeholder-text {
+    color: #666;
+    font-style: italic;
+}
+
+/* Error text styling */
+.error-text {
+    color: #d32f2f;
+    font-weight: bold;
+}
+
+/* Success text styling */
+.success-text {
+    color: #388e3c;
+    font-weight: bold;
+}
+
+/* Warning text styling */
+.warning-text {
+    color: #f57c00;
+    font-weight: bold;
+}

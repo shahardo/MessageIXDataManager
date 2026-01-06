@@ -6,6 +6,7 @@ import os
 from PyQt5.QtWidgets import QTreeWidget, QTreeWidgetItem, QPushButton, QHBoxLayout, QWidget
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtGui import QIcon
+from .ui_styler import UIStyler
 
 
 class ProjectNavigator(QTreeWidget):
@@ -108,20 +109,7 @@ class ProjectNavigator(QTreeWidget):
 
                         # Add remove button in second column
                         remove_btn = QPushButton("×")
-                        remove_btn.setFixedSize(20, 20)
-                        remove_btn.setStyleSheet("""
-                            QPushButton {
-                                border: none;
-                                background: transparent;
-                                color: #666;
-                                font-weight: bold;
-                                font-size: 14px;
-                            }
-                            QPushButton:hover {
-                                color: #f00;
-                                background: #f5f5f5;
-                            }
-                        """)
+                        UIStyler.setup_remove_button(remove_btn)
                         remove_btn.clicked.connect(lambda checked, fp=file_path, ft="input": self._remove_file(fp, ft))
                         self.setItemWidget(file_item, 1, remove_btn)
 
@@ -153,20 +141,7 @@ class ProjectNavigator(QTreeWidget):
 
                         # Add remove button in second column
                         remove_btn = QPushButton("×")
-                        remove_btn.setFixedSize(20, 20)
-                        remove_btn.setStyleSheet("""
-                            QPushButton {
-                                border: none;
-                                background: transparent;
-                                color: #666;
-                                font-weight: bold;
-                                font-size: 14px;
-                            }
-                            QPushButton:hover {
-                                color: #f00;
-                                background: #f5f5f5;
-                            }
-                        """)
+                        UIStyler.setup_remove_button(remove_btn)
                         remove_btn.clicked.connect(lambda checked, fp=file_path, ft="results": self._remove_file(fp, ft))
                         self.setItemWidget(file_item, 1, remove_btn)
 

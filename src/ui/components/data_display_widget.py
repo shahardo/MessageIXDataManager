@@ -14,6 +14,7 @@ import numpy as np
 from typing import Optional, Dict, List, Union, Any
 
 from core.data_models import Parameter
+from ..ui_styler import UIStyler
 
 
 class DataDisplayWidget(QWidget):
@@ -37,70 +38,28 @@ class DataDisplayWidget(QWidget):
 
         # Title label
         self.param_title = QLabel("Select a parameter to view data")
-        self.param_title.setStyleSheet("font-size: 12px; color: #333; padding: 5px; background-color: #f0f0f0;")
+        UIStyler.setup_parameter_title_label(self.param_title, is_small=True)
         layout.addWidget(self.param_title)
 
         # View toggle button
         self.view_toggle_button = QPushButton("Raw Display")
-        self.view_toggle_button.setCheckable(True)
-        self.view_toggle_button.setChecked(False)
-        self.view_toggle_button.setCursor(Qt.PointingHandCursor)
-        self.view_toggle_button.setEnabled(False)
-        self.view_toggle_button.setStyleSheet("""
-            QPushButton {
-                font-size: 11px;
-                padding: 3px 8px;
-                background-color: #e0e0e0;
-                border: 1px solid #ccc;
-                border-radius: 3px;
-            }
-            QPushButton:checked {
-                background-color: #4CAF50;
-                color: white;
-                font-weight: bold;
-            }
-        """)
+        UIStyler.setup_view_toggle_button(self.view_toggle_button)  # Use view toggle button styling for green when checked
         self.view_toggle_button.clicked.connect(self._toggle_display_mode)
         layout.addWidget(self.view_toggle_button)
 
         # Selector container for filters
-        self.selector_container = QFrame()
-        self.selector_container.setFrameStyle(QFrame.StyledPanel)
+        self.selector_container = QWidget()
         self.selector_container.setVisible(False)
-        self.selector_container.setStyleSheet("""
-            QGroupBox {
-                font-size: 11px;
-                font-weight: bold;
-                margin-top: 0px;
-                margin-left: 10px;
-                padding-top: 5px;
-                border: 1px solid #ccc;
-                border-radius: 3px;
-            }
-            QGroupBox::title {
-                subcontrol-origin: margin;
-                left: 10px;
-                padding: 0 5px 0 5px;
-            }
-        """)
+        self.selector_container.setStyleSheet("border: none; outline: none; background: transparent;")
         selector_layout = QHBoxLayout(self.selector_container)
         selector_layout.setContentsMargins(5, 5, 5, 5)
         layout.addWidget(self.selector_container)
 
         # Data table
         self.param_table = QTableWidget()
-        self.param_table.setAlternatingRowColors(True)
-        self.param_table.verticalHeader().setDefaultSectionSize(22)
+        UIStyler.setup_table_widget(self.param_table)
         header = self.param_table.horizontalHeader()
-        header.setStyleSheet("""
-            QHeaderView::section {
-                background-color: #e0e0e0;
-                padding: 4px;
-                border: 1px solid #ccc;
-                font-weight: bold;
-                font-size: 12px;
-            }
-        """)
+        UIStyler.setup_table_header(header)
         layout.addWidget(self.param_table)
 
         self.setLayout(layout)
@@ -140,19 +99,40 @@ class DataDisplayWidget(QWidget):
 
         # Update title
         self.param_title.setText(f"{title_prefix}: {data.name}")
-        self.param_title.setStyleSheet("font-weight: bold; font-size: 14px; color: #333; padding: 5px; background-color: #f0f0f0;")
+        UIStyler.setup_parameter_title_label(self.param_title, is_small=False)
 
         if df.empty:
             self._clear_table_display()
             return
 
         # Handle view mode (raw vs advanced)
-        if self.table_display_mode == "advanced":
-            current_filters = self._get_current_filters()
-            display_df = self._transform_to_advanced_view(df, current_filters, is_results)
+        if is_results:
+            # For results data, always show transformed data (years as indices, year column hidden)
+            display_df = self.transform_to_display_format(
+                df,
+                is_results=True,
+                current_filters=None,
+                hide_empty=self.hide_empty_columns,
+                for_chart=False
+            )
             self._setup_property_selectors(df)
         else:
-            display_df = df
+            # For input data, use raw/advanced modes
+            if self.table_display_mode == "advanced":
+                display_df = self.transform_to_display_format(
+                    df,
+                    is_results=False,
+                    current_filters=None,
+                    hide_empty=self.hide_empty_columns,
+                    for_chart=False
+                )
+                self._setup_property_selectors(df)
+            else:
+                display_df = df
+
+        # Show property selectors when data is transformed
+        show_selectors = is_results or (not is_results and self.table_display_mode == "advanced")
+        self.selector_container.setVisible(show_selectors)
 
         # Set up table dimensions and headers
         self._configure_table(display_df, is_results)
@@ -340,7 +320,7 @@ class DataDisplayWidget(QWidget):
 
         # Add checkbox for hiding empty columns
         self.hide_empty_checkbox = QCheckBox("Hide Empty Columns")
-        self.hide_empty_checkbox.setStyleSheet("font-size: 11px; font-weight: bold; border: none; margin: 0px; padding: 0px;")
+        UIStyler.setup_checkbox(self.hide_empty_checkbox)
         self.hide_empty_checkbox.setChecked(self.hide_empty_columns)
         self.hide_empty_checkbox.stateChanged.connect(self._on_hide_empty_changed)
         selector_layout.addWidget(self.hide_empty_checkbox)
@@ -352,13 +332,12 @@ class DataDisplayWidget(QWidget):
 
             # Create label
             label = QLabel(f"{col}:")
-            label.setStyleSheet("font-size: 11px; font-weight: bold; margin: 0px; padding: 0px; border: none; margin-left: 8px;")
-            label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            UIStyler.setup_filter_label(label)
             selector_layout.addWidget(label)
 
             # Create combo box
             combo = QComboBox()
-            combo.setStyleSheet("font-size: 11px; padding: 2px;")
+            UIStyler.setup_combo_box(combo)
 
             # Add "All" option and unique values
             unique_values = sorted(df[col].dropna().unique().tolist())
@@ -393,30 +372,46 @@ class DataDisplayWidget(QWidget):
         # Emit signal to refresh display (will be connected by parent)
         self.display_mode_changed.emit()
 
-    def _transform_to_advanced_view(self, df: pd.DataFrame, current_filters: dict = None,
-                                   is_results: bool = False, hide_empty: bool = None) -> pd.DataFrame:
-        """Transform data to advanced 2D view format"""
+    def transform_to_display_format(self, df: pd.DataFrame, is_results: bool = False,
+                                   current_filters: Optional[Dict[str, str]] = None, hide_empty: Optional[bool] = None,
+                                   for_chart: bool = False) -> pd.DataFrame:
+        """
+        Transform data to display format for both table and chart views.
+
+        Args:
+            df: Input DataFrame
+            is_results: Whether this is results data
+            current_filters: Filter selections to apply
+            hide_empty: Whether to hide empty columns
+            for_chart: Whether this is for chart display (affects some logic)
+
+        Returns:
+            Transformed DataFrame ready for display
+        """
         if df.empty:
             return df
 
         if hide_empty is None:
-            hide_empty = self.hide_empty_columns
+            hide_empty = self.hide_empty_columns if not for_chart else False  # Charts typically don't hide empty columns
 
         # Identify column types
         column_info = self._identify_columns(df)
-        print(f"DEBUG: Column info: {column_info}")  # Debug output
 
         # Apply filters
         filtered_df = self._apply_filters(df, current_filters, column_info)
 
         # Transform data structure
         transformed_df = self._transform_data_structure(filtered_df, column_info, is_results)
-        print(f"DEBUG: Original df shape: {df.shape}, Transformed df shape: {transformed_df.shape}")  # Debug output
 
         # Clean and finalize output
         final_df = self._clean_output(transformed_df, hide_empty, is_results)
 
         return final_df
+
+    def _transform_to_advanced_view(self, df: pd.DataFrame, current_filters: dict = None,
+                                   is_results: bool = False, hide_empty: bool = None) -> pd.DataFrame:
+        """Transform data to advanced 2D view format - now uses common method"""
+        return self.transform_to_display_format(df, is_results, current_filters, hide_empty, for_chart=False)
 
     def _identify_columns(self, df: pd.DataFrame) -> Dict[str, Union[List[str], Optional[str]]]:
         """Identify different types of columns in the DataFrame"""
@@ -451,12 +446,13 @@ class DataDisplayWidget(QWidget):
             'value_col': value_col
         }
 
-    def _apply_filters(self, df: pd.DataFrame, filters: dict, column_info: dict) -> pd.DataFrame:
+    def _apply_filters(self, df: pd.DataFrame, filters: Optional[Dict[str, str]], column_info: dict) -> pd.DataFrame:
         """Apply current filter selections to DataFrame"""
         filtered_df = df.copy()
-        for filter_col, filter_value in filters.items():
-            if filter_value and filter_value != "All" and filter_col in filtered_df.columns:
-                filtered_df = filtered_df[filtered_df[filter_col] == filter_value]
+        if filters:
+            for filter_col, filter_value in filters.items():
+                if filter_value and filter_value != "All" and filter_col in filtered_df.columns:
+                    filtered_df = filtered_df[filtered_df[filter_col] == filter_value]
         return filtered_df
 
     def _transform_data_structure(self, df: pd.DataFrame, column_info: dict, is_results: bool) -> pd.DataFrame:
@@ -520,8 +516,15 @@ class DataDisplayWidget(QWidget):
 
     def _prepare_2d_format(self, df: pd.DataFrame, column_info: dict) -> pd.DataFrame:
         """Prepare DataFrame in 2D format without pivoting"""
-        # For now, return the DataFrame as-is
-        # Could add additional formatting logic here
+        # For results data in advanced view, set year as index and remove year column
+        year_cols = column_info.get('year_cols', [])
+        if year_cols:
+            # Use the first year column found
+            year_col = year_cols[0]
+            if year_col in df.columns:
+                # Set year as index and remove from columns
+                df = df.set_index(year_col)
+                df.index.name = year_col
         return df
 
     def _hide_empty_columns(self, df: pd.DataFrame, is_results: bool) -> pd.DataFrame:

@@ -239,23 +239,21 @@ class MainWindow(QMainWindow):
             return self.input_manager.get_current_scenario()
 
     def _get_chart_data(self, parameter, is_results: bool):
-        """Get transformed data for chart display using the same pivot logic as table view"""
+        """Get transformed data for chart display using the same logic as table view"""
         df = parameter.df
 
-        # Use the same pivot logic as the table view
-        column_info = self.data_display._identify_columns(df)
+        # Use the same transformation logic as the data display widget
+        # For charts, we always want advanced view transformation (pivoted data)
+        # Charts always hide empty columns for cleaner visualization
+        transformed_df = self.data_display.transform_to_display_format(
+            df,
+            is_results=is_results,
+            current_filters=None,  # No filters for chart data
+            hide_empty=True,       # Charts always hide empty columns
+            for_chart=True         # Indicate this is for chart display
+        )
 
-        if self.data_display._should_pivot(df, column_info):
-            try:
-                # Use the same pivot method as the table view
-                pivoted_df = self.data_display._perform_pivot(df, column_info)
-                return pivoted_df
-            except Exception:
-                # If pivot fails, return original data
-                return df
-        else:
-            # If no pivot needed, return original data
-            return df
+        return transformed_df
 
     def _open_input_file(self):
         """Handle opening input Excel file(s)"""
