@@ -11,7 +11,6 @@ import subprocess
 import threading
 import time
 from typing import Optional, Callable, Dict, Any, List
-import signal
 
 from .logging_manager import logging_manager
 
@@ -68,26 +67,6 @@ class SolverManager:
         """
         self.status_callback = callback
 
-    def detect_messageix_environment(self) -> bool:
-        """
-        Check if MESSAGEix is available in the environment.
-
-        Attempts to import the MESSAGEix framework to verify that the solver
-        environment is properly configured.
-
-        Returns:
-            True if MESSAGEix is available, False otherwise
-        """
-        try:
-            # Try to import message_ix
-            import ixmp  # type: ignore
-            import message_ix  # type: ignore
-            self._log_output("MESSAGEix environment detected")
-            return True
-        except ImportError:
-            self._log_output("MESSAGEix not found in environment")
-            return False
-
     def get_available_solvers(self) -> List[str]:
         """
         Get list of available solvers.
@@ -103,13 +82,13 @@ class SolverManager:
 
         # Check for common solvers (simplified)
         try:
-            import cplex  # type: ignore
+            import cplex  # type: ignore # noqa: F401
             solvers.append("cplex")
         except ImportError:
             pass
 
         try:
-            import gurobipy  # type: ignore
+            import gurobipy  # type: ignore # noqa: F401
             solvers.append("gurobi")
         except ImportError:
             pass

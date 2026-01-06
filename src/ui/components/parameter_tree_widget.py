@@ -6,7 +6,7 @@ Extracted from MainWindow to provide focused tree navigation functionality.
 
 from PyQt5.QtWidgets import QTreeWidget, QTreeWidgetItem
 from PyQt5.QtCore import pyqtSignal
-from typing import Optional, List, Dict, Tuple
+from typing import Optional, List, Dict
 
 from core.data_models import ScenarioData
 

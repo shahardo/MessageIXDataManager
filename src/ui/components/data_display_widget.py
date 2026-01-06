@@ -6,7 +6,7 @@ Extracted from MainWindow to provide focused data display functionality.
 
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QTableWidget, QTableWidgetItem,
-    QLabel, QPushButton, QComboBox, QGroupBox, QCheckBox, QFrame, QHeaderView
+    QLabel, QPushButton, QComboBox, QGroupBox, QCheckBox, QHeaderView
 )
 from PyQt5.QtCore import Qt, pyqtSignal
 import pandas as pd

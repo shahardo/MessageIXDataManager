@@ -7,8 +7,7 @@ MESSAGEix input files and results.
 """
 
 from PyQt5.QtWidgets import (
-    QMainWindow, QSplitter, QTextEdit, QStatusBar, QMenuBar, QMenu, QAction,
-    QFileDialog, QMessageBox, QProgressBar
+    QMainWindow, QSplitter, QFileDialog, QMessageBox
 )
 from PyQt5.QtCore import Qt, QSettings
 from PyQt5 import uic
@@ -72,13 +71,13 @@ class MainWindow(QMainWindow):
         # Connect signals
         self._connect_signals()
 
-        # Auto-load last opened files
-        self._auto_load_last_files()
-
-        # View state
+        # View state - initialize BEFORE auto-loading files
         self.current_view: str = "input"  # "input" or "results"
         self.selected_input_file: Optional[str] = None
         self.selected_results_file: Optional[str] = None
+
+        # Auto-load last opened files
+        self._auto_load_last_files()
 
     def _setup_ui_components(self):
         """Set up the UI components using composition"""
@@ -290,7 +289,6 @@ class MainWindow(QMainWindow):
             loaded_files = []
             total_parameters = 0
             total_sets = 0
-            total_data_points = 0
             all_validation_issues = []
             error_handler = ErrorHandler()
 
@@ -328,7 +326,6 @@ class MainWindow(QMainWindow):
                     loaded_files.append(file_path)
                     total_parameters += len(scenario.parameters)
                     total_sets += len(scenario.sets)
-                    total_data_points += validation['summary']['total_data_points']
                     if not validation['valid']:
                         all_validation_issues.extend(validation['issues'])
 
@@ -373,7 +370,6 @@ class MainWindow(QMainWindow):
             loaded_files = []
             total_variables = 0
             total_equations = 0
-            total_data_points = 0
             error_handler = ErrorHandler()
 
             for file_path in file_paths:
@@ -409,7 +405,6 @@ class MainWindow(QMainWindow):
                     stats = self.results_analyzer.get_summary_stats()
                     total_variables += stats['total_variables']
                     total_equations += stats['total_equations']
-                    total_data_points += stats['total_data_points']
 
             if loaded_files:
                 # Clear file selection to show combined view

@@ -12,7 +12,7 @@ from PyQt5.QtWidgets import (
     QCheckBox, QGroupBox, QTreeWidget, QHeaderView, QSplitter
 )
 from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QCursor
+
 
 
 class UIStyler:
@@ -103,11 +103,7 @@ class UIStyler:
         # The main styling is handled by the stylesheet
         pass
 
-    @staticmethod
-    def setup_group_box(group_box: QGroupBox) -> None:
-        """Setup group box with consistent styling"""
-        # The main styling is handled by the stylesheet
-        pass
+
 
     @staticmethod
     def setup_tree_widget(tree: QTreeWidget) -> None:
@@ -138,92 +134,3 @@ class UIStyler:
         # Force style recalculation
         button.style().unpolish(button)
         button.style().polish(button)
-
-    @staticmethod
-    def apply_class_styling(widget, class_name: str) -> None:
-        """Apply a CSS class to a widget for styling"""
-        widget.setProperty("class", class_name)
-        # Force style recalculation
-        widget.style().unpolish(widget)
-        widget.style().polish(widget)
-
-    @staticmethod
-    def refresh_widget_styling(widget) -> None:
-        """Force refresh of widget styling after property changes"""
-        widget.style().unpolish(widget)
-        widget.style().polish(widget)
-
-
-class MainWindowUI:
-    """UI setup logic extracted from MainWindow for better organization"""
-
-    def __init__(self, main_window):
-        """Initialize with reference to main window"""
-        self.main_window = main_window
-
-    def setup_splitters(self) -> None:
-        """Configure all splitter properties"""
-        # Left splitter (navigator and parameter tree)
-        self.main_window.leftSplitter.setStretchFactor(0, 0)  # navigator fixed
-        self.main_window.leftSplitter.setStretchFactor(1, 1)  # parameter tree stretches
-
-        # Main splitter (left panel and content)
-        self.main_window.splitter.setSizes([300, 900])
-        self.main_window.splitter.setStretchFactor(0, 0)  # left panel fixed
-        self.main_window.splitter.setStretchFactor(1, 1)  # content area stretches
-
-        # Content splitter (data and console)
-        self.main_window.contentSplitter.setStretchFactor(0, 1)  # data container stretches
-        self.main_window.contentSplitter.setStretchFactor(1, 0)  # console fixed
-
-        # Data splitter (table and chart)
-        self.main_window.dataSplitter.setSizes([600, 400])
-        self.main_window.dataSplitter.setStretchFactor(0, 0)  # table container fixed
-        self.main_window.dataSplitter.setStretchFactor(1, 1)  # graph container stretches
-
-    def setup_table_styling(self) -> None:
-        """Configure table appearance and behavior"""
-        # Apply consistent table styling
-        UIStyler.setup_table_widget(self.main_window.param_table)
-
-        # Configure header
-        header = self.main_window.param_table.horizontalHeader()
-        UIStyler.setup_table_header(header)
-
-    def setup_chart_buttons(self) -> None:
-        """Setup chart type selection buttons"""
-        buttons = [
-            self.main_window.simple_bar_btn,
-            self.main_window.stacked_bar_btn,
-            self.main_window.line_chart_btn,
-            self.main_window.stacked_area_btn
-        ]
-
-        UIStyler.setup_button_group(buttons, checkable=True)
-
-        # Set initial state
-        self.main_window.simple_bar_btn.setChecked(True)
-
-    def setup_navigator_styling(self) -> None:
-        """Setup navigator widget styling"""
-        UIStyler.setup_tree_widget(self.main_window.file_navigator)
-
-    def apply_all_styling(self) -> None:
-        """Apply all centralized styling to main window components"""
-        # Apply parameter title styling
-        UIStyler.setup_parameter_title_label(self.main_window.param_title)
-
-        # Apply table styling
-        self.setup_table_styling()
-
-        # Apply chart button styling
-        self.setup_chart_buttons()
-
-        # Apply navigator styling
-        self.setup_navigator_styling()
-
-        # Apply splitter styling
-        UIStyler.setup_splitter(self.main_window.splitter)
-        UIStyler.setup_splitter(self.main_window.leftSplitter)
-        UIStyler.setup_splitter(self.main_window.contentSplitter)
-        UIStyler.setup_splitter(self.main_window.dataSplitter)
