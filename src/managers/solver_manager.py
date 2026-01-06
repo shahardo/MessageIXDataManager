@@ -1,5 +1,8 @@
 """
-Solver Manager - handles message_ix solver execution
+Solver Manager - handles MESSAGEix solver execution
+
+Provides functionality to execute MESSAGEix optimization solvers with support for
+multiple solver types, real-time output monitoring, and graceful process management.
 """
 
 import os
@@ -7,56 +10,106 @@ import sys
 import subprocess
 import threading
 import time
-from typing import Optional, Callable, Dict, Any
+from typing import Optional, Callable, Dict, Any, List
 import signal
 
 from .logging_manager import logging_manager
 
 
 class SolverManager:
-    """Manages message_ix solver execution"""
+    """
+    SolverManager class for managing MESSAGEix solver execution.
 
-    def __init__(self):
-        self.current_process: Optional[subprocess.Popen] = None
-        self.is_running = False
+    Handles the execution of MESSAGEix optimization solvers, providing support for
+    different solver types (CPLEX, Gurobi, GLPK), real-time output monitoring,
+    and proper process management with logging capabilities.
+
+    Attributes:
+        current_process: Currently running solver process, if any
+        is_running: Boolean indicating if a solver is currently executing
+        execution_thread: Background thread for solver execution
+        output_callback: Callback function for console output
+        status_callback: Callback function for status updates
+    """
+
+    def __init__(self) -> None:
+        """
+        Initialize the SolverManager.
+
+        Sets up the manager with no active processes and initializes callback handlers.
+        """
+        self.current_process: Optional[subprocess.Popen[str]] = None
+        self.is_running: bool = False
         self.execution_thread: Optional[threading.Thread] = None
         self.output_callback: Optional[Callable[[str], None]] = None
         self.status_callback: Optional[Callable[[str], None]] = None
 
-    def set_output_callback(self, callback: Callable[[str], None]):
-        """Set callback for console output"""
+    def set_output_callback(self, callback: Callable[[str], None]) -> None:
+        """
+        Set callback for console output.
+
+        Configures a callback function that will be called with solver output messages
+        for real-time display in the UI.
+
+        Args:
+            callback: Function that accepts a string message parameter
+        """
         self.output_callback = callback
 
-    def set_status_callback(self, callback: Callable[[str], None]):
-        """Set callback for status updates"""
+    def set_status_callback(self, callback: Callable[[str], None]) -> None:
+        """
+        Set callback for status updates.
+
+        Configures a callback function that will be called with status update messages
+        to inform the UI about solver execution progress.
+
+        Args:
+            callback: Function that accepts a string status parameter
+        """
         self.status_callback = callback
 
     def detect_messageix_environment(self) -> bool:
-        """Check if message_ix is available in the environment"""
+        """
+        Check if MESSAGEix is available in the environment.
+
+        Attempts to import the MESSAGEix framework to verify that the solver
+        environment is properly configured.
+
+        Returns:
+            True if MESSAGEix is available, False otherwise
+        """
         try:
             # Try to import message_ix
-            import ixmp
-            import message_ix
-            self._log_output("message_ix environment detected")
+            import ixmp  # type: ignore
+            import message_ix  # type: ignore
+            self._log_output("MESSAGEix environment detected")
             return True
         except ImportError:
-            self._log_output("message_ix not found in environment")
+            self._log_output("MESSAGEix not found in environment")
             return False
 
-    def get_available_solvers(self) -> list[str]:
-        """Get list of available solvers"""
+    def get_available_solvers(self) -> List[str]:
+        """
+        Get list of available solvers.
+
+        Detects which optimization solvers are installed and available for use.
+        Checks for common solvers like CPLEX, Gurobi, and GLPK.
+
+        Returns:
+            List of available solver names (strings)
+        """
         # This is a simplified check - in reality would detect installed solvers
-        solvers = []
+        solvers: List[str] = []
 
         # Check for common solvers (simplified)
         try:
-            import cplex
+            import cplex  # type: ignore
             solvers.append("cplex")
         except ImportError:
             pass
 
         try:
-            import gurobipy
+            import gurobipy  # type: ignore
             solvers.append("gurobi")
         except ImportError:
             pass
@@ -66,18 +119,31 @@ class SolverManager:
 
         return solvers if solvers else ["glpk"]  # Default fallback
 
-    def run_solver(self, input_file_path: str, solver_name: str = "glpk",
-                  config: Optional[Dict[str, Any]] = None) -> bool:
+    def run_solver(
+        self,
+        input_file_path: str,
+        solver_name: str = "glpk",
+        config: Optional[Dict[str, Any]] = None
+    ) -> bool:
         """
-        Execute message_ix solver
+        Execute MESSAGEix solver.
+
+        Starts the specified optimization solver on the given input file in a
+        background thread, providing real-time output monitoring and status updates.
 
         Args:
-            input_file_path: Path to input Excel file
-            solver_name: Name of solver to use
-            config: Additional solver configuration
+            input_file_path: Path to the MESSAGEix input Excel file
+            solver_name: Name of the solver to use (e.g., "glpk", "cplex", "gurobi")
+            config: Optional dictionary of additional solver configuration parameters
 
         Returns:
-            True if execution completed successfully
+            True if solver execution was started successfully, False otherwise
+
+        Example:
+            >>> manager = SolverManager()
+            >>> success = manager.run_solver("model.xlsx", "glpk")
+            >>> if success:
+            ...     print("Solver started successfully")
         """
         if self.is_running:
             self._log_output("Solver is already running")
@@ -107,9 +173,27 @@ class SolverManager:
 
         return True
 
-    def _build_solver_command(self, input_file: str, solver: str,
-                            config: Optional[Dict[str, Any]] = None) -> list[str]:
-        """Build the solver command (simplified placeholder)"""
+    def _build_solver_command(
+        self,
+        input_file: str,
+        solver: str,
+        config: Optional[Dict[str, Any]] = None
+    ) -> List[str]:
+        """
+        Build the solver command (simplified placeholder).
+
+        Constructs the command line arguments needed to execute the solver.
+        This is a placeholder implementation - real implementation would construct
+        proper MESSAGEix command based on the framework's API.
+
+        Args:
+            input_file: Path to the input file
+            solver: Name of the solver to use
+            config: Optional solver configuration
+
+        Returns:
+            List of command line arguments
+        """
         # This is a placeholder - real implementation would construct
         # proper message_ix command based on the framework's API
 
@@ -118,8 +202,16 @@ class SolverManager:
 
         return [sys.executable, script_path, input_file, solver]
 
-    def _execute_solver(self, cmd: list[str]):
-        """Execute solver in subprocess with real-time output"""
+    def _execute_solver(self, cmd: List[str]) -> None:
+        """
+        Execute solver in subprocess with real-time output.
+
+        Runs the solver command in a subprocess, monitoring output in real-time
+        and providing status updates through callbacks.
+
+        Args:
+            cmd: List of command line arguments to execute
+        """
         self.is_running = True
 
         try:
@@ -169,7 +261,21 @@ class SolverManager:
             self.current_process = None
 
     def stop_solver(self) -> bool:
-        """Stop the currently running solver"""
+        """
+        Stop the currently running solver.
+
+        Attempts to gracefully terminate the running solver process. If graceful
+        termination fails within 5 seconds, forces termination.
+
+        Returns:
+            True if solver was successfully stopped, False otherwise
+
+        Example:
+            >>> manager = SolverManager()
+            >>> # ... start solver ...
+            >>> stopped = manager.stop_solver()
+            >>> print(f"Solver stopped: {stopped}")
+        """
         if not self.is_running or not self.current_process:
             return False
 
@@ -198,17 +304,42 @@ class SolverManager:
             return False
 
     def is_solver_running(self) -> bool:
-        """Check if solver is currently running"""
+        """
+        Check if solver is currently running.
+
+        Returns:
+            True if a solver process is currently executing, False otherwise
+
+        Example:
+            >>> manager = SolverManager()
+            >>> is_running = manager.is_solver_running()
+            >>> print(f"Solver running: {is_running}")
+        """
         return self.is_running
 
-    def _log_output(self, message: str):
-        """Log output message"""
+    def _log_output(self, message: str) -> None:
+        """
+        Log output message.
+
+        Sends the message to the configured output callback, or prints to console
+        if no callback is configured.
+
+        Args:
+            message: The message to log
+        """
         if self.output_callback:
             self.output_callback(message)
         else:
             print(message)  # Fallback to console
 
-    def _update_status(self, status: str):
-        """Update status"""
+    def _update_status(self, status: str) -> None:
+        """
+        Update status.
+
+        Sends the status message to the configured status callback if available.
+
+        Args:
+            status: The status message to send
+        """
         if self.status_callback:
             self.status_callback(status)

@@ -1,5 +1,5 @@
 """
-Input Manager - handles loading and parsing of message_ix Excel input files
+Input Manager - handles loading and parsing of MESSAGEix Excel input files
 """
 
 import os
@@ -7,7 +7,7 @@ import pandas as pd
 import numpy as np
 import logging
 from openpyxl import load_workbook
-from typing import Optional, List, Callable
+from typing import Optional, List, Callable, Dict, Any
 
 from core.data_models import ScenarioData, Parameter
 from managers.base_data_manager import BaseDataManager
@@ -16,27 +16,66 @@ from utils.error_handler import ErrorHandler, SafeOperation
 
 
 class InputManager(BaseDataManager):
-    """Manages loading and parsing of message_ix input Excel files"""
+    """
+    InputManager class for loading and parsing MESSAGEix input Excel files.
 
-    def load_excel_file(self, file_path: str, progress_callback: Optional[Callable[[int, str], None]] = None) -> ScenarioData:
+    This class handles the complex process of reading MESSAGEix scenario data
+    from Excel workbooks, parsing sets and parameters, and providing access
+    to the loaded data for analysis and visualization.
+
+    Attributes:
+        scenarios: List of loaded ScenarioData objects
+        loaded_file_paths: Corresponding file paths for loaded scenarios
+    """
+
+    def load_excel_file(
+        self,
+        file_path: str,
+        progress_callback: Optional[Callable[[int, str], None]] = None
+    ) -> ScenarioData:
         """
-        Load and parse a message_ix Excel input file
+        Load and parse a MESSAGEix Excel input file.
+
+        This method performs comprehensive validation and parsing of MESSAGEix
+        input files, extracting sets, parameters, and metadata.
 
         Args:
-            file_path: Path to the Excel file
-            progress_callback: Optional callback function for progress updates (value, message)
+            file_path: Path to the Excel file (.xlsx or .xls format).
+                      File must exist and be readable.
+            progress_callback: Optional callback function for progress updates.
+                             Receives (percentage: int, message: str) parameters.
+                             Called at key milestones during loading process.
 
         Returns:
-            ScenarioData object containing parsed data
+            ScenarioData object containing parsed sets and parameters.
 
         Raises:
-            FileNotFoundError: If file doesn't exist
-            ValueError: If file format is invalid
+            FileNotFoundError: If the specified file_path does not exist.
+            ValueError: If the file format is invalid or parsing fails.
+            PermissionError: If file cannot be read due to permissions.
+
+        Example:
+            >>> manager = InputManager()
+            >>> def progress(pct, msg): print(f"{pct}%: {msg}")
+            >>> scenario = manager.load_excel_file("data.xlsx", progress)
+            >>> print(f"Loaded {len(scenario.parameters)} parameters")
         """
         return self.load_file(file_path, progress_callback)
 
-    def _parse_workbook(self, wb, scenario: ScenarioData, progress_callback: Optional[Callable[[int, str], None]] = None):
-        """Parse workbook for input data - implements abstract method"""
+    def _parse_workbook(
+        self,
+        wb: Any,
+        scenario: ScenarioData,
+        progress_callback: Optional[Callable[[int, str], None]] = None
+    ) -> None:
+        """
+        Parse workbook for input data - implements abstract method.
+
+        Args:
+            wb: Openpyxl workbook object
+            scenario: ScenarioData object to populate
+            progress_callback: Optional progress callback function
+        """
         if progress_callback:
             progress_callback(10, "Parsing sets...")
 
@@ -49,8 +88,20 @@ class InputManager(BaseDataManager):
         # Parse parameters
         self._parse_parameters(wb, scenario, progress_callback)
 
-    def _parse_sets(self, wb, scenario: ScenarioData, progress_callback: Optional[Callable[[int, str], None]] = None):
-        """Parse sets from the workbook"""
+    def _parse_sets(
+        self,
+        wb: Any,
+        scenario: ScenarioData,
+        progress_callback: Optional[Callable[[int, str], None]] = None
+    ) -> None:
+        """
+        Parse sets from the workbook.
+
+        Args:
+            wb: Openpyxl workbook object
+            scenario: ScenarioData object to populate with sets
+            progress_callback: Optional progress callback function
+        """
         error_handler = ErrorHandler()
         logger = logging.getLogger(__name__)
 
@@ -77,8 +128,14 @@ class InputManager(BaseDataManager):
                     sheet = wb[set_name]
                     self._parse_individual_set_sheet(sheet, set_name, scenario)
 
-    def _parse_sets_sheet(self, sheet, scenario: ScenarioData):
-        """Parse a combined sets sheet"""
+    def _parse_sets_sheet(self, sheet: Any, scenario: ScenarioData) -> None:
+        """
+        Parse a combined sets sheet.
+
+        Args:
+            sheet: Openpyxl worksheet object
+            scenario: ScenarioData object to populate
+        """
         for row in sheet.iter_rows(min_row=2, values_only=True):
             if row[0] is not None and len(row) > 1:
                 set_name = str(row[0]).strip()
@@ -92,8 +149,15 @@ class InputManager(BaseDataManager):
                 if set_values:
                     scenario.sets[set_name] = pd.Series(set_values)
 
-    def _parse_individual_set_sheet(self, sheet, set_name: str, scenario: ScenarioData):
-        """Parse an individual set sheet"""
+    def _parse_individual_set_sheet(self, sheet: Any, set_name: str, scenario: ScenarioData) -> None:
+        """
+        Parse an individual set sheet.
+
+        Args:
+            sheet: Openpyxl worksheet object
+            set_name: Name of the set to parse
+            scenario: ScenarioData object to populate
+        """
         set_values = []
         for row in sheet.iter_rows(min_row=2, values_only=True):
             if row[0] is not None:
@@ -103,8 +167,20 @@ class InputManager(BaseDataManager):
         if set_values:
             scenario.sets[set_name] = pd.Series(set_values)
 
-    def _parse_parameters(self, wb, scenario: ScenarioData, progress_callback: Optional[Callable[[int, str], None]] = None):
-        """Parse parameters from the workbook"""
+    def _parse_parameters(
+        self,
+        wb: Any,
+        scenario: ScenarioData,
+        progress_callback: Optional[Callable[[int, str], None]] = None
+    ) -> None:
+        """
+        Parse parameters from the workbook.
+
+        Args:
+            wb: Openpyxl workbook object
+            scenario: ScenarioData object to populate with parameters
+            progress_callback: Optional progress callback function
+        """
         # Look for parameter sheets
         param_sheet_names = ['parameters', 'parameter', 'Parameters', 'Parameter', 'data']
 
@@ -132,8 +208,14 @@ class InputManager(BaseDataManager):
             sheet = wb[sheet_name]
             self._parse_individual_parameter_sheet(sheet, sheet_name, scenario)
 
-    def _parse_parameters_sheet(self, sheet, scenario: ScenarioData):
-        """Parse a combined parameters sheet"""
+    def _parse_parameters_sheet(self, sheet: Any, scenario: ScenarioData) -> None:
+        """
+        Parse a combined parameters sheet.
+
+        Args:
+            sheet: Openpyxl worksheet object containing combined parameter data
+            scenario: ScenarioData object to populate
+        """
         # Get headers from first row
         headers = []
         for cell in sheet[1]:
@@ -176,8 +258,15 @@ class InputManager(BaseDataManager):
             if parameter:
                 scenario.add_parameter(parameter)
 
-    def _parse_individual_parameter_sheet(self, sheet, param_name: str, scenario: ScenarioData):
-        """Parse an individual parameter sheet"""
+    def _parse_individual_parameter_sheet(self, sheet: Any, param_name: str, scenario: ScenarioData) -> None:
+        """
+        Parse an individual parameter sheet.
+
+        Args:
+            sheet: Openpyxl worksheet object
+            param_name: Name of the parameter to parse
+            scenario: ScenarioData object to populate
+        """
         # Get headers from first row
         headers = []
         for cell in sheet[1]:

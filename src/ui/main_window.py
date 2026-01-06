@@ -2,6 +2,8 @@
 Main application window for MessageIX Data Manager
 
 Refactored to use composition with focused UI components.
+Provides the primary user interface for loading, analyzing, and visualizing
+MESSAGEix input files and results.
 """
 
 from PyQt5.QtWidgets import (
@@ -11,7 +13,7 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import Qt, QSettings
 from PyQt5 import uic
 import os
-from typing import Optional
+from typing import Optional, List
 
 from .dashboard import ResultsDashboard
 from .navigator import ProjectNavigator
@@ -27,21 +29,42 @@ from utils.error_handler import ErrorHandler, SafeOperation
 
 
 class MainWindow(QMainWindow):
-    """Main application window using composition with focused UI components"""
+    """
+    Main application window for MESSAGEix Data Manager.
 
-    def __init__(self):
+    Provides the primary user interface for loading, analyzing, and visualizing
+    MESSAGEix input files and results. Uses composition with focused UI components
+    for better maintainability and testability.
+
+    Attributes:
+        input_manager: Manager for loading and parsing input Excel files
+        solver_manager: Manager for running MESSAGEix solvers
+        results_analyzer: Manager for loading and analyzing result files
+        dashboard: Dashboard widget for results visualization
+        current_view: Current view mode ("input" or "results")
+        selected_input_file: Currently selected input file path
+        selected_results_file: Currently selected results file path
+    """
+
+    def __init__(self) -> None:
+        """
+        Initialize the main application window.
+
+        Sets up UI components, managers, signal connections, and loads
+        previously opened files automatically.
+        """
         super().__init__()
 
         # Load UI from .ui file
         uic.loadUi('src/ui/main_window.ui', self)
 
         # Initialize managers
-        self.input_manager = InputManager()
-        self.solver_manager = SolverManager()
-        self.results_analyzer = ResultsAnalyzer()
+        self.input_manager: InputManager = InputManager()
+        self.solver_manager: SolverManager = SolverManager()
+        self.results_analyzer: ResultsAnalyzer = ResultsAnalyzer()
 
         # Initialize dashboard
-        self.dashboard = ResultsDashboard(self.results_analyzer)
+        self.dashboard: ResultsDashboard = ResultsDashboard(self.results_analyzer)
 
         # Initialize UI components
         self._setup_ui_components()
@@ -51,6 +74,11 @@ class MainWindow(QMainWindow):
 
         # Auto-load last opened files
         self._auto_load_last_files()
+
+        # View state
+        self.current_view: str = "input"  # "input" or "results"
+        self.selected_input_file: Optional[str] = None
+        self.selected_results_file: Optional[str] = None
 
     def _setup_ui_components(self):
         """Set up the UI components using composition"""
@@ -83,11 +111,6 @@ class MainWindow(QMainWindow):
 
         self.dataSplitter.setStretchFactor(0, 0)  # table container fixed
         self.dataSplitter.setStretchFactor(1, 1)  # graph container stretches
-
-        # View state
-        self.current_view = "input"  # "input" or "results"
-        self.selected_input_file = None
-        self.selected_results_file = None
 
     def _initialize_components_with_ui_widgets(self):
         """Initialize components to reuse existing UI widgets instead of creating new ones"""

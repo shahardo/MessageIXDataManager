@@ -1,8 +1,12 @@
 """
-Project Navigator component
+Project Navigator component for MESSAGEix Data Manager
+
+Provides a tree-based navigation interface for managing loaded input and result files,
+with support for file removal and loading new files.
 """
 
 import os
+from typing import List, Optional
 from PyQt5.QtWidgets import QTreeWidget, QTreeWidgetItem, QPushButton, QHBoxLayout, QWidget
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtGui import QIcon
@@ -10,7 +14,21 @@ from .ui_styler import UIStyler
 
 
 class ProjectNavigator(QTreeWidget):
-    """Project navigator showing recent files and project structure"""
+    """
+    ProjectNavigator class for displaying and managing loaded files.
+
+    A tree widget that shows loaded input and result files with options to remove them,
+    and provides placeholders for loading new files when none are present.
+
+    Attributes:
+        input_files: List of currently loaded input file paths
+        results_files: List of currently loaded result file paths
+
+    Signals:
+        file_selected: Emitted when a file is selected (file_path: str, file_type: str)
+        load_files_requested: Emitted when "no files loaded" placeholder is clicked (file_type: str)
+        file_removed: Emitted when a file removal is requested (file_path: str, file_type: str)
+    """
 
     # Signal emitted when a file is selected (file_path, file_type)
     file_selected = pyqtSignal(str, str)
@@ -21,17 +39,27 @@ class ProjectNavigator(QTreeWidget):
     # Signal emitted when a file is removed (file_path, file_type)
     file_removed = pyqtSignal(str, str)
 
-    def __init__(self):
+    def __init__(self) -> None:
+        """
+        Initialize the ProjectNavigator.
+
+        Sets up the tree widget with proper headers, initializes file lists,
+        and connects signals for user interaction.
+        """
         super().__init__()
         self.setHeaderLabels(["Files", ""])  # Two columns: filename and action
-        self.input_files = []  # Store input file paths
-        self.results_files = []  # Store results file paths
+        self.input_files: List[str] = []  # Store input file paths
+        self.results_files: List[str] = []  # Store results file paths
         self._setup_ui()
         self._load_recent_files()
         self.itemSelectionChanged.connect(self._on_item_selected)
 
-    def _setup_ui(self):
-        """Set up the navigator UI"""
+    def _setup_ui(self) -> None:
+        """
+        Set up the navigator UI.
+
+        Configures the tree widget dimensions, column widths, and visual properties.
+        """
         self.setMinimumWidth(200)
         self.setMaximumWidth(300)
 
@@ -43,8 +71,13 @@ class ProjectNavigator(QTreeWidget):
         # self.setContextMenuPolicy(Qt.CustomContextMenu)
         # self.customContextMenuRequested.connect(self._show_context_menu)
 
-    def _load_recent_files(self):
-        """Load and display recent files"""
+    def _load_recent_files(self) -> None:
+        """
+        Load and display recent files structure.
+
+        Creates the initial tree structure with placeholder items for inputs,
+        results, and recent files sections.
+        """
         # For now, create placeholder structure
         # TODO: Load from settings/config file
 
@@ -75,17 +108,40 @@ class ProjectNavigator(QTreeWidget):
         results_item.setExpanded(True)
         recent_item.setExpanded(True)
 
-    def add_recent_file(self, file_path, file_type="input"):
-        """Add a file to the recent files list"""
+    def add_recent_file(self, file_path: str, file_type: str = "input") -> None:
+        """
+        Add a file to the recent files list.
+
+        Args:
+            file_path: Path to the file to add
+            file_type: Type of file ("input" or "results")
+        """
         # TODO: Implement actual recent files management
         print(f"Adding recent file: {file_path} (type: {file_type})")
 
-    def _remove_file(self, file_path, file_type):
-        """Handle file removal request"""
+    def _remove_file(self, file_path: str, file_type: str) -> None:
+        """
+        Handle file removal request.
+
+        Emits the file_removed signal to notify listeners that a file
+        should be removed from the application.
+
+        Args:
+            file_path: Path of the file to remove
+            file_type: Type of file being removed ("input" or "results")
+        """
         self.file_removed.emit(file_path, file_type)
 
-    def update_input_files(self, files_list):
-        """Update the inputs section with loaded files"""
+    def update_input_files(self, files_list: Optional[List[str]]) -> None:
+        """
+        Update the inputs section with loaded files.
+
+        Refreshes the input files display in the navigator tree, showing either
+        a placeholder message or the list of loaded files with remove buttons.
+
+        Args:
+            files_list: List of input file paths, or None for empty list
+        """
         self.input_files = files_list or []
 
         # Find inputs item
@@ -116,8 +172,16 @@ class ProjectNavigator(QTreeWidget):
                 item.setExpanded(True)
                 break
 
-    def update_result_files(self, files_list):
-        """Update the results section with loaded files"""
+    def update_result_files(self, files_list: Optional[List[str]]) -> None:
+        """
+        Update the results section with loaded files.
+
+        Refreshes the result files display in the navigator tree, showing either
+        a placeholder message or the list of loaded files with remove buttons.
+
+        Args:
+            files_list: List of result file paths, or None for empty list
+        """
         self.results_files = files_list or []
 
         # Find results item
@@ -148,8 +212,13 @@ class ProjectNavigator(QTreeWidget):
                 item.setExpanded(True)
                 break
 
-    def _on_item_selected(self):
-        """Handle item selection in the navigator"""
+    def _on_item_selected(self) -> None:
+        """
+        Handle item selection in the navigator.
+
+        Processes the selected item to determine if it's a placeholder for loading
+        new files or an actual loaded file, and emits appropriate signals.
+        """
         selected_items = self.selectedItems()
         if not selected_items:
             return

@@ -11,7 +11,13 @@ from contextlib import contextmanager
 
 
 class ErrorHandler:
-    """Centralized error handling and user feedback"""
+    """
+    ErrorHandler class for centralized error handling and user feedback.
+
+    Provides comprehensive error handling utilities for file loading, data processing,
+    solver execution, UI errors, and validation issues with user-friendly messages
+    and proper logging.
+    """
 
     @staticmethod
     def handle_file_loading_error(error: Exception, file_path: str, logger: Optional[logging.Logger] = None) -> str:
@@ -100,7 +106,12 @@ class ErrorHandler:
 
 
 class SafeOperation:
-    """Context manager for safe operations with automatic error handling"""
+    """
+    SafeOperation class for context manager with automatic error handling.
+
+    Provides a context manager that automatically handles errors during operations,
+    logging them appropriately and providing user-friendly error messages.
+    """
 
     def __init__(self, operation_name: str, error_handler: Optional[ErrorHandler] = None,
                  logger: Optional[logging.Logger] = None, on_error: Optional[Callable[[str], None]] = None):

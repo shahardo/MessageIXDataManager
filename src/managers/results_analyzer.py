@@ -1,5 +1,5 @@
 """
-Results Analyzer - handles loading and parsing of message_ix result Excel files
+Results Analyzer - handles loading and parsing of MESSAGEix result Excel files
 """
 
 import os
@@ -14,9 +14,25 @@ from utils.parameter_utils import create_parameter_from_data
 
 
 class ResultsAnalyzer(BaseDataManager):
-    """Analyzes message_ix result Excel files and prepares data for visualization"""
+    """
+    Analyzes MESSAGEix result Excel files and prepares data for visualization.
 
-    def __init__(self):
+    This class handles the complex process of reading MESSAGEix result data
+    from Excel workbooks, parsing variables and equations, and providing access
+    to the loaded data for analysis and visualization.
+
+    Attributes:
+        scenarios: List of loaded ScenarioData objects containing results
+        loaded_file_paths: Corresponding file paths for loaded result files
+        summary_stats: Dictionary containing summary statistics of loaded results
+    """
+
+    def __init__(self) -> None:
+        """
+        Initialize the ResultsAnalyzer.
+
+        Sets up the analyzer with empty state and initializes summary statistics.
+        """
         super().__init__()
         self.summary_stats: Dict[str, Any] = {}
 
@@ -25,20 +41,39 @@ class ResultsAnalyzer(BaseDataManager):
         """Backward compatibility property for results (same as scenarios)"""
         return self.scenarios
 
-    def load_results_file(self, file_path: str, progress_callback: Optional[Callable[[int, str], None]] = None) -> ScenarioData:
+    def load_results_file(
+        self,
+        file_path: str,
+        progress_callback: Optional[Callable[[int, str], None]] = None
+    ) -> ScenarioData:
         """
-        Load and parse a message_ix results Excel file
+        Load and parse a MESSAGEix results Excel file.
+
+        This method performs comprehensive validation and parsing of MESSAGEix
+        result files, extracting variables and equations, and calculating
+        summary statistics for analysis and visualization.
 
         Args:
-            file_path: Path to the results Excel file
-            progress_callback: Optional callback function for progress updates (value, message)
+            file_path: Path to the Excel file (.xlsx or .xls format).
+                      File must exist and be readable.
+            progress_callback: Optional callback function for progress updates.
+                             Receives (percentage: int, message: str) parameters.
+                             Called at key milestones during loading process.
 
         Returns:
-            ScenarioData object containing parsed results
+            ScenarioData object containing parsed variables and equations.
 
         Raises:
-            FileNotFoundError: If file doesn't exist
-            ValueError: If file format is invalid
+            FileNotFoundError: If the specified file_path does not exist.
+            ValueError: If the file format is invalid or parsing fails.
+            PermissionError: If file cannot be read due to permissions.
+
+        Example:
+            >>> analyzer = ResultsAnalyzer()
+            >>> def progress(pct, msg): print(f"{pct}%: {msg}")
+            >>> results = analyzer.load_results_file("results.xlsx", progress)
+            >>> stats = analyzer.get_summary_stats()
+            >>> print(f"Loaded {stats['total_variables']} variables")
         """
         scenario = self.load_file(file_path, progress_callback)
 
@@ -49,13 +84,39 @@ class ResultsAnalyzer(BaseDataManager):
 
         return scenario
 
-    def _parse_workbook(self, wb, scenario: ScenarioData, progress_callback: Optional[Callable[[int, str], None]] = None):
-        """Parse workbook for results data - implements abstract method"""
+    def _parse_workbook(
+        self,
+        wb: Any,
+        scenario: ScenarioData,
+        progress_callback: Optional[Callable[[int, str], None]] = None
+    ) -> None:
+        """
+        Parse workbook for results data - implements abstract method.
+
+        Args:
+            wb: Openpyxl workbook object
+            scenario: ScenarioData object to populate
+            progress_callback: Optional progress callback function
+        """
         # Parse results (typically in var_* and equ_* sheets)
         self._parse_results(wb, scenario, progress_callback)
 
-    def _parse_results(self, wb, results: ScenarioData, progress_callback: Optional[Callable[[int, str], None]] = None):
-        """Parse results from workbook"""
+    def _parse_results(
+        self,
+        wb: Any,
+        results: ScenarioData,
+        progress_callback: Optional[Callable[[int, str], None]] = None
+    ) -> None:
+        """
+        Parse results from workbook.
+
+        Identifies and parses result sheets containing variables and equations.
+
+        Args:
+            wb: Openpyxl workbook object
+            results: ScenarioData object to populate with results
+            progress_callback: Optional progress callback function
+        """
         # Look for result sheets (typically var_* for variables, equ_* for equations)
         result_sheets = [sheet_name for sheet_name in wb.sheetnames if sheet_name.startswith(('var_', 'equ_'))]
 
@@ -82,8 +143,19 @@ class ResultsAnalyzer(BaseDataManager):
             sheet = wb[sheet_name]
             self._parse_result_sheet(sheet, results, sheet_name)
 
-    def _is_result_sheet(self, sheet) -> bool:
-        """Check if a sheet contains result-like data"""
+    def _is_result_sheet(self, sheet: Any) -> bool:
+        """
+        Check if a sheet contains result-like data.
+
+        Determines if a worksheet contains data that looks like MESSAGEix results
+        by checking for headers and numeric data.
+
+        Args:
+            sheet: Openpyxl worksheet object to analyze
+
+        Returns:
+            True if the sheet appears to contain result data
+        """
         try:
             # Get all rows
             rows = list(sheet.iter_rows(values_only=True))
@@ -109,8 +181,18 @@ class ResultsAnalyzer(BaseDataManager):
         except Exception:
             return False
 
-    def _parse_result_sheet(self, sheet, results: ScenarioData, sheet_name: str):
-        """Parse individual result sheet"""
+    def _parse_result_sheet(self, sheet: Any, results: ScenarioData, sheet_name: str) -> None:
+        """
+        Parse individual result sheet.
+
+        Extracts data from a single result worksheet and creates appropriate
+        Parameter objects.
+
+        Args:
+            sheet: Openpyxl worksheet object to parse
+            results: ScenarioData object to populate
+            sheet_name: Name of the sheet being parsed
+        """
         # Get all headers (including None)
         all_headers = [cell.value for cell in sheet[1]]
 
@@ -177,8 +259,16 @@ class ResultsAnalyzer(BaseDataManager):
             if parameter:
                 results.add_parameter(parameter)
 
-    def _calculate_summary_stats(self, results: ScenarioData):
-        """Calculate summary statistics from results"""
+    def _calculate_summary_stats(self, results: ScenarioData) -> None:
+        """
+        Calculate summary statistics from results.
+
+        Computes statistics about the loaded result data including counts
+        of variables, equations, and data points.
+
+        Args:
+            results: ScenarioData object containing the results to analyze
+        """
         self.summary_stats = {
             'total_variables': 0,
             'total_equations': 0,
@@ -197,27 +287,97 @@ class ResultsAnalyzer(BaseDataManager):
             self.summary_stats['result_sheets'].append(param.name)
 
     def get_summary_stats(self) -> Dict[str, Any]:
-        """Get summary statistics of loaded results"""
+        """
+        Get summary statistics of loaded results.
+
+        Returns a dictionary containing statistics about all loaded result data,
+        including counts of variables, equations, and data points.
+
+        Returns:
+            Dictionary with the following keys:
+            - 'total_variables': Number of variable parameters loaded
+            - 'total_equations': Number of equation parameters loaded
+            - 'total_data_points': Total number of data points across all results
+            - 'result_sheets': List of all result sheet names
+
+        Example:
+            >>> analyzer = ResultsAnalyzer()
+            >>> # ... load some results ...
+            >>> stats = analyzer.get_summary_stats()
+            >>> print(f"Variables: {stats['total_variables']}")
+            >>> print(f"Data points: {stats['total_data_points']}")
+        """
         return self.summary_stats.copy()
 
     def get_result_data(self, result_name: str) -> Optional[Parameter]:
-        """Get specific result data by name"""
+        """
+        Get specific result data by name.
+
+        Retrieves a Parameter object containing result data for the specified
+        result name (typically a sheet name from the Excel file).
+
+        Args:
+            result_name: Name of the result parameter to retrieve
+
+        Returns:
+            Parameter object if found, None otherwise
+
+        Example:
+            >>> analyzer = ResultsAnalyzer()
+            >>> # ... load results ...
+            >>> variable_data = analyzer.get_result_data('var_cost')
+            >>> if variable_data:
+            ...     print(f"Shape: {variable_data.df.shape}")
+        """
         return self.get_parameter(result_name)
 
     def get_all_result_names(self) -> List[str]:
-        """Get list of all result names"""
+        """
+        Get list of all result names.
+
+        Returns a list of all available result parameter names from loaded
+        result files.
+
+        Returns:
+            List of result parameter names (strings)
+
+        Example:
+            >>> analyzer = ResultsAnalyzer()
+            >>> # ... load results ...
+            >>> names = analyzer.get_all_result_names()
+            >>> print(f"Available results: {names}")
+        """
         return self.get_parameter_names()
 
     def prepare_chart_data(self, result_name: str, chart_type: str = 'line') -> Optional[Dict[str, Any]]:
         """
-        Prepare data for charting
+        Prepare data for charting.
+
+        Transforms result data into a format suitable for chart visualization.
+        Supports various chart types with automatic data formatting.
 
         Args:
-            result_name: Name of the result to chart
-            chart_type: Type of chart ('line', 'bar', 'stacked_bar', 'stacked_area', 'area')
+            result_name: Name of the result parameter to chart
+            chart_type: Type of chart to prepare data for. Supported types:
+                       'line', 'bar', 'stacked_bar', 'stacked_area', 'area'
 
         Returns:
-            Dictionary with chart data or None if not available
+            Dictionary containing chart data with the following structure:
+            {
+                'title': str,        # Chart title
+                'x_label': str,      # X-axis label
+                'y_label': str,      # Y-axis label
+                'data': List[dict]   # Chart data series
+            }
+            Returns None if the result_name is not found or data is invalid.
+
+        Example:
+            >>> analyzer = ResultsAnalyzer()
+            >>> # ... load results ...
+            >>> chart_data = analyzer.prepare_chart_data('var_cost', 'line')
+            >>> if chart_data:
+            ...     print(f"Chart title: {chart_data['title']}")
+            ...     print(f"Data series: {len(chart_data['data'])}")
         """
         parameter = self.get_result_data(result_name)
         if not parameter:
@@ -270,16 +430,34 @@ class ResultsAnalyzer(BaseDataManager):
 
     # Override get_current_scenario to maintain backward compatibility naming
     def get_current_results(self) -> Optional[ScenarioData]:
-        """Get the combined results from all loaded files"""
+        """
+        Get the combined results from all loaded files.
+
+        Backward compatibility method - equivalent to get_current_scenario().
+        """
         return self.get_current_scenario()
 
     # Override other methods for backward compatibility
     def get_results_by_file_path(self, file_path: str) -> Optional[ScenarioData]:
-        """Get specific results by file path"""
+        """
+        Get specific results by file path.
+
+        Backward compatibility method - equivalent to get_scenario_by_file_path().
+
+        Args:
+            file_path: Path to the results file
+
+        Returns:
+            ScenarioData object if found, None otherwise
+        """
         return self.get_scenario_by_file_path(file_path)
 
-    def clear_results(self):
-        """Clear all loaded results"""
+    def clear_results(self) -> None:
+        """
+        Clear all loaded results.
+
+        Backward compatibility method - equivalent to clear_scenarios().
+        """
         self.clear_scenarios()
 
     # Keep remove_file method for backward compatibility (inherited from BaseDataManager)
