@@ -23,6 +23,7 @@ from managers.solver_manager import SolverManager
 from managers.results_analyzer import ResultsAnalyzer
 from managers.logging_manager import logging_manager
 from core.data_models import ScenarioData
+from utils.error_handler import ErrorHandler, SafeOperation
 
 
 class MainWindow(QMainWindow):
@@ -268,9 +269,17 @@ class MainWindow(QMainWindow):
             total_sets = 0
             total_data_points = 0
             all_validation_issues = []
+            error_handler = ErrorHandler()
 
             for file_path in file_paths:
-                try:
+                def on_error(error_msg):
+                    self.hide_progress_bar()
+                    self.console.append(error_msg)
+                    QMessageBox.critical(self, "Load Error", error_msg)
+                    logging_manager.log_input_load(file_path, False, error_msg)
+
+                with SafeOperation(f"input file loading: {os.path.basename(file_path)}",
+                                 error_handler, logging_manager.logger, on_error) as safe_op:
                     self._append_to_console(f"Loading input file: {file_path}")
 
                     # Show progress bar
@@ -305,17 +314,6 @@ class MainWindow(QMainWindow):
                         self._append_to_console(f"✓ Successfully loaded {len(scenario.parameters)} parameters, {len(scenario.sets)} sets")
                     else:
                         self.console.append(f"⚠ Loaded {len(scenario.parameters)} parameters with validation issues:")
-
-                except Exception as e:
-                    # Hide progress bar on error
-                    self.hide_progress_bar()
-
-                    error_msg = f"Error loading file {file_path}: {str(e)}"
-                    self.console.append(error_msg)
-                    QMessageBox.critical(self, "Load Error", error_msg)
-
-                    # Log failed load
-                    logging_manager.log_input_load(file_path, False, error_msg)
 
             if loaded_files:
                 # Clear file selection to show combined view
@@ -353,9 +351,17 @@ class MainWindow(QMainWindow):
             total_variables = 0
             total_equations = 0
             total_data_points = 0
+            error_handler = ErrorHandler()
 
             for file_path in file_paths:
-                try:
+                def on_error(error_msg):
+                    self.hide_progress_bar()
+                    self.console.append(error_msg)
+                    QMessageBox.critical(self, "Load Error", error_msg)
+                    logging_manager.log_results_load(file_path, False, {'error': error_msg})
+
+                with SafeOperation(f"results file loading: {os.path.basename(file_path)}",
+                                 error_handler, logging_manager.logger, on_error) as safe_op:
                     self.console.append(f"Loading results file: {file_path}")
 
                     # Show progress bar
@@ -381,17 +387,6 @@ class MainWindow(QMainWindow):
                     total_variables += stats['total_variables']
                     total_equations += stats['total_equations']
                     total_data_points += stats['total_data_points']
-
-                except Exception as e:
-                    # Hide progress bar on error
-                    self.hide_progress_bar()
-
-                    error_msg = f"Error loading results file {file_path}: {str(e)}"
-                    self.console.append(error_msg)
-                    QMessageBox.critical(self, "Load Error", error_msg)
-
-                    # Log failed results load
-                    logging_manager.log_results_load(file_path, False, {'error': error_msg})
 
             if loaded_files:
                 # Clear file selection to show combined view

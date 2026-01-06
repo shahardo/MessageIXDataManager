@@ -5,12 +5,14 @@ Input Manager - handles loading and parsing of message_ix Excel input files
 import os
 import pandas as pd
 import numpy as np
+import logging
 from openpyxl import load_workbook
 from typing import Optional, List, Callable
 
 from core.data_models import ScenarioData, Parameter
 from managers.base_data_manager import BaseDataManager
 from utils.parameter_utils import create_parameter_from_data
+from utils.error_handler import ErrorHandler, SafeOperation
 
 
 class InputManager(BaseDataManager):
@@ -49,27 +51,31 @@ class InputManager(BaseDataManager):
 
     def _parse_sets(self, wb, scenario: ScenarioData, progress_callback: Optional[Callable[[int, str], None]] = None):
         """Parse sets from the workbook"""
-        # Look for common set sheet names in message_ix format
-        set_sheet_names = ['sets', 'set', 'Sets', 'Set']
+        error_handler = ErrorHandler()
+        logger = logging.getLogger(__name__)
 
-        for sheet_name in set_sheet_names:
-            if sheet_name in wb.sheetnames:
-                sheet = wb[sheet_name]
-                self._parse_sets_sheet(sheet, scenario)
-                break
+        with SafeOperation("set parsing", error_handler, logger) as safe_op:
+            # Look for common set sheet names in message_ix format
+            set_sheet_names = ['sets', 'set', 'Sets', 'Set']
 
-        # Also check for individual set sheets (common in message_ix)
-        potential_set_sheets = ['node', 'technology', 'commodity', 'level', 'year', 'mode', 'time']
-        total_sheets = len([s for s in potential_set_sheets if s in wb.sheetnames])
+            for sheet_name in set_sheet_names:
+                if sheet_name in wb.sheetnames:
+                    sheet = wb[sheet_name]
+                    self._parse_sets_sheet(sheet, scenario)
+                    break
 
-        for i, set_name in enumerate(potential_set_sheets):
-            if set_name in wb.sheetnames:
-                if progress_callback and total_sheets > 0:
-                    progress = 10 + int((i / total_sheets) * 20)  # Progress from 10% to 30%
-                    progress_callback(progress, f"Parsing set: {set_name}")
+            # Also check for individual set sheets (common in message_ix)
+            potential_set_sheets = ['node', 'technology', 'commodity', 'level', 'year', 'mode', 'time']
+            total_sheets = len([s for s in potential_set_sheets if s in wb.sheetnames])
 
-                sheet = wb[set_name]
-                self._parse_individual_set_sheet(sheet, set_name, scenario)
+            for i, set_name in enumerate(potential_set_sheets):
+                if set_name in wb.sheetnames:
+                    if progress_callback and total_sheets > 0:
+                        progress = 10 + int((i / total_sheets) * 20)  # Progress from 10% to 30%
+                        progress_callback(progress, f"Parsing set: {set_name}")
+
+                    sheet = wb[set_name]
+                    self._parse_individual_set_sheet(sheet, set_name, scenario)
 
     def _parse_sets_sheet(self, sheet, scenario: ScenarioData):
         """Parse a combined sets sheet"""

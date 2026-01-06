@@ -3,11 +3,13 @@ Base Data Manager - Abstract base class for data managers
 """
 
 import os
+import logging
 from abc import ABC, abstractmethod
 from typing import List, Optional, Callable
 from openpyxl import load_workbook
 
-from core.data_models import ScenarioData
+from core.data_models import ScenarioData, Parameter
+from utils.error_handler import ErrorHandler, SafeOperation
 
 
 class BaseDataManager(ABC):
@@ -35,12 +37,16 @@ class BaseDataManager(ABC):
         if not os.path.exists(file_path):
             raise FileNotFoundError(f"File not found: {file_path}")
 
+        logger = logging.getLogger(__name__)
+        error_handler = ErrorHandler()
+
         print(f"Loading file: {file_path}")
 
         # Create new scenario data
         scenario = ScenarioData()
 
-        try:
+        # Use SafeOperation for comprehensive error handling
+        with SafeOperation(f"file loading: {os.path.basename(file_path)}", error_handler, logger) as safe_op:
             # Initialize progress
             if progress_callback:
                 progress_callback(0, "Loading workbook...")
@@ -63,10 +69,9 @@ class BaseDataManager(ABC):
 
             print(f"Successfully loaded {len(scenario.parameters)} parameters and {len(scenario.sets)} sets")
 
-        except Exception as e:
-            if progress_callback:
-                progress_callback(0, f"Error: {str(e)}")
-            raise ValueError(f"Error parsing file: {str(e)}")
+        # If error occurred in SafeOperation, re-raise with user-friendly message
+        if safe_op.error_occurred:
+            raise ValueError(safe_op._handle_error(RuntimeError("File loading failed")))
 
         return scenario
 
