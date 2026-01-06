@@ -53,43 +53,17 @@ class MainWindow(QMainWindow):
 
     def _setup_ui_components(self):
         """Set up the UI components using composition"""
-        # Create component instances
+        # Create component instances, passing existing widgets from .ui file
         self.file_navigator = FileNavigatorWidget()
         self.param_tree = ParameterTreeWidget()
         self.data_display = DataDisplayWidget()
         self.chart_widget = ChartWidget()
 
-        # Replace UI elements with components
-        # Left panel: navigator and parameter tree
-        placeholder_navigator = self.leftSplitter.widget(0)
-        if placeholder_navigator:
-            placeholder_navigator.setParent(None)
-        self.leftSplitter.insertWidget(0, self.file_navigator)
+        # Initialize components with existing UI widgets
+        self._initialize_components_with_ui_widgets()
 
-        placeholder_tree = self.leftSplitter.widget(1)
-        if placeholder_tree:
-            placeholder_tree.setParent(None)
-        self.leftSplitter.insertWidget(1, self.param_tree)
-
-        # Right panel: data display and chart
-        placeholder_data = self.contentSplitter.widget(0)
-        if placeholder_data:
-            placeholder_data.setParent(None)
-
-        # Create a splitter for data display and chart
-        data_chart_splitter = self.dataSplitter
-
-        # Replace data display area
-        placeholder_table = data_chart_splitter.widget(0)
-        if placeholder_table:
-            placeholder_table.setParent(None)
-        data_chart_splitter.insertWidget(0, self.data_display)
-
-        # Replace chart area
-        placeholder_chart = data_chart_splitter.widget(1)
-        if placeholder_chart:
-            placeholder_chart.setParent(None)
-        data_chart_splitter.insertWidget(1, self.chart_widget)
+        # Connect component signals
+        self._connect_component_signals()
 
         # Set splitter sizes
         self.splitter.setSizes([300, 900])
@@ -114,13 +88,42 @@ class MainWindow(QMainWindow):
         self.selected_input_file = None
         self.selected_results_file = None
 
-    def _connect_signals(self):
-        """Connect all component signals"""
-        # File navigator signals
-        self.file_navigator.file_selected.connect(self._on_file_selected)
-        self.file_navigator.load_files_requested.connect(self._on_load_files_requested)
-        self.file_navigator.file_removed.connect(self._on_file_removed)
+    def _initialize_components_with_ui_widgets(self):
+        """Initialize components to reuse existing UI widgets instead of creating new ones"""
+        # Replace navigator widget
+        placeholder_navigator = self.leftSplitter.widget(0)
+        if placeholder_navigator:
+            placeholder_navigator.setParent(None)
+        self.leftSplitter.insertWidget(0, self.file_navigator)
 
+        # Replace parameter tree widget
+        placeholder_tree = self.leftSplitter.widget(1)
+        if placeholder_tree:
+            placeholder_tree.setParent(None)
+        self.leftSplitter.insertWidget(1, self.param_tree)
+
+        # For data display and chart, reuse existing widgets from .ui file
+        # Instead of replacing entire containers, connect to existing widgets
+
+        # Connect data display to existing widgets
+        self.data_display.param_title = self.param_title
+        self.data_display.view_toggle_button = self.view_toggle_button
+        self.data_display.param_table = self.param_table
+        self.data_display.selector_container = self.selector_container
+
+        # Connect chart widget to existing widgets
+        self.chart_widget.simple_bar_btn = self.simple_bar_btn
+        self.chart_widget.stacked_bar_btn = self.stacked_bar_btn
+        self.chart_widget.line_chart_btn = self.line_chart_btn
+        self.chart_widget.stacked_area_btn = self.stacked_area_btn
+        self.chart_widget.param_chart = self.param_chart
+
+        # Initialize component internal state
+        self.data_display._initialize_from_existing_widgets()
+        self.chart_widget._initialize_from_existing_widgets()
+
+    def _connect_component_signals(self):
+        """Connect component signals to main window handlers"""
         # Parameter tree signals
         self.param_tree.parameter_selected.connect(self._on_parameter_selected)
 
@@ -129,6 +132,13 @@ class MainWindow(QMainWindow):
 
         # Chart widget signals
         self.chart_widget.chart_type_changed.connect(self._on_chart_type_changed)
+
+    def _connect_signals(self):
+        """Connect all component signals"""
+        # File navigator signals
+        self.file_navigator.file_selected.connect(self._on_file_selected)
+        self.file_navigator.load_files_requested.connect(self._on_load_files_requested)
+        self.file_navigator.file_removed.connect(self._on_file_removed)
 
         # Menu actions
         self.actionOpen_Input_File.triggered.connect(self._open_input_file)
@@ -229,27 +239,23 @@ class MainWindow(QMainWindow):
             return self.input_manager.get_current_scenario()
 
     def _get_chart_data(self, parameter, is_results: bool):
-        """Get transformed data for chart display"""
-        # This is a simplified version - the full transformation logic
-        # would be moved to a utility function
+        """Get transformed data for chart display using the same pivot logic as table view"""
         df = parameter.df
-        # For now, return a simple pivot if possible
-        try:
-            # Try to create a simple pivot for chart
-            pivot_cols = [col for col in df.columns if col in ['technology', 'commodity', 'region']]
-            if pivot_cols and 'year' in df.columns and 'value' in df.columns:
-                chart_df = df.pivot_table(
-                    values='value',
-                    index='year',
-                    columns=pivot_cols[:2],  # Limit columns for readability
-                    aggfunc='first'
-                ).fillna(0)
-                return chart_df
-        except:
-            pass
 
-        # Fallback: return original data
-        return df
+        # Use the same pivot logic as the table view
+        column_info = self.data_display._identify_columns(df)
+
+        if self.data_display._should_pivot(df, column_info):
+            try:
+                # Use the same pivot method as the table view
+                pivoted_df = self.data_display._perform_pivot(df, column_info)
+                return pivoted_df
+            except Exception:
+                # If pivot fails, return original data
+                return df
+        else:
+            # If no pivot needed, return original data
+            return df
 
     def _open_input_file(self):
         """Handle opening input Excel file(s)"""
@@ -335,7 +341,7 @@ class MainWindow(QMainWindow):
                 else:
                     self._append_to_console(f"✓ Successfully loaded {len(loaded_files)} file(s) with {total_parameters} parameters, {total_sets} sets")
 
-                self.status_bar.showMessage(f"Loaded {len(loaded_files)} input file(s)")
+                self.statusbar.showMessage(f"Loaded {len(loaded_files)} input file(s)")
 
     def _open_results_file(self):
         """Handle opening results Excel file(s)"""
@@ -411,7 +417,7 @@ class MainWindow(QMainWindow):
                 # Update dashboard with new results
                 self.dashboard.update_results(True)
 
-                self.status_bar.showMessage(f"Results loaded: {len(loaded_files)} file(s)")
+                self.statusbar.showMessage(f"Results loaded: {len(loaded_files)} file(s)")
 
     def _run_solver(self):
         """Handle running the solver"""
@@ -515,9 +521,9 @@ class MainWindow(QMainWindow):
                     self._clear_data_display()
 
         if removed:
-            self.status_bar.showMessage(f"Removed {file_type} file: {os.path.basename(file_path)}")
+            self.statusbar.showMessage(f"Removed {file_type} file: {os.path.basename(file_path)}")
         else:
-            self.status_bar.showMessage(f"Failed to remove {file_type} file: {os.path.basename(file_path)}")
+            self.statusbar.showMessage(f"Failed to remove {file_type} file: {os.path.basename(file_path)}")
 
     # Progress bar methods
     def show_progress_bar(self, maximum=100):
@@ -530,12 +536,12 @@ class MainWindow(QMainWindow):
         """Update progress bar value and optionally status message"""
         self.progress_bar.setValue(value)
         if message:
-            self.status_bar.showMessage(message)
+            self.statusbar.showMessage(message)
 
     def hide_progress_bar(self):
         """Hide the progress bar"""
         self.progress_bar.setVisible(False)
-        self.status_bar.showMessage("Ready")
+        self.statusbar.showMessage("Ready")
 
     # Console methods
     def _append_to_console(self, message: str):
@@ -544,7 +550,7 @@ class MainWindow(QMainWindow):
 
     def _update_status_from_solver(self, status: str):
         """Update status bar from solver manager"""
-        self.status_bar.showMessage(status)
+        self.statusbar.showMessage(status)
 
     # Settings methods
     def _save_last_opened_files(self, file_path, file_type):

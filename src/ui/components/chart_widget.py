@@ -5,7 +5,7 @@ Extracted from MainWindow to provide focused chart display functionality.
 """
 
 from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QGroupBox
-from PyQt5.QtCore import Qt, QUrl
+from PyQt5.QtCore import Qt, QUrl, pyqtSignal
 from PyQt5.QtWebEngineWidgets import QWebEngineView, QWebEngineSettings
 from PyQt5.QtGui import QIcon
 import pandas as pd
@@ -21,6 +21,9 @@ from core.data_models import Parameter
 
 class ChartWidget(QWidget):
     """Handles chart rendering and management"""
+
+    # Define PyQt signals
+    chart_type_changed = pyqtSignal(str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -76,8 +79,37 @@ class ChartWidget(QWidget):
 
         self.setLayout(layout)
 
+    def _initialize_from_existing_widgets(self):
+        """Initialize component to use existing UI widgets instead of creating new layout"""
+        # Connect signals for existing widgets
+        if hasattr(self.simple_bar_btn, 'clicked'):
+            self.simple_bar_btn.clicked.connect(lambda: self._on_chart_type_changed('bar'))
+        if hasattr(self.stacked_bar_btn, 'clicked'):
+            self.stacked_bar_btn.clicked.connect(lambda: self._on_chart_type_changed('stacked_bar'))
+        if hasattr(self.line_chart_btn, 'clicked'):
+            self.line_chart_btn.clicked.connect(lambda: self._on_chart_type_changed('line'))
+        if hasattr(self.stacked_area_btn, 'clicked'):
+            self.stacked_area_btn.clicked.connect(lambda: self._on_chart_type_changed('stacked_area'))
+
+        # Initialize state
+        self.current_chart_type = 'bar'
+        self.simple_bar_btn.setChecked(True)
+        self.stacked_bar_btn.setChecked(False)
+        self.line_chart_btn.setChecked(False)
+        self.stacked_area_btn.setChecked(False)
+
+        # Make buttons checkable and set cursor
+        for btn in [self.simple_bar_btn, self.stacked_bar_btn, self.line_chart_btn, self.stacked_area_btn]:
+            if hasattr(btn, 'setCheckable'):
+                btn.setCheckable(True)
+            if hasattr(btn, 'setCursor'):
+                btn.setCursor(Qt.PointingHandCursor)
+
     def update_chart(self, df: pd.DataFrame, parameter_name: str, is_results: bool = False):
         """Update the chart with data from a DataFrame"""
+        # Ensure button states reflect current chart type
+        self._update_button_states()
+
         if df.empty or df.shape[1] == 0:
             self._show_chart_placeholder("No data available for chart")
             return
@@ -159,19 +191,22 @@ class ChartWidget(QWidget):
         # Render the chart
         self._render_chart_to_view(fig, f"{parameter_name} Chart")
 
+    def _update_button_states(self):
+        """Update button checked states to match current chart type"""
+        self.simple_bar_btn.setChecked(self.current_chart_type == 'bar')
+        self.stacked_bar_btn.setChecked(self.current_chart_type == 'stacked_bar')
+        self.line_chart_btn.setChecked(self.current_chart_type == 'line')
+        self.stacked_area_btn.setChecked(self.current_chart_type == 'stacked_area')
+
     def _on_chart_type_changed(self, chart_type: str):
         """Handle chart type selection change"""
         self.current_chart_type = chart_type
 
         # Update button states
-        self.simple_bar_btn.setChecked(chart_type == 'bar')
-        self.stacked_bar_btn.setChecked(chart_type == 'stacked_bar')
-        self.line_chart_btn.setChecked(chart_type == 'line')
-        self.stacked_area_btn.setChecked(chart_type == 'stacked_area')
+        self._update_button_states()
 
         # Emit signal to refresh chart (will be connected by parent)
-        if hasattr(self, 'chart_type_changed'):
-            self.chart_type_changed.emit(chart_type)
+        self.chart_type_changed.emit(chart_type)
 
     def _render_chart_to_view(self, fig, title: str):
         """Render a Plotly figure to the QWebEngineView"""
@@ -276,6 +311,3 @@ class ChartWidget(QWidget):
     def show_placeholder(self, message: str = "Select a parameter to view chart"):
         """Public method to show placeholder"""
         self._show_chart_placeholder(message)
-
-    # Signal placeholder
-    chart_type_changed = None
