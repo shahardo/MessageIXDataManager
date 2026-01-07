@@ -112,17 +112,7 @@ QComboBox {
     background-color: white;
 }
 
-QComboBox:hover {
-    border-color: #999;
-}
 
-QComboBox::drop-down {
-    border: none;
-}
-
-QComboBox::down-arrow {
-    image: url(down_arrow.png); /* Could add custom arrow */
-}
 
 /* Checkbox styling */
 QCheckBox {
