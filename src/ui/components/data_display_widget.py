@@ -188,10 +188,10 @@ class DataDisplayWidget(QWidget):
         """Configure table dimensions and headers"""
         self.param_table.setRowCount(len(df))
 
-        # Set column count and vertical headers based on display mode
-        if self.table_display_mode == "advanced":
+        # Set column count and vertical headers based on display mode or results type
+        if self.table_display_mode == "advanced" or is_results:
             self.param_table.setColumnCount(len(df.columns))
-            # Set vertical header labels to show years
+            # Set vertical header labels to show years (for advanced view or results)
             year_labels = [str(year) for year in df.index]
             self.param_table.setVerticalHeaderLabels(year_labels)
         else:
