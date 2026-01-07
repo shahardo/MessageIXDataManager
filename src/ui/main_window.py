@@ -186,6 +186,9 @@ class MainWindow(QMainWindow):
             self._switch_to_results_view()
             self._clear_data_display()
 
+        # Save current session state
+        self._save_current_session_state()
+
     def _on_parameter_selected(self, parameter_name: str, is_results: bool):
         """Handle parameter/result selection in tree"""
         if parameter_name is None:
@@ -584,6 +587,13 @@ class MainWindow(QMainWindow):
                 results_files = results_files[-5:]  # Keep only the last 5 files
             settings.setValue("last_results_files", results_files)
 
+    def _save_current_session_state(self):
+        """Save the current session state including selected files and view mode"""
+        settings = QSettings("MessageIXDataManager", "MainWindow")
+        settings.setValue("current_view", self.current_view)
+        settings.setValue("selected_input_file", self.selected_input_file)
+        settings.setValue("selected_results_file", self.selected_results_file)
+
     def _remove_last_opened_file(self, file_path, file_type):
         """Remove a file from the last opened files settings"""
         settings = QSettings("MessageIXDataManager", "MainWindow")
@@ -613,6 +623,43 @@ class MainWindow(QMainWindow):
         if isinstance(results_files, str):
             results_files = [results_files]
         return input_files, results_files
+
+    def _get_last_session_state(self):
+        """Get the last session state from settings"""
+        settings = QSettings("MessageIXDataManager", "MainWindow")
+        current_view = settings.value("current_view", "input")
+        selected_input_file = settings.value("selected_input_file", None)
+        selected_results_file = settings.value("selected_results_file", None)
+        return current_view, selected_input_file, selected_results_file
+
+    def _restore_session_state(self, loaded_input_files, loaded_results_files):
+        """Restore the session state after auto-loading files"""
+        current_view, selected_input_file, selected_results_file = self._get_last_session_state()
+
+        # Restore view mode
+        self.current_view = current_view
+
+        # Restore selected files if they were loaded
+        if selected_input_file and selected_input_file in loaded_input_files:
+            self.selected_input_file = selected_input_file
+            if current_view == "input":
+                self._switch_to_input_view()
+        elif selected_results_file and selected_results_file in loaded_results_files:
+            self.selected_results_file = selected_results_file
+            if current_view == "results":
+                self._switch_to_results_view()
+        else:
+            # If no specific file was selected or it wasn't loaded, switch to appropriate view
+            if loaded_input_files and not loaded_results_files:
+                self._switch_to_input_view()
+            elif loaded_results_files and not loaded_input_files:
+                self._switch_to_results_view()
+            elif loaded_input_files and loaded_results_files:
+                # Both loaded, switch to the saved view
+                if current_view == "results":
+                    self._switch_to_results_view()
+                else:
+                    self._switch_to_input_view()
 
     def _auto_load_last_files(self):
         """Automatically load the last opened files on startup"""
@@ -690,3 +737,11 @@ class MainWindow(QMainWindow):
                 self.file_navigator.add_recent_file(file_path, "results")
             # Update dashboard
             self.dashboard.update_results(True)
+
+        # Restore session state (view mode and selected files)
+        self._restore_session_state(loaded_input_files, loaded_results_files)
+
+    def closeEvent(self, event):
+        """Handle application close event - save current session state"""
+        self._save_current_session_state()
+        super().closeEvent(event)
