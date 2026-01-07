@@ -67,6 +67,31 @@ class SolverManager:
         """
         self.status_callback = callback
 
+    def detect_messageix_environment(self) -> bool:
+        """
+        Detect if MESSAGEix environment is available.
+
+        Checks for the presence of required MESSAGEix modules ('ixmp' and 'message_ix')
+        to determine if the MESSAGEix framework is properly installed.
+
+        Returns:
+            True if MESSAGEix environment is available, False otherwise
+
+        Example:
+            >>> manager = SolverManager()
+            >>> available = manager.detect_messageix_environment()
+            >>> if available:
+            ...     print("MESSAGEix is available")
+            ... else:
+            ...     print("MESSAGEix is not available")
+        """
+        try:
+            import ixmp  # noqa: F401
+            import message_ix  # noqa: F401
+            return True
+        except ImportError:
+            return False
+
     def get_available_solvers(self) -> List[str]:
         """
         Get list of available solvers.

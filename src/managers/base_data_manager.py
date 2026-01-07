@@ -1,23 +1,65 @@
 """
-Base Data Manager - Abstract base class for data managers
+Base Data Manager - Abstract base class for data managers with Observer pattern
 """
 
 import os
 import logging
 from abc import ABC, abstractmethod
-from typing import List, Optional, Callable
+from typing import List, Optional, Callable, Protocol
 from openpyxl import load_workbook
 
 from core.data_models import ScenarioData, Parameter
 from utils.error_handler import ErrorHandler, SafeOperation
 
 
+class DataObserver(Protocol):
+    """DataObserver protocol for objects that observe data changes"""
+
+    def on_data_loaded(self, scenario: ScenarioData, file_path: str):
+        """Called when new data is loaded"""
+        ...
+
+    def on_data_removed(self, file_path: str):
+        """Called when data is removed"""
+        ...
+
+    def on_scenario_cleared(self):
+        """Called when all scenarios are cleared"""
+        ...
+
+
 class BaseDataManager(ABC):
-    """Base class for data managers handling Excel file loading and scenario management"""
+    """Base class for data managers handling Excel file loading and scenario management with Observer pattern"""
 
     def __init__(self):
         self.scenarios: List[ScenarioData] = []
         self.loaded_file_paths: List[str] = []
+        self._observers: List[DataObserver] = []
+
+    def add_observer(self, observer: DataObserver):
+        """Add an observer for data changes"""
+        if observer not in self._observers:
+            self._observers.append(observer)
+
+    def remove_observer(self, observer: DataObserver):
+        """Remove an observer from the list of registered observers"""
+        if observer in self._observers:
+            self._observers.remove(observer)
+
+    def _notify_data_loaded(self, scenario: ScenarioData, file_path: str):
+        """Notify observers of new data"""
+        for observer in self._observers:
+            observer.on_data_loaded(scenario, file_path)
+
+    def _notify_data_removed(self, file_path: str):
+        """Notify observers of data removal"""
+        for observer in self._observers:
+            observer.on_data_removed(file_path)
+
+    def _notify_scenario_cleared(self):
+        """Notify observers of scenario clearing"""
+        for observer in self._observers:
+            observer.on_scenario_cleared()
 
     def load_file(self, file_path: str, progress_callback: Optional[Callable[[int, str], None]] = None) -> ScenarioData:
         """
@@ -68,6 +110,9 @@ class BaseDataManager(ABC):
                 progress_callback(100, "Loading complete")
 
             print(f"Successfully loaded {len(scenario.parameters)} parameters and {len(scenario.sets)} sets")
+
+            # Notify observers of new data
+            self._notify_data_loaded(scenario, file_path)
 
         # If error occurred in SafeOperation, re-raise with user-friendly message
         if safe_op.error_occurred:
@@ -148,6 +193,7 @@ class BaseDataManager(ABC):
         """Clear all loaded scenarios"""
         self.scenarios.clear()
         self.loaded_file_paths.clear()
+        self._notify_scenario_cleared()
 
     def get_parameter_names(self) -> List[str]:
         """Get list of parameter names from current scenario"""
@@ -251,6 +297,9 @@ class BaseDataManager(ABC):
             # Remove from both lists
             self.loaded_file_paths.pop(index)
             self.scenarios.pop(index)
+
+            # Notify observers
+            self._notify_data_removed(file_path)
 
             print(f"Removed file: {file_path}")
             return True
