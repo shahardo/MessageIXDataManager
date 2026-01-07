@@ -23,7 +23,7 @@ class ResultsDashboard(QWidget):
 
         # Load UI from .ui file
         try:
-            uic.loadUi('c:/Users/owner/code/MessageIXDataManager/src/ui/dashboard.ui', self)
+            uic.loadUi('src/ui/dashboard.ui', self)
             print("UI loaded successfully")
         except Exception as e:
             print(f"Error loading UI: {e}")
