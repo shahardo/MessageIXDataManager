@@ -60,11 +60,10 @@ class ProjectNavigator(QTreeWidget):
 
         Configures the tree widget dimensions, column widths, and visual properties.
         """
-        self.setMinimumWidth(200)
-        self.setMaximumWidth(300)
+        self.setMinimumWidth(150)  # Reduced minimum width to allow more flexibility
 
         # Set column widths
-        self.setColumnWidth(0, 180)  # File name column
+        self.setColumnWidth(0, 120)  # File name column - will expand with widget
         self.setColumnWidth(1, 30)   # Action column
 
         # Enable context menu
