@@ -216,6 +216,7 @@ QTreeWidget::item {
 
 QTreeWidget::item:selected {
     background-color: #e3f2fd;
+    color: #333;
 }
 
 /* Status bar styling */
