@@ -76,6 +76,10 @@ class MainWindow(QMainWindow):
         self.selected_input_file: Optional[str] = None
         self.selected_results_file: Optional[str] = None
 
+        # Remember last selected parameters for each file type
+        self.last_selected_input_parameter: Optional[str] = None
+        self.last_selected_results_parameter: Optional[str] = None
+
         # Auto-load last opened files
         self._auto_load_last_files()
 
@@ -181,10 +185,16 @@ class MainWindow(QMainWindow):
             self.selected_input_file = file_path
             self._switch_to_input_view()
             self._clear_data_display()
+            # Auto-select the last selected parameter if it exists in this file
+            if self.last_selected_input_parameter:
+                self._auto_select_parameter_if_exists(self.last_selected_input_parameter, False)
         elif file_type == "results":
             self.selected_results_file = file_path
             self._switch_to_results_view()
             self._clear_data_display()
+            # Auto-select the last selected parameter if it exists in this file
+            if self.last_selected_results_parameter:
+                self._auto_select_parameter_if_exists(self.last_selected_results_parameter, True)
 
         # Save current session state
         self._save_current_session_state()
@@ -195,6 +205,12 @@ class MainWindow(QMainWindow):
             # Category selected, clear display
             self._clear_data_display()
             return
+
+        # Remember this parameter for future file switches
+        if is_results:
+            self.last_selected_results_parameter = parameter_name
+        else:
+            self.last_selected_input_parameter = parameter_name
 
         # Get the parameter object and display it
         scenario = self._get_current_scenario(is_results)
@@ -252,6 +268,34 @@ class MainWindow(QMainWindow):
             item_name = selected_items[0].text(0)
             if item_name and not item_name.startswith(("Parameters", "Results", "Economic", "Variables", "Sets")):
                 self._on_parameter_selected(item_name, self.current_view == "results")
+
+    def _auto_select_parameter_if_exists(self, parameter_name: str, is_results: bool):
+        """Auto-select a parameter in the tree if it exists in the current scenario"""
+        scenario = self._get_current_scenario(is_results)
+        if not scenario or not scenario.get_parameter(parameter_name):
+            return  # Parameter doesn't exist in this scenario
+
+        # Find and select the parameter in the tree
+        def find_and_select_item(parent_item):
+            """Recursively search for the parameter item"""
+            for i in range(parent_item.childCount()):
+                child = parent_item.child(i)
+                if child.text(0) == parameter_name:
+                    # Found the parameter item - select it
+                    self.param_tree.setCurrentItem(child)
+                    self.param_tree.scrollToItem(child)
+                    return True
+                # Recursively search in children
+                if find_and_select_item(child):
+                    return True
+            return False
+
+        # Search through all top-level items
+        root = self.param_tree.invisibleRootItem()
+        if find_and_select_item(root):
+            # The selection will trigger the parameter_selected signal automatically
+            # which will call _on_parameter_selected and display the data
+            pass
 
     def _get_current_scenario(self, is_results: bool) -> Optional[ScenarioData]:
         """Get the current scenario based on selection"""
