@@ -115,12 +115,8 @@ class ChartWidget(QWidget):
         # Get years from index (should be years in advanced view)
         years = df.index.tolist()
 
-        # Check if index is sequential integers starting from 1, and if so, map to actual years
-        if (len(years) > 0 and all(isinstance(y, (int, float)) and y == int(y) for y in years) and
-            sorted(years) == list(range(1, len(years) + 1))):
-            # Try to get actual years from scenario - this will need to be passed in or accessed differently
-            # For now, keep original years
-            pass
+        # For results data, the years should already be correct from the data transformation
+        # Don't try to override them with sequential integers or other mappings
 
         # Add traces based on chart type
         for col_idx, col_name in enumerate(df.columns):
@@ -179,8 +175,12 @@ class ChartWidget(QWidget):
 
         fig.update_layout(**layout_kwargs)
 
-        # Update axes
-        fig.update_xaxes(tickmode='linear')
+        # Update axes - use exact years from data, not automatic linear ticks
+        fig.update_xaxes(
+            tickmode='array',
+            tickvals=years,
+            ticktext=[str(year) for year in years]
+        )
         fig.update_yaxes(automargin=True)
 
         # Render the chart
