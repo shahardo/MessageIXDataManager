@@ -324,5 +324,91 @@ class ResultsAnalyzer(BaseDataManager):
         """
         self.clear_scenarios()
 
-    # Keep remove_file method for backward compatibility (inherited from BaseDataManager)
+    def calculate_dashboard_metrics(self, scenario: ScenarioData) -> Dict[str, float]:
+        """
+        Calculate dashboard metrics for a given scenario.
 
+        Computes the four key metrics displayed in the dashboard top row:
+        - Total primary energy (2050)
+        - Total electricity (2050)
+        - % Clean electricity (2050)
+        - Total emissions (2050)
+
+        Args:
+            scenario: ScenarioData object containing the scenario to analyze
+
+        Returns:
+            Dictionary with metric values:
+            - 'primary_energy_2050': Total primary energy for 2050 (PJ)
+            - 'electricity_2050': Total electricity generation for 2050 (TWh)
+            - 'clean_electricity_pct': Percentage of clean electricity for 2050 (%)
+            - 'emissions_2050': Total emissions for 2050 (ktCO2e or equivalent)
+        """
+        metrics = {
+            'primary_energy_2050': 0.0,
+            'electricity_2050': 0.0,
+            'clean_electricity_pct': 0.0,
+            'emissions_2050': 0.0
+        }
+
+        # 1. Primary energy 2050 - try multiple parameter names
+        primary_energy_param = scenario.get_parameter('Primary energy supply (PJ)')
+
+        if primary_energy_param and not primary_energy_param.df.empty:
+            df = primary_energy_param.df
+            year_col = 'year' if 'year' in df.columns else 'year_act'
+            df_2050 = df[df[year_col] == 2050]
+            if not df_2050.empty:
+                # Sum all numeric columns except year
+                for col in df_2050.columns:
+                    if col != year_col and pd.api.types.is_numeric_dtype(df_2050[col]):
+                        metrics['primary_energy_2050'] += df_2050[col].sum()
+
+        # 2. Electricity 2050 - try multiple parameter names
+        electricity_param = scenario.get_parameter('Electricity generation (TWh)')
+
+        if electricity_param and not electricity_param.df.empty:
+            df = electricity_param.df
+            year_col = 'year' if 'year' in df.columns else 'year_act'
+            df_2050 = df[df[year_col] == 2050]
+            if not df_2050.empty:
+                # Sum all numeric columns except year
+                for col in df_2050.columns:
+                    if col != year_col and pd.api.types.is_numeric_dtype(df_2050[col]):
+                        metrics['electricity_2050'] += df_2050[col].sum()
+
+        # 3. Clean electricity percentage - need source breakdown
+        if electricity_param and not electricity_param.df.empty:
+            df = electricity_param.df
+            year_col = 'year' if 'year' in df.columns else 'year_act'
+            df_2050 = df[df[year_col] == 2050]
+
+            if not df_2050.empty:
+                total_electricity = 0.0
+                clean_electricity = 0.0
+                clean_technologies = ['nuclear', 'solar PV', 'solar CSP', 'wind', 'hydro', 'biomass', 'geothermal', 'renewable']
+
+                for col in df_2050.columns:
+                    if col in clean_technologies:
+                        clean_electricity += df_2050[col].sum()
+                    total_electricity += df_2050[col].sum()
+
+                if total_electricity > 0:
+                    metrics['clean_electricity_pct'] = (clean_electricity / total_electricity) * 100
+
+        # 4. Emissions 2050 - try multiple parameter names
+        emissions_param = scenario.get_parameter('Total GHG emissions (MtCeq)')
+
+        if emissions_param and not emissions_param.df.empty:
+            df = emissions_param.df
+            year_col = 'year' if 'year' in df.columns else 'year_act'
+            df_2050 = df[df[year_col] == 2050]
+            if not df_2050.empty:
+                # Sum all numeric columns except year
+                for col in df_2050.columns:
+                    if col != year_col and pd.api.types.is_numeric_dtype(df_2050[col]):
+                        metrics['emissions_2050'] += df_2050[col].sum()
+
+        return metrics
+
+    # Keep remove_file method for backward compatibility (inherited from BaseDataManager)

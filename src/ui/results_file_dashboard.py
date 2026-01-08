@@ -45,6 +45,14 @@ class ResultsFileDashboard(QWidget):
             'electricity_pie': self.electricity_pie_chart
         }
 
+        # Map metric labels from UI file
+        self.metric_labels = {
+            'primary_energy_2050': self.metric1_value,
+            'electricity_2050': self.metric2_value,
+            'clean_electricity_pct': self.metric3_value,
+            'emissions_2050': self.metric4_value
+        }
+
         # Enable JavaScript for chart views
         self._setup_chart_views()
 
@@ -66,9 +74,47 @@ class ResultsFileDashboard(QWidget):
             profile.setPersistentCookiesPolicy(0)  # No persistent cookies
 
     def update_dashboard(self, scenario: Any):
-        """Update the dashboard with the charts"""
+        """Update the dashboard with the metrics and charts"""
         self.current_scenario = scenario
+        self._render_metrics()
         self._render_charts()
+
+    def _render_metrics(self):
+        """Calculate and display the dashboard metrics"""
+        try:
+            if not self.current_scenario:
+                # Clear metrics if no scenario loaded
+                for label in self.metric_labels.values():
+                    label.setText("--")
+                return
+
+            # Calculate metrics using the results analyzer
+            metrics = self.results_analyzer.calculate_dashboard_metrics(self.current_scenario)
+
+            # Update metric labels with formatted values
+            # Primary energy (PJ)
+            primary_energy = metrics['primary_energy_2050']
+            self.metric_labels['primary_energy_2050'].setText(f"{primary_energy:.1f} PJ")
+
+            # Electricity (TWh)
+            electricity = metrics['electricity_2050']
+            self.metric_labels['electricity_2050'].setText(f"{electricity:.1f} TWh")
+
+            # Clean electricity percentage
+            clean_pct = metrics['clean_electricity_pct']
+            self.metric_labels['clean_electricity_pct'].setText(f"{clean_pct:.1f}%")
+
+            # Emissions (ktCO2e)
+            emissions = metrics['emissions_2050']
+            self.metric_labels['emissions_2050'].setText(f"{emissions:.1f} ktCO₂e")
+
+            print(f"DEBUG: Dashboard metrics updated - Primary: {primary_energy:.1f} PJ, Electricity: {electricity:.1f} TWh, Clean: {clean_pct:.1f}%, Emissions: {emissions:.1f} ktCO₂e")
+
+        except Exception as e:
+            print(f"Error calculating metrics: {str(e)}")
+            # Show error in metric labels
+            for label in self.metric_labels.values():
+                label.setText("Error")
 
     def _render_charts(self):
         """Render all 4 charts: primary energy demand, electricity generation, and pie charts"""
