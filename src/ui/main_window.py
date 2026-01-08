@@ -15,6 +15,7 @@ import os
 from typing import Optional, List
 
 from .dashboard import ResultsDashboard
+from .results_file_dashboard import ResultsFileDashboard
 from .navigator import ProjectNavigator
 from .components import (
     DataDisplayWidget, ChartWidget, ParameterTreeWidget, FileNavigatorWidget
@@ -64,6 +65,10 @@ class MainWindow(QMainWindow):
 
         # Initialize dashboard
         self.dashboard: ResultsDashboard = ResultsDashboard(self.results_analyzer)
+        self.results_file_dashboard: ResultsFileDashboard = ResultsFileDashboard(self.results_analyzer)
+
+        # Add dashboard widget to the data container layout
+        self._setup_data_area_widgets()
 
         # Initialize UI components
         self._setup_ui_components()
@@ -82,6 +87,23 @@ class MainWindow(QMainWindow):
 
         # Auto-load last opened files
         self._auto_load_last_files()
+
+    def _setup_data_area_widgets(self):
+        """Set up the data area widgets in the dataContainer layout"""
+        # Ensure dataContainer has a layout
+        if self.dataContainer.layout() is None:
+            from PyQt5.QtWidgets import QVBoxLayout
+            layout = QVBoxLayout(self.dataContainer)
+            self.dataContainer.setLayout(layout)
+
+        # Add both widgets to the layout
+        layout = self.dataContainer.layout()
+        layout.addWidget(self.dataSplitter)
+        layout.addWidget(self.results_file_dashboard)
+
+        # Initially show data splitter and hide dashboard
+        self.dataSplitter.show()
+        self.results_file_dashboard.hide()
 
     def _setup_ui_components(self):
         """Set up the UI components using composition"""
@@ -212,6 +234,9 @@ class MainWindow(QMainWindow):
         else:
             self.last_selected_input_parameter = parameter_name
 
+        # Switch back to normal data display if dashboard was showing
+        self._restore_normal_display()
+
         # Get the parameter object and display it
         scenario = self._get_current_scenario(is_results)
         if scenario:
@@ -256,8 +281,12 @@ class MainWindow(QMainWindow):
 
     def _clear_data_display(self):
         """Clear the data display and chart"""
-        self.data_display.display_parameter_data(None, False)  # This will show placeholder
-        self.chart_widget.show_placeholder()
+        if self.current_view == "results" and self.selected_results_file:
+            # Show dashboard for results files when no parameter is selected
+            self._show_results_file_dashboard()
+        else:
+            self.data_display.display_parameter_data(None, False)  # This will show placeholder
+            self.chart_widget.show_placeholder()
 
     def _refresh_current_display(self):
         """Refresh the current parameter/result display"""
@@ -527,6 +556,29 @@ class MainWindow(QMainWindow):
                                   "Failed to stop solver gracefully.")
         else:
             self.console.append("No solver is currently running")
+
+    def _restore_normal_display(self):
+        """Restore the normal data display (table and chart)"""
+        try:
+            # Hide dashboard and show data splitter
+            self.results_file_dashboard.hide()
+            self.dataSplitter.show()
+
+        except Exception as e:
+            self.console.append(f"Error restoring normal display: {str(e)}")
+
+    def _show_results_file_dashboard(self):
+        """Show the results file dashboard in the main content area"""
+        try:
+            # Hide data splitter and show dashboard
+            self.dataSplitter.hide()
+            self.results_file_dashboard.update_dashboard(None)
+            self.results_file_dashboard.show()
+
+        except Exception as e:
+            self.console.append(f"Error showing results file dashboard: {str(e)}")
+            QMessageBox.critical(self, "Dashboard Error",
+                               f"Failed to show results file dashboard: {str(e)}")
 
     def _show_dashboard(self):
         """Show results dashboard"""
