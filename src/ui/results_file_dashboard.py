@@ -109,8 +109,35 @@ class ResultsFileDashboard(QWidget):
                     "No electricity generation data available"
                 )
 
-            # For pie charts, use demo data for now
-            self._render_demo_pie_charts()
+            # Primary energy pie chart: get data from "Primary energy supply (PJ)" parameter, year 2050
+            primary_energy_param = self.current_scenario.get_parameter('Primary energy supply (PJ)')
+            if primary_energy_param and not primary_energy_param.df.empty:
+                self._render_energy_pie_chart(
+                    primary_energy_param,
+                    self.chart_views['primary_energy_pie'],
+                    'Primary Energy Mix (2050)',
+                    'Primary Energy Mix by Fuel in 2050'
+                )
+            else:
+                self._show_chart_placeholder(
+                    self.chart_views['primary_energy_pie'],
+                    "No primary energy supply data available"
+                )
+
+            # Electricity pie chart: get data from 'Electricity generation (TWh)' parameter, year 2050
+            electricity_param = self.current_scenario.get_parameter('Electricity generation (TWh)')
+            if electricity_param and not electricity_param.df.empty:
+                self._render_energy_pie_chart(
+                    electricity_param,
+                    self.chart_views['electricity_pie'],
+                    'Electricity Sources (2050)',
+                    'Electricity Sources in 2050'
+                )
+            else:
+                self._show_chart_placeholder(
+                    self.chart_views['electricity_pie'],
+                    "No electricity generation data available"
+                )
 
         except Exception as e:
             print(f"Error rendering charts: {str(e)}")
@@ -140,37 +167,39 @@ class ResultsFileDashboard(QWidget):
         )
         return
 
-    def _render_demo_pie_charts(self):
-        """Render demo pie charts for energy mix"""
-        # Primary energy pie chart
-        primary_energy_data = {
-            'Coal': 18.7,
-            'Gas': 72.1,
-            'Oil': 15.9,
-            'Nuclear': 48.3,
-            'Renewables': 42.6
-        }
+    def _render_energy_pie_chart(self, param, chart_view, title, html_title):
+        """Render energy pie chart from parameter data for year 2050"""
+        df = param.df
+        year_col = 'year' if 'year' in df.columns else 'year_act'
+
+        # Filter for year 2050
+        df_2050 = df[df[year_col] == 2050]
+        if df_2050.empty:
+            self._show_chart_placeholder(chart_view, "No data available for year 2050")
+            return
+
+        # Sum values for each source in 2050
+        data_dict = {}
+        for col in df_2050.columns:
+            if col != year_col and col != 'value':
+                total = df_2050[col].sum()
+                if total > 0:  # Only include positive values
+                    data_dict[col] = total
+
+        print(f"DEBUG: {title} - 2050 data: {data_dict}")
+
+        if not data_dict:
+            self._show_chart_placeholder(chart_view, "No positive values for year 2050")
+            return
+
         self._render_pie_chart(
-            self.chart_views['primary_energy_pie'],
-            primary_energy_data,
-            'Primary Energy Mix (2050)',
-            'Primary Energy Mix by Fuel in 2050'
+            chart_view,
+            data_dict,
+            title,
+            html_title
         )
 
-        # Electricity sources pie chart
-        electricity_data = {
-            'Coal': 12.3,
-            'Gas': 58.9,
-            'Oil': 2.7,
-            'Nuclear': 45.6,
-            'Renewables': 38.2
-        }
-        self._render_pie_chart(
-            self.chart_views['electricity_pie'],
-            electricity_data,
-            'Electricity Sources (2050)',
-            'Electricity Sources in 2050'
-        )
+
 
     def _render_stacked_bar_chart(self, chart_view, years, data_dict, title, html_title):
         """Render a stacked bar chart"""
