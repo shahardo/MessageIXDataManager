@@ -67,87 +67,123 @@ class ResultsFileDashboard(QWidget):
 
     def update_dashboard(self, scenario: Any):
         """Update the dashboard with the charts"""
+        self.current_scenario = scenario
         self._render_charts()
 
     def _render_charts(self):
         """Render all 4 charts: primary energy demand, electricity generation, and pie charts"""
         try:
-            years = [2020, 2030, 2040, 2050]
+            if not self.current_scenario:
+                # Show placeholder if no scenario loaded
+                for chart_view in self.chart_views.values():
+                    self._show_chart_placeholder(chart_view, "No data loaded")
+                return
 
-            # Top left: Primary energy demand by source over years
-            primary_energy_data = {
-                'Coal': [45.2, 38.1, 25.3, 18.7],
-                'Gas': [55.8, 62.4, 68.9, 72.1],
-                'Oil': [38.6, 29.8, 22.4, 15.9],
-                'Nuclear': [28.4, 35.7, 42.1, 48.3],
-                'Renewables': [18.9, 26.2, 35.8, 42.6]
-            }
+            # Primary energy chart: get data from "Primary energy supply (PJ)" parameter
+            primary_energy_param = self.current_scenario.get_parameter('Primary energy supply (PJ)')
+            if primary_energy_param and not primary_energy_param.df.empty:
+                self._render_primary_energy_chart(primary_energy_param)
+            else:
+                self._show_chart_placeholder(
+                    self.chart_views['primary_energy_demand'],
+                    "No primary energy supply data available"
+                )
 
-            # Top right: Electricity generation by source over years
-            electricity_data = {
-                'Coal': [28.4, 22.1, 15.8, 12.3],
-                'Gas': [38.7, 45.2, 52.6, 58.9],
-                'Oil': [9.2, 6.8, 4.1, 2.7],
-                'Nuclear': [24.1, 31.8, 39.2, 45.6],
-                'Renewables': [14.6, 21.9, 31.4, 38.2]
-            }
+            # Electricity chart: get data from 'Electricity generation (TWh)' parameter
+            electricity_param = self.current_scenario.get_parameter('Electricity generation (TWh)')
+            if electricity_param and not electricity_param.df.empty:
+                self._render_electricity_chart(electricity_param)
+            else:
+                self._show_chart_placeholder(
+                    self.chart_views['electricity_generation'],
+                    "No electricity generation data available"
+                )
 
-            # Bottom left: Primary energy mix in 2050
-            primary_energy_2050 = {
-                'Coal': 18.7,
-                'Gas': 72.1,
-                'Oil': 15.9,
-                'Nuclear': 48.3,
-                'Renewables': 42.6
-            }
-
-            # Bottom right: Electricity sources in 2050
-            electricity_2050 = {
-                'Coal': 12.3,
-                'Gas': 58.9,
-                'Oil': 2.7,
-                'Nuclear': 45.6,
-                'Renewables': 38.2
-            }
-
-            # Render primary energy demand chart
-            self._render_stacked_bar_chart(
-                self.chart_views['primary_energy_demand'],
-                years,
-                primary_energy_data,
-                'Primary Energy Demand (TOE)',
-                'Primary Energy Demand by Source'
-            )
-
-            # Render electricity generation chart
-            self._render_stacked_bar_chart(
-                self.chart_views['electricity_generation'],
-                years,
-                electricity_data,
-                'Electricity Generation (TWh)',
-                'Electricity Generation by Source'
-            )
-
-            # Render primary energy pie chart
-            self._render_pie_chart(
-                self.chart_views['primary_energy_pie'],
-                primary_energy_2050,
-                'Primary Energy Mix (2050)',
-                'Primary Energy Mix by Fuel in 2050'
-            )
-
-            # Render electricity pie chart
-            self._render_pie_chart(
-                self.chart_views['electricity_pie'],
-                electricity_2050,
-                'Electricity Sources (2050)',
-                'Electricity Sources in 2050'
-            )
+            # For pie charts, use demo data for now
+            self._render_demo_pie_charts()
 
         except Exception as e:
             print(f"Error rendering charts: {str(e)}")
             for chart_view in self.chart_views.values():
                 self._show_chart_placeholder(chart_view, f"Error: {str(e)}")
+
+    def _render_primary_energy_chart(self, param):
+        """Render primary energy chart from parameter data"""
+        df = param.df
+        year_col = 'year' if 'year' in df.columns else 'year_act'
+
+        # render stacked bar chart with 'year_act' as years, and the rest of the columns as data
+        years = df[year_col].unique().tolist()
+        data_dict = {}
+        for col in df.columns:
+            if col != year_col and col != 'value':
+                data_dict[col] = df.groupby(year_col)[col].sum().tolist()
+
+        print(f"DEBUG: Primary energy chart - years: {years}, data: {data_dict}")
+
+        self._render_stacked_bar_chart(
+            self.chart_views['primary_energy_demand'],
+            years,
+            data_dict,
+            'Primary Energy Supply (PJ)',
+            'Primary Energy Supply by Source'
+        )
+        return
+
+    def _render_electricity_chart(self, param):
+        """Render electricity chart from parameter data"""
+        df = param.df
+        year_col = 'year' if 'year' in df.columns else 'year_act'
+
+        # render stacked bar chart with 'year_act' as years, and the rest of the columns as data
+        years = df[year_col].unique().tolist()
+        data_dict = {}
+        for col in df.columns:
+            if col != year_col and col != 'value':
+                data_dict[col] = df.groupby(year_col)[col].sum().tolist()
+
+        print(f"DEBUG: Primary energy chart - years: {years}, data: {data_dict}")
+
+        self._render_stacked_bar_chart(
+            self.chart_views['electricity_generation'],
+            years,
+            data_dict,
+            'Electricity Generation (TWh)',
+            'Electricity Generation by Source'
+        )
+        return
+
+    def _render_demo_pie_charts(self):
+        """Render demo pie charts for energy mix"""
+        # Primary energy pie chart
+        primary_energy_data = {
+            'Coal': 18.7,
+            'Gas': 72.1,
+            'Oil': 15.9,
+            'Nuclear': 48.3,
+            'Renewables': 42.6
+        }
+        self._render_pie_chart(
+            self.chart_views['primary_energy_pie'],
+            primary_energy_data,
+            'Primary Energy Mix (2050)',
+            'Primary Energy Mix by Fuel in 2050'
+        )
+
+        # Electricity sources pie chart
+        electricity_data = {
+            'Coal': 12.3,
+            'Gas': 58.9,
+            'Oil': 2.7,
+            'Nuclear': 45.6,
+            'Renewables': 38.2
+        }
+        self._render_pie_chart(
+            self.chart_views['electricity_pie'],
+            electricity_data,
+            'Electricity Sources (2050)',
+            'Electricity Sources in 2050'
+        )
 
     def _render_stacked_bar_chart(self, chart_view, years, data_dict, title, html_title):
         """Render a stacked bar chart"""

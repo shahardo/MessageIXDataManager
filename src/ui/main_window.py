@@ -570,9 +570,12 @@ class MainWindow(QMainWindow):
     def _show_results_file_dashboard(self):
         """Show the results file dashboard in the main content area"""
         try:
+            # Get the current results scenario
+            scenario = self._get_current_scenario(True)  # True for results
+
             # Hide data splitter and show dashboard
             self.dataSplitter.hide()
-            self.results_file_dashboard.update_dashboard(None)
+            self.results_file_dashboard.update_dashboard(scenario)
             self.results_file_dashboard.show()
 
         except Exception as e:

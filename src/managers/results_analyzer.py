@@ -325,3 +325,4 @@ class ResultsAnalyzer(BaseDataManager):
         self.clear_scenarios()
 
     # Keep remove_file method for backward compatibility (inherited from BaseDataManager)
+
