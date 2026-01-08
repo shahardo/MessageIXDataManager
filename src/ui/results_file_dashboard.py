@@ -82,7 +82,12 @@ class ResultsFileDashboard(QWidget):
             # Primary energy chart: get data from "Primary energy supply (PJ)" parameter
             primary_energy_param = self.current_scenario.get_parameter('Primary energy supply (PJ)')
             if primary_energy_param and not primary_energy_param.df.empty:
-                self._render_primary_energy_chart(primary_energy_param)
+                self._render_energy_chart(
+                    primary_energy_param,
+                    self.chart_views['primary_energy_demand'],
+                    'Primary Energy Supply (PJ)',
+                    'Primary Energy Supply by Source'
+                )
             else:
                 self._show_chart_placeholder(
                     self.chart_views['primary_energy_demand'],
@@ -92,7 +97,12 @@ class ResultsFileDashboard(QWidget):
             # Electricity chart: get data from 'Electricity generation (TWh)' parameter
             electricity_param = self.current_scenario.get_parameter('Electricity generation (TWh)')
             if electricity_param and not electricity_param.df.empty:
-                self._render_electricity_chart(electricity_param)
+                self._render_energy_chart(
+                    electricity_param,
+                    self.chart_views['electricity_generation'],
+                    'Electricity Generation (TWh)',
+                    'Electricity Generation by Source'
+                )
             else:
                 self._show_chart_placeholder(
                     self.chart_views['electricity_generation'],
@@ -107,8 +117,8 @@ class ResultsFileDashboard(QWidget):
             for chart_view in self.chart_views.values():
                 self._show_chart_placeholder(chart_view, f"Error: {str(e)}")
 
-    def _render_primary_energy_chart(self, param):
-        """Render primary energy chart from parameter data"""
+    def _render_energy_chart(self, param, chart_view, title, html_title):
+        """Render energy chart from parameter data"""
         df = param.df
         year_col = 'year' if 'year' in df.columns else 'year_act'
 
@@ -119,37 +129,14 @@ class ResultsFileDashboard(QWidget):
             if col != year_col and col != 'value':
                 data_dict[col] = df.groupby(year_col)[col].sum().tolist()
 
-        print(f"DEBUG: Primary energy chart - years: {years}, data: {data_dict}")
+        print(f"DEBUG: {title} - years: {years}, data: {data_dict}")
 
         self._render_stacked_bar_chart(
-            self.chart_views['primary_energy_demand'],
+            chart_view,
             years,
             data_dict,
-            'Primary Energy Supply (PJ)',
-            'Primary Energy Supply by Source'
-        )
-        return
-
-    def _render_electricity_chart(self, param):
-        """Render electricity chart from parameter data"""
-        df = param.df
-        year_col = 'year' if 'year' in df.columns else 'year_act'
-
-        # render stacked bar chart with 'year_act' as years, and the rest of the columns as data
-        years = df[year_col].unique().tolist()
-        data_dict = {}
-        for col in df.columns:
-            if col != year_col and col != 'value':
-                data_dict[col] = df.groupby(year_col)[col].sum().tolist()
-
-        print(f"DEBUG: Primary energy chart - years: {years}, data: {data_dict}")
-
-        self._render_stacked_bar_chart(
-            self.chart_views['electricity_generation'],
-            years,
-            data_dict,
-            'Electricity Generation (TWh)',
-            'Electricity Generation by Source'
+            title,
+            html_title
         )
         return
 
