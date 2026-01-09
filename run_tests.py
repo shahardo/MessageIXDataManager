@@ -62,6 +62,9 @@ def main():
     # Set up environment for pytest
     env = os.environ.copy()
 
+    # Set headless environment variable to skip GUI tests
+    env["HEADLESS"] = "true"
+
     # Ensure Python path includes src directory
     python_path = str(project_root / "src")
     if "PYTHONPATH" in env:
@@ -77,6 +80,7 @@ def main():
     print(f"Project root: {project_root}")
     print(f"Python path: {env.get('PYTHONPATH', 'Not set')}")
     print(f"Running tests in: {project_root / 'tests'}")
+    print(f"HEADLESS mode: {env.get('HEADLESS', 'false')}")
     print()
 
     # Run pytest

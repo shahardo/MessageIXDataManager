@@ -15,9 +15,37 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 @pytest.fixture
 def sample_widget():
     """Create a DataDisplayWidget instance with mocked Qt"""
-    with patch('PyQt5.QtWidgets.QApplication'):
-        from ui.components.data_display_widget import DataDisplayWidget
-        return DataDisplayWidget()
+    from ui.components.data_display_widget import DataDisplayWidget
+
+    # Create widget without calling __init__ to avoid Qt operations
+    widget = DataDisplayWidget.__new__(DataDisplayWidget)
+
+    # Mock the methods and attributes that the tests use
+    widget.table_display_mode = "raw"
+    widget.hide_empty_columns = False
+    widget.property_selectors = {}
+    widget.hide_empty_checkbox = None
+
+    # Bind methods to the instance
+    widget._identify_columns = DataDisplayWidget._identify_columns.__get__(widget, DataDisplayWidget)
+    widget._apply_filters = DataDisplayWidget._apply_filters.__get__(widget, DataDisplayWidget)
+    widget._should_pivot = DataDisplayWidget._should_pivot.__get__(widget, DataDisplayWidget)
+    widget._perform_pivot = DataDisplayWidget._perform_pivot.__get__(widget, DataDisplayWidget)
+    widget._hide_empty_columns = DataDisplayWidget._hide_empty_columns.__get__(widget, DataDisplayWidget)
+    widget._transform_to_advanced_view = DataDisplayWidget._transform_to_advanced_view.__get__(widget, DataDisplayWidget)
+    widget.transform_to_display_format = DataDisplayWidget.transform_to_display_format.__get__(widget, DataDisplayWidget)
+    widget._configure_table = DataDisplayWidget._configure_table.__get__(widget, DataDisplayWidget)
+
+    # Mock table widget with required methods
+    mock_table = type('MockTable', (), {
+        'setRowCount': lambda *args: None,
+        'setColumnCount': lambda *args: None,
+        'setVerticalHeaderLabels': lambda *args: None,
+        'setHorizontalHeaderLabels': lambda *args: None,
+    })()
+    widget.param_table = mock_table
+
+    return widget
 
 
 @pytest.fixture

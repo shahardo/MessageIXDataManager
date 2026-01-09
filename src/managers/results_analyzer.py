@@ -352,7 +352,12 @@ class ResultsAnalyzer(BaseDataManager):
         }
 
         # 1. Primary energy 2050 - try multiple parameter names
-        primary_energy_param = scenario.get_parameter('Primary energy supply (PJ)')
+        primary_energy_names = ['Primary energy supply (PJ)', 'var_primary_energy', 'primary_energy']
+        primary_energy_param = None
+        for name in primary_energy_names:
+            primary_energy_param = scenario.get_parameter(name)
+            if primary_energy_param:
+                break
 
         if primary_energy_param and not primary_energy_param.df.empty:
             df = primary_energy_param.df
@@ -365,16 +370,21 @@ class ResultsAnalyzer(BaseDataManager):
                         metrics['primary_energy_2050'] += df_2050[col].sum()
 
         # 2. Electricity 2050 - try multiple parameter names
-        electricity_param = scenario.get_parameter('Electricity generation (TWh)')
+        electricity_names = ['Electricity generation (TWh)', 'var_electricity', 'var_electricity_generation', 'var_electricity_consumption']
+        electricity_param = None
+        for name in electricity_names:
+            electricity_param = scenario.get_parameter(name)
+            if electricity_param:
+                break
 
         if electricity_param and not electricity_param.df.empty:
             df = electricity_param.df
             year_col = 'year' if 'year' in df.columns else 'year_act'
             df_2050 = df[df[year_col] == 2050]
             if not df_2050.empty:
-                # Sum all numeric columns except year
+                # Sum all numeric columns except year and region
                 for col in df_2050.columns:
-                    if col != year_col and pd.api.types.is_numeric_dtype(df_2050[col]):
+                    if col not in [year_col, 'region'] and pd.api.types.is_numeric_dtype(df_2050[col]):
                         metrics['electricity_2050'] += df_2050[col].sum()
 
         # 3. Clean electricity percentage - need source breakdown
@@ -384,20 +394,37 @@ class ResultsAnalyzer(BaseDataManager):
             df_2050 = df[df[year_col] == 2050]
 
             if not df_2050.empty:
-                total_electricity = 0.0
+                clean_technologies = ['nuclear', 'solar', 'solar PV', 'solar CSP', 'wind', 'hydro', 'biomass', 'geothermal', 'renewable']
                 clean_electricity = 0.0
-                clean_technologies = ['nuclear', 'solar PV', 'solar CSP', 'wind', 'hydro', 'biomass', 'geothermal', 'renewable']
+                total_electricity = 0.0
 
-                for col in df_2050.columns:
-                    if col in clean_technologies:
-                        clean_electricity += df_2050[col].sum()
-                    total_electricity += df_2050[col].sum()
+                # Check if we have technology column (long format)
+                if 'technology' in df_2050.columns and 'value' in df_2050.columns:
+                    # Group by technology and sum values
+                    tech_sums = df_2050.groupby('technology')['value'].sum()
+                    for tech, val in tech_sums.items():
+                        total_electricity += val
+                        if tech.lower() in [t.lower() for t in clean_technologies]:
+                            clean_electricity += val
+                else:
+                    # Wide format: columns per technology
+                    for col in df_2050.columns:
+                        if col not in [year_col, 'region'] and pd.api.types.is_numeric_dtype(df_2050[col]):
+                            val = df_2050[col].sum()
+                            total_electricity += val
+                            if col.lower() in [t.lower() for t in clean_technologies]:
+                                clean_electricity += val
 
                 if total_electricity > 0:
                     metrics['clean_electricity_pct'] = (clean_electricity / total_electricity) * 100
 
         # 4. Emissions 2050 - try multiple parameter names
-        emissions_param = scenario.get_parameter('Total GHG emissions (MtCeq)')
+        emissions_names = ['Total GHG emissions (MtCeq)', 'var_emissions', 'emissions']
+        emissions_param = None
+        for name in emissions_names:
+            emissions_param = scenario.get_parameter(name)
+            if emissions_param:
+                break
 
         if emissions_param and not emissions_param.df.empty:
             df = emissions_param.df

@@ -142,8 +142,16 @@ class ParameterTreeWidget(QTreeWidget):
         """Categorize a parameter based on its name and properties"""
         name_lower = param_name.lower()
 
+        # Environmental (check first since emission_factor contains 'factor')
+        if any(keyword in name_lower for keyword in ['emission', 'emiss', 'carbon', 'co2']):
+            return "Environmental"
+
+        # Operational (check before Economic since operation_cost should be Operational)
+        elif any(keyword in name_lower for keyword in ['operation', 'oper', 'maintenance']):
+            return "Operational"
+
         # Economic parameters
-        if any(keyword in name_lower for keyword in ['cost', 'price', 'revenue', 'profit', 'subsidy']):
+        elif any(keyword in name_lower for keyword in ['cost', 'price', 'revenue', 'profit', 'subsidy']):
             return "Economic"
 
         # Capacity and investment
@@ -158,17 +166,9 @@ class ParameterTreeWidget(QTreeWidget):
         elif any(keyword in name_lower for keyword in ['efficiency', 'eff', 'factor', 'ratio']):
             return "Technical"
 
-        # Environmental
-        elif any(keyword in name_lower for keyword in ['emission', 'emiss', 'carbon', 'co2']):
-            return "Environmental"
-
         # Temporal
         elif any(keyword in name_lower for keyword in ['duration', 'lifetime', 'year']):
             return "Temporal"
-
-        # Operational
-        elif any(keyword in name_lower for keyword in ['operation', 'oper', 'maintenance']):
-            return "Operational"
 
         # Bounds and constraints
         elif any(keyword in name_lower for keyword in ['bound', 'limit', 'max', 'min']):

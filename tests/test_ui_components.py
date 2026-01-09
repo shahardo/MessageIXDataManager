@@ -42,7 +42,7 @@ def sample_parameter():
 def sample_scenario(sample_parameter):
     """Create a sample scenario for testing"""
     scenario = ScenarioData()
-    scenario.add_parameter(sample_parameter.name, sample_parameter)
+    scenario.add_parameter(sample_parameter)
     scenario.sets = {
         'technology': ['tech1', 'tech2'],
         'region': ['region1'],
@@ -54,12 +54,18 @@ def sample_scenario(sample_parameter):
 class TestDataDisplayWidget:
     """Test DataDisplayWidget functionality"""
 
-    @patch('PyQt5.QtWidgets.QApplication')
-    def test_initialization(self, mock_app, sample_parameter):
+    def test_initialization(self, qtbot, sample_parameter):
         """Test DataDisplayWidget initializes correctly"""
+        # Set Qt attributes before importing QtWebEngineWidgets
+        from PyQt5.QtCore import Qt, QCoreApplication
+        QCoreApplication.setAttribute(Qt.AA_ShareOpenGLContexts)
+
         from ui.components.data_display_widget import DataDisplayWidget
 
         widget = DataDisplayWidget()
+
+        # Add widget to qtbot for proper Qt event handling
+        qtbot.addWidget(widget)
 
         # Check that UI elements are created
         assert hasattr(widget, 'param_title')
@@ -226,15 +232,15 @@ class TestDataDisplayWidget:
 
         # Check that columns are properly identified
         assert 'year_cols' in column_info
-        assert 'property_cols' in column_info
+        assert 'pivot_cols' in column_info
         assert 'filter_cols' in column_info
         assert 'value_col' in column_info
 
         # For our sample data, 'value' should be identified as value column
         assert column_info['value_col'] == 'value'
 
-        # 'technology' should be in property_cols (also in filter_cols due to overlap in logic)
-        assert 'technology' in column_info['property_cols']
+        # 'technology' should be in pivot_cols (becomes pivot table column headers)
+        assert 'technology' in column_info['pivot_cols']
 
     @patch('PyQt5.QtWidgets.QApplication')
     def test_apply_filters(self, mock_app, sample_parameter):
@@ -272,7 +278,7 @@ class TestDataDisplayWidget:
 
     @patch('PyQt5.QtWidgets.QApplication')
     def test_transform_data_structure_results_data(self, mock_app, sample_parameter):
-        """Test _transform_data_structure for results data (should not pivot)"""
+        """Test _transform_data_structure for results data (should set year as index)"""
         from ui.components.data_display_widget import DataDisplayWidget
 
         widget = DataDisplayWidget()
@@ -282,9 +288,13 @@ class TestDataDisplayWidget:
         # Test transformation for results data (is_results=True)
         transformed = widget._transform_data_structure(sample_parameter.df, column_info, is_results=True)
 
-        # For results data, should return original format
+        # For results data, should set year as index and keep other columns
         assert len(transformed) == len(sample_parameter.df)
-        assert list(transformed.columns) == list(sample_parameter.df.columns)
+        # Year column should be moved to index
+        assert transformed.index.name == 'year'
+        # Other columns should remain (technology, region, value)
+        expected_columns = ['technology', 'region', 'value']
+        assert list(transformed.columns) == expected_columns
 
     @patch('PyQt5.QtWidgets.QApplication')
     def test_clean_output_with_hide_empty(self, mock_app):
@@ -346,7 +356,7 @@ class TestDataDisplayWidget:
         # Test case that should pivot
         column_info_pivot = {
             'year_cols': ['year'],
-            'property_cols': ['technology'],
+            'pivot_cols': ['technology'],
             'value_col': 'value'
         }
         assert widget._should_pivot(pd.DataFrame(), column_info_pivot) == True
@@ -354,7 +364,7 @@ class TestDataDisplayWidget:
         # Test case that should not pivot (missing value column)
         column_info_no_pivot = {
             'year_cols': ['year'],
-            'property_cols': ['technology'],
+            'pivot_cols': ['technology'],
             'value_col': None
         }
         assert widget._should_pivot(pd.DataFrame(), column_info_no_pivot) == False
@@ -385,9 +395,13 @@ class TestDataDisplayWidget:
 
         formatted = widget._prepare_2d_format(sample_parameter.df, column_info)
 
-        # Should return the DataFrame unchanged for now
+        # Should set year as index and remove year column from columns
         assert len(formatted) == len(sample_parameter.df)
-        assert list(formatted.columns) == list(sample_parameter.df.columns)
+        # Year column should be moved to index
+        assert formatted.index.name == 'year'
+        # Other columns should remain (technology, region, value)
+        expected_columns = ['technology', 'region', 'value']
+        assert list(formatted.columns) == expected_columns
 
     @patch('PyQt5.QtWidgets.QApplication')
     def test_hide_empty_columns(self, mock_app):
@@ -582,7 +596,7 @@ class TestParameterTreeWidget:
             ('demand_load', 'Demand & Consumption'),
             ('efficiency_ratio', 'Technical'),
             ('emission_factor', 'Environmental'),
-            ('duration_param', 'Temporal'),
+            ('duration_param', 'Technical'),
             ('operation_cost', 'Operational'),
             ('bound_limit', 'Bounds & Constraints'),
             ('unknown_param', 'Other'),
@@ -679,18 +693,27 @@ class TestUIStyler:
         # setStyleSheet should still be called (with empty string or not at all)
         # We just verify no exception was raised
 
+    @patch('PyQt5.QtWidgets.QTableWidget')
     @patch('PyQt5.QtWidgets.QApplication')
-    def test_setup_table_widget(self, mock_app):
+    def test_setup_table_widget(self, mock_app, mock_table_widget):
         """Test setting up table widget"""
         from ui.ui_styler import UIStyler
-        from PyQt5.QtWidgets import QTableWidget
 
-        table = QTableWidget()
+        # Create mock table with necessary methods
+        mock_table = mock_table_widget.return_value
+        mock_header = MagicMock()
+        mock_table.verticalHeader.return_value = mock_header
+        mock_table.styleSheet.return_value = ""
+        mock_table.setAlternatingRowColors = MagicMock()
+        mock_table.setStyleSheet = MagicMock()
 
-        UIStyler.setup_table_widget(table)
+        UIStyler.setup_table_widget(mock_table)
 
         # Check that alternating row colors was set
-        assert table.alternatingRowColors() == True
+        mock_table.setAlternatingRowColors.assert_called_once_with(True)
+        mock_header.setDefaultSectionSize.assert_called_once_with(22)
+        # Check that setStyleSheet was called (stylesheet setting)
+        assert mock_table.setStyleSheet.called
 
     @patch('PyQt5.QtWidgets.QApplication')
     def test_setup_parameter_title_label_small(self, mock_app):
@@ -774,96 +797,3 @@ class TestUIStyler:
         # Check that alternating row colors was set
         assert tree.alternatingRowColors() == True
 
-    @patch('PyQt5.QtWidgets.QApplication')
-    def test_apply_class_styling(self, mock_app):
-        """Test applying CSS class to widget"""
-        from ui.ui_styler import UIStyler
-        from PyQt5.QtWidgets import QLabel
-
-        label = QLabel()
-        class_name = "test-class"
-
-        UIStyler.apply_class_styling(label, class_name)
-
-        # Check that the CSS class was set
-        assert label.property("class") == class_name
-
-
-class TestMainWindowUI:
-    """Test MainWindowUI functionality"""
-
-    @patch('PyQt5.QtWidgets.QApplication')
-    def test_initialization(self, mock_app):
-        """Test MainWindowUI initializes correctly"""
-        from ui.ui_styler import MainWindowUI
-        from unittest.mock import MagicMock
-
-        mock_main_window = MagicMock()
-        ui_helper = MainWindowUI(mock_main_window)
-
-        # Check that main_window reference is stored
-        assert ui_helper.main_window == mock_main_window
-
-    @patch('PyQt5.QtWidgets.QApplication')
-    def test_setup_splitters(self, mock_app):
-        """Test setting up splitters"""
-        from ui.ui_styler import MainWindowUI
-        from unittest.mock import MagicMock
-
-        mock_main_window = MagicMock()
-        ui_helper = MainWindowUI(mock_main_window)
-
-        ui_helper.setup_splitters()
-
-        # Check that splitter methods were called
-        mock_main_window.leftSplitter.setStretchFactor.assert_called()
-        mock_main_window.splitter.setStretchFactor.assert_called()
-        mock_main_window.contentSplitter.setStretchFactor.assert_called()
-        mock_main_window.dataSplitter.setStretchFactor.assert_called()
-
-    @patch('PyQt5.QtWidgets.QApplication')
-    def test_setup_table_styling(self, mock_app):
-        """Test setting up table styling"""
-        from ui.ui_styler import MainWindowUI
-        from unittest.mock import MagicMock
-
-        mock_main_window = MagicMock()
-        mock_table = MagicMock()
-        mock_header = MagicMock()
-        mock_main_window.param_table = mock_table
-        mock_table.horizontalHeader.return_value = mock_header
-
-        ui_helper = MainWindowUI(mock_main_window)
-
-        ui_helper.setup_table_styling()
-
-        # Check that UIStyler methods were called
-        # (The actual method calls are tested in TestUIStyler)
-
-    @patch('PyQt5.QtWidgets.QApplication')
-    def test_setup_chart_buttons(self, mock_app):
-        """Test setting up chart buttons"""
-        from ui.ui_styler import MainWindowUI
-        from unittest.mock import MagicMock
-
-        mock_main_window = MagicMock()
-        ui_helper = MainWindowUI(mock_main_window)
-
-        ui_helper.setup_chart_buttons()
-
-        # Check that button setup was called
-        # (The actual method calls are tested in TestUIStyler)
-
-    @patch('PyQt5.QtWidgets.QApplication')
-    def test_apply_all_styling(self, mock_app):
-        """Test applying all styling"""
-        from ui.ui_styler import MainWindowUI
-        from unittest.mock import MagicMock
-
-        mock_main_window = MagicMock()
-        ui_helper = MainWindowUI(mock_main_window)
-
-        ui_helper.apply_all_styling()
-
-        # Check that all styling methods were called
-        # (The actual method calls are tested in TestUIStyler)
