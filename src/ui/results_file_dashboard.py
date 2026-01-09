@@ -116,8 +116,6 @@ class ResultsFileDashboard(QWidget):
                 emissions = metrics['emissions_2050']
                 self.metric_labels['emissions_2050'].setText(f"{emissions:.1f} ktCO₂e")
 
-                print(f"DEBUG: Dashboard metrics updated - Primary: {primary_energy:.1f} PJ, Electricity: {electricity:.1f} TWh, Clean: {clean_pct:.1f}%, Emissions: {emissions:.1f} ktCO₂e")
-
         except Exception as e:
             print(f"Error calculating metrics: {str(e)}")
             # Show error in metric labels
@@ -210,8 +208,6 @@ class ResultsFileDashboard(QWidget):
             if col != year_col and col != 'value':
                 data_dict[col] = df.groupby(year_col)[col].sum().tolist()
 
-        print(f"DEBUG: {title} - years: {years}, data: {data_dict}")
-
         self._render_stacked_bar_chart(
             chart_view,
             years,
@@ -239,8 +235,6 @@ class ResultsFileDashboard(QWidget):
                 total = df_2050[col].sum()
                 if total > 0:  # Only include positive values
                     data_dict[col] = total
-
-        print(f"DEBUG: {title} - 2050 data: {data_dict}")
 
         if not data_dict:
             self._show_chart_placeholder(chart_view, "No positive values for year 2050")
@@ -323,10 +317,6 @@ class ResultsFileDashboard(QWidget):
         </body>
         </html>
         """
-
-        # Print the whole HTML to terminal
-        print(f"Generated HTML for {title}:")
-        print(complete_html)
 
         # Load in web view
         chart_view.setHtml(complete_html)

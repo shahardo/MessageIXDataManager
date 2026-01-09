@@ -487,30 +487,23 @@ class DataDisplayWidget(QWidget):
         pivot_cols = column_info.get('pivot_cols', [])
         value_col = column_info.get('value_col')
 
-        print(f"DEBUG: Pivoting with year_cols={year_cols}, pivot_cols={pivot_cols}, value_col={value_col}")  # Debug output
-
         if not (year_cols and pivot_cols and value_col):
-            print("DEBUG: Missing required columns for pivoting, returning original data")  # Debug output
             return df
 
         # Try different combinations of year and pivot columns
         for index_col in year_cols:
             for columns_col in pivot_cols:
                 try:
-                    print(f"DEBUG: Attempting pivot with index='{index_col}', columns='{columns_col}', values='{value_col}'")  # Debug output
                     pivoted = df.pivot_table(
                         values=value_col,
                         index=index_col,
                         columns=columns_col,
                         aggfunc=lambda x: x.iloc[0] if len(x) > 0 else 0
                     ).fillna(0)
-                    print(f"DEBUG: Pivot successful, result shape: {pivoted.shape}")  # Debug output
                     return pivoted
                 except Exception as e:
-                    print(f"DEBUG: Pivot failed with index='{index_col}', columns='{columns_col}': {e}")  # Debug output
                     continue
 
-        print("DEBUG: All pivot attempts failed, returning original data")  # Debug output
         # Fallback to original data if all pivot attempts fail
         return df
 
