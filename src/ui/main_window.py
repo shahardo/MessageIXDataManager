@@ -122,6 +122,7 @@ class MainWindow(QMainWindow):
         # Set splitter sizes
         self.splitter.setSizes([300, 900])
         self.leftSplitter.setSizes([150, 450])
+        self.contentSplitter.setSizes([720, 80])  # Give more space to data, less to console
         self.dataSplitter.setSizes([600, 400])
 
         # Set stretch factors for proper resizing

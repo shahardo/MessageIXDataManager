@@ -95,7 +95,10 @@ QPushButton:disabled {
     background: transparent;
     color: #666;
     font-weight: bold;
-    font-size: 14px;
+    font-size: 16px;
+    text-align: right;
+    padding-right: 5px;
+    padding-top: -3px; /* move the button up a little */
 }
 
 .remove-button:hover {

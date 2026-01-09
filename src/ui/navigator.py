@@ -7,9 +7,9 @@ with support for file removal and loading new files.
 
 import os
 from typing import List, Optional
-from PyQt5.QtWidgets import QTreeWidget, QTreeWidgetItem, QPushButton, QHBoxLayout, QWidget
-from PyQt5.QtCore import Qt, pyqtSignal
-from PyQt5.QtGui import QIcon
+from PyQt5.QtWidgets import QTreeWidget, QTreeWidgetItem, QPushButton, QHBoxLayout, QWidget, QHeaderView
+from PyQt5.QtCore import Qt, pyqtSignal, QEvent
+from PyQt5.QtGui import QIcon, QResizeEvent
 from .ui_styler import UIStyler
 
 
@@ -62,9 +62,9 @@ class ProjectNavigator(QTreeWidget):
         """
         self.setMinimumWidth(150)  # Reduced minimum width to allow more flexibility
 
-        # Set column widths
-        self.setColumnWidth(0, 120)  # File name column - will expand with widget
-        self.setColumnWidth(1, 30)   # Action column
+        # Set column resize modes
+        self.setColumnWidth(0, 300)   # Action column width
+        self.setColumnWidth(1, 30)   # Action column width
 
         # Enable context menu
         # self.setContextMenuPolicy(Qt.CustomContextMenu)
@@ -238,3 +238,14 @@ class ProjectNavigator(QTreeWidget):
         if file_data and isinstance(file_data, tuple) and len(file_data) == 2:
             file_type, file_path = file_data
             self.file_selected.emit(file_path, file_type)
+
+    def resizeEvent(self, event: QResizeEvent) -> None:
+        """
+        Handle resize events to ensure the filename column fills available space.
+
+        Overrides the base resizeEvent to manually adjust column widths.
+        """
+        super().resizeEvent(event)
+        # Force column 0 to fill available space minus the fixed action column
+        available_width = self.viewport().width()
+        self.setColumnWidth(0, available_width - 30)

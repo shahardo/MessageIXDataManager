@@ -130,7 +130,7 @@ class UIStyler:
     def setup_remove_button(button: QPushButton) -> None:
         """Setup remove button with appropriate styling class"""
         button.setProperty("class", "remove-button")
-        button.setFixedSize(20, 20)
+        button.setFixedSize(30, 25)
         # Force style recalculation
         button.style().unpolish(button)
         button.style().polish(button)

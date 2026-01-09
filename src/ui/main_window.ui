@@ -210,12 +210,12 @@
            <property name="maximumSize">
             <size>
              <width>16777215</width>
-             <height>120</height>
+             <height>300</height>
             </size>
            </property>
            <property name="plainText">
             <string>Welcome to MessageIX Data Manager
-</string>
+            </string>
            </property>
           </widget>
          </widget>
