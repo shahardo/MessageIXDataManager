@@ -3,7 +3,7 @@ Core data models for message_ix data
 """
 
 import pandas as pd
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Any
 
 
 class Parameter:
@@ -24,6 +24,10 @@ class ScenarioData:
         self.mappings: Dict[str, pd.DataFrame] = {} # optional mappings
         self.modified: set[str] = set()             # tracked changed parameters
         self.change_history: List[dict] = []        # undo/redo stack
+        self.options: Dict[str, int] = {            # scenario options
+            'MinYear': 2020,
+            'MaxYear': 2050
+        }
 
     def get_parameter_names(self) -> List[str]:
         """Get list of all parameter names"""

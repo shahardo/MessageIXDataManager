@@ -12,6 +12,7 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import Qt, QSettings
 from PyQt5 import uic
 import os
+import pandas as pd
 from typing import Optional, List
 
 from .dashboard import ResultsDashboard
@@ -176,6 +177,7 @@ class MainWindow(QMainWindow):
         """Connect component signals to main window handlers"""
         # Parameter tree signals
         self.param_tree.parameter_selected.connect(self._on_parameter_selected)
+        self.param_tree.options_changed.connect(self._on_options_changed)
 
         # Data display signals
         self.data_display.display_mode_changed.connect(self._on_display_mode_changed)
@@ -267,6 +269,11 @@ class MainWindow(QMainWindow):
     def _on_chart_type_changed(self, chart_type: str):
         """Handle chart type change"""
         # Refresh current chart
+        self._refresh_current_display()
+
+    def _on_options_changed(self):
+        """Handle scenario options change"""
+        # Refresh current chart to reflect new year range
         self._refresh_current_display()
 
     def _switch_to_input_view(self):
@@ -361,6 +368,53 @@ class MainWindow(QMainWindow):
             hide_empty=True,       # Charts always hide empty columns
             for_chart=True         # Indicate this is for chart display
         )
+
+        # Apply year clipping based on scenario options
+        scenario = self._get_current_scenario(is_results)
+        if scenario and transformed_df is not None and not transformed_df.empty:
+            min_year = scenario.options.get('MinYear', 2020)
+            max_year = scenario.options.get('MaxYear', 2050)
+
+            # Check for year column (could be 'year' or 'year_act')
+            year_col = None
+            for y in ['year', 'year_act']:
+                if y in transformed_df.columns:
+                    year_col = y
+                    break
+
+            if year_col:
+                # Filter by year column
+                transformed_df = transformed_df[
+                    (transformed_df[year_col] >= min_year) &
+                    (transformed_df[year_col] <= max_year)
+                ]
+            if year_col:
+                # Filter by year column
+                transformed_df = transformed_df[
+                    (transformed_df[year_col] >= min_year) &
+                    (transformed_df[year_col] <= max_year)
+                ]
+            elif isinstance(transformed_df.index, pd.MultiIndex):
+                # Check for year in MultiIndex (could be 'year' or 'year_act')
+                year_level = None
+                for y in ['year', 'year_act']:
+                    if y in transformed_df.index.names:
+                        year_level = y
+                        break
+
+                if year_level:
+                    # Filter by year in MultiIndex
+                    mask = (transformed_df.index.get_level_values(year_level) >= min_year) & \
+                           (transformed_df.index.get_level_values(year_level) <= max_year)
+                    transformed_df = transformed_df[mask]
+            elif hasattr(transformed_df.index, 'name'):
+                # Check for year in named index (could be 'year' or 'year_act')
+                if transformed_df.index.name in ['year', 'year_act']:
+                    # Filter by year index
+                    transformed_df = transformed_df[
+                        (transformed_df.index >= min_year) &
+                        (transformed_df.index <= max_year)
+                    ]
 
         return transformed_df
 

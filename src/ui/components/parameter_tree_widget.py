@@ -4,8 +4,9 @@ Parameter Tree Widget - Handles parameter/result tree navigation
 Extracted from MainWindow to provide focused tree navigation functionality.
 """
 
-from PyQt5.QtWidgets import QTreeWidget, QTreeWidgetItem
-from PyQt5.QtCore import pyqtSignal
+from PyQt5.QtWidgets import QTreeWidget, QTreeWidgetItem, QWidget, QHBoxLayout, QLabel, QPushButton, QDialog, QListWidget, QListWidgetItem, QVBoxLayout, QHeaderView
+from PyQt5.QtCore import pyqtSignal, Qt
+from PyQt5.QtGui import QFont
 from typing import Optional, List, Dict
 
 from core.data_models import ScenarioData
@@ -16,10 +17,12 @@ class ParameterTreeWidget(QTreeWidget):
 
     # Signals
     parameter_selected = pyqtSignal(object, bool)  # parameter, is_results
+    options_changed = pyqtSignal()  # emitted when scenario options are modified
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.current_view = "input"  # "input" or "results"
+        self.current_scenario = None
         self.setup_ui()
 
     def setup_ui(self):
@@ -27,9 +30,29 @@ class ParameterTreeWidget(QTreeWidget):
         self.setHeaderLabel("Parameters")
         self.itemSelectionChanged.connect(self._on_item_selected)
 
+        # Add options button to the header
+        self.options_button = QPushButton("⚙", self)
+        self.options_button.setToolTip("Options")
+        self.options_button.setFixedSize(32, 24)
+        self.options_button.setStyleSheet("""
+            QPushButton {
+                font-size: 16px;
+                padding: 0px;
+                margin: 0px;
+                border: none;
+                background: transparent;
+            }
+            QPushButton:hover {
+                background: rgba(0, 0, 0, 0.1);
+            }
+        """)
+        self.options_button.clicked.connect(self._show_options_dialog)
+        self._position_button()
+
     def update_parameters(self, scenario: ScenarioData, is_results: bool = False):
         """Update the tree with parameters from a scenario"""
         self.clear()
+        self.current_scenario = scenario
 
         if not scenario:
             return
@@ -88,6 +111,7 @@ class ParameterTreeWidget(QTreeWidget):
     def update_results(self, scenario: ScenarioData):
         """Update the tree with results from a scenario"""
         self.clear()
+        self.current_scenario = scenario
 
         if not scenario:
             return
@@ -214,3 +238,71 @@ class ParameterTreeWidget(QTreeWidget):
         self.blockSignals(True)
         self.clearSelection()
         self.blockSignals(False)
+
+    def resizeEvent(self, e):
+        """Handle resize to reposition the button"""
+        super().resizeEvent(e)
+        self._position_button()
+
+    def _position_button(self):
+        """Position the options button on the header"""
+        if hasattr(self, 'options_button') and self.header():
+            header_height = self.header().height()
+            header_width = self.header().width()
+            self.options_button.move(header_width - 30, (header_height - 24) // 2)
+
+    def _show_options_dialog(self):
+        """Show the options dialog for editing scenario options"""
+        if not self.current_scenario:
+            return
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Scenario Options")
+        dialog.setModal(True)
+
+        layout = QVBoxLayout(dialog)
+
+        # Create form layout for options
+        from PyQt5.QtWidgets import QFormLayout, QLineEdit, QDialogButtonBox
+        form_layout = QFormLayout()
+
+        # MinYear field
+        min_year_edit = QLineEdit(str(self.current_scenario.options.get('MinYear', 2020)))
+        form_layout.addRow("Min Year:", min_year_edit)
+
+        # MaxYear field
+        max_year_edit = QLineEdit(str(self.current_scenario.options.get('MaxYear', 2050)))
+        form_layout.addRow("Max Year:", max_year_edit)
+
+        layout.addLayout(form_layout)
+
+        # Add save and cancel buttons
+        button_box = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
+        button_box.accepted.connect(lambda: self._save_options(dialog, min_year_edit, max_year_edit))
+        button_box.rejected.connect(dialog.reject)
+        layout.addWidget(button_box)
+
+        dialog.resize(300, 150)
+        dialog.exec_()
+
+    def _save_options(self, dialog, min_year_edit, max_year_edit):
+        """Save the options back to the scenario"""
+        try:
+            min_year = int(min_year_edit.text())
+            max_year = int(max_year_edit.text())
+
+            if min_year >= max_year:
+                from PyQt5.QtWidgets import QMessageBox
+                QMessageBox.warning(self, "Invalid Input", "Min Year must be less than Max Year.")
+                return
+
+            self.current_scenario.options['MinYear'] = min_year
+            self.current_scenario.options['MaxYear'] = max_year
+
+            # Emit signal to refresh chart
+            self.options_changed.emit()
+
+            dialog.accept()
+        except ValueError:
+            from PyQt5.QtWidgets import QMessageBox
+            QMessageBox.warning(self, "Invalid Input", "Please enter valid integer values for years.")
