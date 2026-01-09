@@ -28,7 +28,7 @@ class ChartWidget(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.current_chart_type = 'bar'  # 'bar', 'stacked_bar', 'line', 'stacked_area'
+        self.current_chart_type = 'stacked_bar'  # 'bar', 'stacked_bar', 'line', 'stacked_area'
 
         self.setup_ui()
 
@@ -42,11 +42,11 @@ class ChartWidget(QWidget):
 
         self.simple_bar_btn = QPushButton("Simple Bar")
         UIStyler.setup_chart_button(self.simple_bar_btn)
-        self.simple_bar_btn.setChecked(True)
         self.simple_bar_btn.clicked.connect(lambda: self._on_chart_type_changed('bar'))
 
         self.stacked_bar_btn = QPushButton("Stacked Bar")
         UIStyler.setup_chart_button(self.stacked_bar_btn)
+        self.stacked_bar_btn.setChecked(True)
         self.stacked_bar_btn.clicked.connect(lambda: self._on_chart_type_changed('stacked_bar'))
 
         self.line_chart_btn = QPushButton("Line Chart")
@@ -90,9 +90,9 @@ class ChartWidget(QWidget):
             self.stacked_area_btn.clicked.connect(lambda: self._on_chart_type_changed('stacked_area'))
 
         # Initialize state
-        self.current_chart_type = 'bar'
-        self.simple_bar_btn.setChecked(True)
-        self.stacked_bar_btn.setChecked(False)
+        self.current_chart_type = 'stacked_bar'
+        self.simple_bar_btn.setChecked(False)
+        self.stacked_bar_btn.setChecked(True)
         self.line_chart_btn.setChecked(False)
         self.stacked_area_btn.setChecked(False)
 
