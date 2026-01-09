@@ -229,6 +229,15 @@ class MainWindow(QMainWindow):
             self._clear_data_display()
             return
 
+        # Special handling for dashboard selection
+        if parameter_name == "Dashboard" and is_results:
+            # Remember this parameter for future file switches
+            self.last_selected_results_parameter = parameter_name
+
+            # Show the results file dashboard
+            self._show_results_file_dashboard()
+            return
+
         # Remember this parameter for future file switches
         if is_results:
             self.last_selected_results_parameter = parameter_name

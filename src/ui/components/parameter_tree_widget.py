@@ -92,6 +92,11 @@ class ParameterTreeWidget(QTreeWidget):
         if not scenario:
             return
 
+        # Add dashboard item at the top
+        dashboard_item = QTreeWidgetItem(self)
+        dashboard_item.setText(0, "Dashboard")
+        dashboard_item.setToolTip(0, "Display dashboard with key metrics and charts")
+
         # Group results by type
         categories = {}
 
