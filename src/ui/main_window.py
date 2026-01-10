@@ -24,6 +24,7 @@ from .components import (
 from managers.input_manager import InputManager
 from managers.solver_manager import SolverManager
 from managers.results_analyzer import ResultsAnalyzer
+from managers.data_export_manager import DataExportManager
 from managers.logging_manager import logging_manager
 from core.data_models import ScenarioData
 from utils.error_handler import ErrorHandler, SafeOperation
@@ -63,6 +64,7 @@ class MainWindow(QMainWindow):
         self.input_manager: InputManager = InputManager()
         self.solver_manager: SolverManager = SolverManager()
         self.results_analyzer: ResultsAnalyzer = ResultsAnalyzer()
+        self.data_export_manager: DataExportManager = DataExportManager()
 
         # Initialize dashboard
         self.dashboard: ResultsDashboard = ResultsDashboard(self.results_analyzer)
@@ -162,6 +164,9 @@ class MainWindow(QMainWindow):
         self.data_display.param_table = self.param_table
         self.data_display.selector_container = self.selector_container
 
+        # Reconnect table signals after assigning the UI table
+        self.param_table.cellChanged.connect(self.data_display._on_cell_changed)
+
         # Connect chart widget to existing widgets
         self.chart_widget.simple_bar_btn = self.simple_bar_btn
         self.chart_widget.stacked_bar_btn = self.stacked_bar_btn
@@ -181,6 +186,8 @@ class MainWindow(QMainWindow):
 
         # Data display signals
         self.data_display.display_mode_changed.connect(self._on_display_mode_changed)
+        self.data_display.cell_value_changed.connect(self._on_cell_value_changed)
+        self.data_display.chart_update_needed.connect(self._on_chart_update_needed)
 
         # Chart widget signals
         self.chart_widget.chart_type_changed.connect(self._on_chart_type_changed)
@@ -200,9 +207,15 @@ class MainWindow(QMainWindow):
         self.actionStop_Solver.triggered.connect(self._stop_solver)
         self.actionDashboard.triggered.connect(self._show_dashboard)
 
+        # Connect save actions from UI
+        self.actionSave.triggered.connect(self._save_file)
+        self.actionSave_As.triggered.connect(self._save_file_as)
+
         # Solver manager signals
         self.solver_manager.set_output_callback(self._append_to_console)
         self.solver_manager.set_status_callback(self._update_status_from_solver)
+
+
 
     def _on_file_selected(self, file_path: str, file_type: str):
         """Handle file selection in navigator"""
@@ -275,6 +288,97 @@ class MainWindow(QMainWindow):
         """Handle scenario options change"""
         # Refresh current chart to reflect new year range
         self._refresh_current_display()
+
+    def _on_cell_value_changed(self, year: int, technology: str, new_value: float):
+        """Handle cell value changes from pivot mode editing"""
+        # Get the current scenario and parameter
+        scenario = self._get_current_scenario(self.current_view == "results")
+        if not scenario:
+            return
+
+        # Get the currently selected parameter
+        selected_items = self.param_tree.selectedItems()
+        if not selected_items:
+            return
+
+        param_name = selected_items[0].text(0)
+        if not param_name or param_name.startswith(("Parameters", "Results", "Economic", "Variables", "Sets")):
+            return
+
+        parameter = scenario.get_parameter(param_name)
+        if not parameter:
+            return
+
+        # Find and update the corresponding row in the raw data
+        df = parameter.df.copy()
+
+        # Identify column types
+        column_info = self.data_display._identify_columns(df)
+
+        # Find the year column and technology column
+        year_col = None
+        tech_col = None
+
+        for col in column_info['year_cols']:
+            if col in df.columns:
+                year_col = col
+                break
+
+        for col in column_info['pivot_cols']:
+            if col in df.columns:
+                tech_col = col
+                break
+
+        value_col = column_info.get('value_col')
+
+        if not (year_col and tech_col and value_col):
+            self.console.append("Warning: Cannot sync pivot changes - missing required columns")
+            return
+
+        # Find rows that match the year and technology
+        mask = (df[year_col] == year) & (df[tech_col] == technology)
+        matching_rows = df[mask]
+
+        if matching_rows.empty:
+            self.console.append(f"Warning: No matching data found for year={year}, technology={technology}")
+            return
+
+        # Update the value in the raw data
+        df.loc[mask, value_col] = new_value
+
+        # Update the parameter with the modified DataFrame
+        parameter.df = df
+
+        # Mark the parameter as modified
+        scenario.mark_modified(param_name)
+
+        # Update the status bar to show unsaved changes
+        self.statusbar.showMessage(f"Modified {param_name} - unsaved changes")
+
+        # Log the change
+        self.console.append(f"Updated {param_name}: {technology} in {year} = {new_value}")
+
+        # Note: Chart will be updated via chart_update_needed signal, table stays as-is
+
+    def _on_chart_update_needed(self):
+        """Update chart when data changes without refreshing the table"""
+        # Get the currently selected parameter
+        selected_items = self.param_tree.selectedItems()
+        if not selected_items:
+            return
+
+        param_name = selected_items[0].text(0)
+        if not param_name or param_name.startswith(("Parameters", "Results", "Economic", "Variables", "Sets")):
+            return
+
+        # Get the parameter object
+        scenario = self._get_current_scenario(self.current_view == "results")
+        if scenario:
+            parameter = scenario.get_parameter(param_name)
+            if parameter:
+                # Update chart with current data (which includes our changes)
+                chart_df = self._get_chart_data(parameter, self.current_view == "results")
+                self.chart_widget.update_chart(chart_df, parameter.name, self.current_view == "results")
 
     def _switch_to_input_view(self):
         """Switch to input parameters view"""
@@ -904,7 +1008,137 @@ class MainWindow(QMainWindow):
         # Restore session state (view mode and selected files)
         self._restore_session_state(loaded_input_files, loaded_results_files)
 
+    def _save_file(self):
+        """Save the current scenario to its original file"""
+        scenario = self._get_current_scenario(self.current_view == "results")
+        if not scenario:
+            QMessageBox.warning(self, "No Data", "No scenario data is currently loaded.")
+            return
+
+        # Check if there are any modified parameters
+        if not self.data_export_manager.has_modified_data(scenario):
+            self.statusbar.showMessage("No changes to save")
+            return
+
+        # Determine the file path
+        if self.current_view == "input" and self.selected_input_file:
+            file_path = self.selected_input_file
+        elif self.current_view == "results" and self.selected_results_file:
+            file_path = self.selected_results_file
+        else:
+            # No specific file selected, use save as
+            self._save_file_as()
+            return
+
+        # Confirm save
+        modified_count = self.data_export_manager.get_modified_parameters_count(scenario)
+        reply = QMessageBox.question(
+            self, "Confirm Save",
+            f"Save {modified_count} modified parameter(s) to {os.path.basename(file_path)}?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.Yes
+        )
+
+        if reply != QMessageBox.Yes:
+            return
+
+        # Save the file
+        self._perform_save(scenario, file_path, False)
+
+    def _save_file_as(self):
+        """Save the current scenario to a new file"""
+        scenario = self._get_current_scenario(self.current_view == "results")
+        if not scenario:
+            QMessageBox.warning(self, "No Data", "No scenario data is currently loaded.")
+            return
+
+        # Get save file path
+        file_path, _ = QFileDialog.getSaveFileName(
+            self, "Save As", "",
+            "Excel Files (*.xlsx);;All Files (*)"
+        )
+
+        if not file_path:
+            return
+
+        # Save the file
+        self._perform_save(scenario, file_path, True)
+
+    def _perform_save(self, scenario: ScenarioData, file_path: str, is_save_as: bool):
+        """Perform the actual save operation"""
+        try:
+            self.statusbar.showMessage("Saving...")
+
+            # Show progress bar
+            self.show_progress_bar(100)
+
+            # Perform save
+            success = self.data_export_manager.save_scenario(scenario, file_path, modified_only=True)
+
+            # Hide progress bar
+            self.hide_progress_bar()
+
+            if success:
+                # Clear modified flags after successful save
+                self.data_export_manager.clear_modified_flags(scenario)
+
+                # Update status
+                if is_save_as:
+                    self.statusbar.showMessage(f"Saved as: {os.path.basename(file_path)}")
+                    self.console.append(f"✓ Saved scenario as: {file_path}")
+                else:
+                    self.statusbar.showMessage(f"Saved: {os.path.basename(file_path)}")
+                    self.console.append(f"✓ Saved changes to: {file_path}")
+
+                # Update window title if this was the first save
+                if is_save_as:
+                    self.setWindowTitle(f"MessageIX Data Manager - {os.path.basename(file_path)}")
+
+            else:
+                QMessageBox.critical(self, "Save Failed", f"Failed to save file: {file_path}")
+                self.statusbar.showMessage("Save failed")
+
+        except Exception as e:
+            # Hide progress bar on error
+            self.hide_progress_bar()
+            QMessageBox.critical(self, "Save Error", f"Error saving file: {str(e)}")
+            self.statusbar.showMessage("Save failed")
+
     def closeEvent(self, event):
-        """Handle application close event - save current session state"""
+        """Handle application close event - check for unsaved changes"""
+        # Check for unsaved changes before closing
+        has_unsaved_changes = False
+
+        # Check input scenarios
+        if self.input_manager.get_current_scenario():
+            if self.data_export_manager.has_modified_data(self.input_manager.get_current_scenario()):
+                has_unsaved_changes = True
+
+        # Check results scenarios
+        if self.results_analyzer.get_current_results():
+            if self.data_export_manager.has_modified_data(self.results_analyzer.get_current_results()):
+                has_unsaved_changes = True
+
+        if has_unsaved_changes:
+            reply = QMessageBox.question(
+                self, "Unsaved Changes",
+                "You have unsaved changes. Do you want to save them before closing?",
+                QMessageBox.Save | QMessageBox.Discard | QMessageBox.Cancel,
+                QMessageBox.Save
+            )
+
+            if reply == QMessageBox.Save:
+                # Try to save changes
+                self._save_file()
+                # If save was cancelled or failed, don't close
+                if self.data_export_manager.has_modified_data(self._get_current_scenario(self.current_view == "results")):
+                    event.ignore()
+                    return
+            elif reply == QMessageBox.Cancel:
+                event.ignore()
+                return
+            # If Discard, continue with closing
+
+        # Save current session state
         self._save_current_session_state()
         super().closeEvent(event)

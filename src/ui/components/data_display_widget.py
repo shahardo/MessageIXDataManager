@@ -22,6 +22,8 @@ class DataDisplayWidget(QWidget):
 
     # Define PyQt signals
     display_mode_changed = pyqtSignal()
+    cell_value_changed = pyqtSignal(int, str, float)  # year, technology, new_value
+    chart_update_needed = pyqtSignal()  # Signal to update chart without refreshing table
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -60,6 +62,9 @@ class DataDisplayWidget(QWidget):
         UIStyler.setup_table_widget(self.param_table)
         header = self.param_table.horizontalHeader()
         UIStyler.setup_table_header(header)
+        # Enable editing for pivot mode
+        self.param_table.setEditTriggers(QTableWidget.DoubleClicked | QTableWidget.EditKeyPressed | QTableWidget.AnyKeyPressed)
+        self.param_table.cellChanged.connect(self._on_cell_changed)
         layout.addWidget(self.param_table)
 
         self.setLayout(layout)
@@ -69,6 +74,11 @@ class DataDisplayWidget(QWidget):
         # Connect signals for existing widgets
         if hasattr(self.view_toggle_button, 'clicked'):
             self.view_toggle_button.clicked.connect(self._toggle_display_mode)
+
+        # Reconnect table signals since param_table might have been replaced
+        # SHRD - should be removed
+        if hasattr(self.param_table, 'cellChanged'):
+            self.param_table.cellChanged.connect(self._on_cell_changed)
 
         # Initialize state
         self.table_display_mode = "raw"
@@ -371,6 +381,72 @@ class DataDisplayWidget(QWidget):
         self.hide_empty_columns = self.hide_empty_checkbox.isChecked()
         # Emit signal to refresh display (will be connected by parent)
         self.display_mode_changed.emit()
+
+    def _on_cell_changed(self, row: int, col: int):
+        """Handle cell value changes in editable table"""
+        print(f"DEBUG: Cell changed at row={row}, col={col}")  # Debug print
+
+        # Only allow editing in advanced/pivot mode
+        if self.table_display_mode != "advanced":
+            print("DEBUG: Not in advanced mode, ignoring")  # Debug print
+            return
+
+        # Get the new value from the cell
+        item = self.param_table.item(row, col)
+        if not item:
+            print("DEBUG: No item found")  # Debug print
+            return
+
+        new_value_str = item.text().strip()
+        print(f"DEBUG: Cell text: '{new_value_str}'")  # Debug print
+
+        # Parse the value (handle empty strings as 0 or NaN)
+        try:
+            if new_value_str == "":
+                new_value = 0.0
+            else:
+                new_value = float(new_value_str)
+        except ValueError:
+            print(f"DEBUG: Invalid value, reverting display")  # Debug print
+            # Invalid input, revert to original value by refreshing display
+            self.display_mode_changed.emit()
+            return
+
+        print(f"DEBUG: Parsed value: {new_value}, syncing...")  # Debug print
+
+        # Sync change to raw data and update chart
+        self._sync_pivot_change_to_raw_data(row, col, new_value)
+        self.chart_update_needed.emit()
+
+        print("DEBUG: Cell change handling complete")  # Debug print
+
+    def _sync_pivot_change_to_raw_data(self, row: int, col: int, new_value: float):
+        """Sync a change made in pivot mode back to the raw data"""
+        # This method needs access to the current parameter data
+        # We'll need to implement this with help from the parent MainWindow
+        # For now, we'll emit a signal that includes the change information
+
+        # Get column and row information from the current display
+        year = None
+        technology = None
+
+        # Get year from vertical header (row)
+        vertical_header = self.param_table.verticalHeaderItem(row)
+        if vertical_header:
+            try:
+                year = int(vertical_header.text())
+            except ValueError:
+                pass
+
+        # Get technology from horizontal header (column)
+        horizontal_header = self.param_table.horizontalHeaderItem(col)
+        if horizontal_header:
+            technology = horizontal_header.text()
+
+        # Emit signal with change information
+        # This will be connected to MainWindow which has access to the scenario data
+        if hasattr(self, 'cell_value_changed'):
+            self.cell_value_changed.emit(year, technology, new_value)
 
     def transform_to_display_format(self, df: pd.DataFrame, is_results: bool = False,
                                    current_filters: Optional[Dict[str, str]] = None, hide_empty: Optional[bool] = None,
