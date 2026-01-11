@@ -71,6 +71,9 @@ class MainWindow(QMainWindow):
         self.results_analyzer: ResultsAnalyzer = ResultsAnalyzer()
         self.data_export_manager: DataExportManager = DataExportManager()
 
+        # Load technology descriptions from CSV
+        self.tech_descriptions = self._load_tech_descriptions()
+
         # Initialize dashboard
         self.dashboard: ResultsDashboard = ResultsDashboard(self.results_analyzer)
         self.results_file_dashboard: ResultsFileDashboard = ResultsFileDashboard(self.results_analyzer)
@@ -95,6 +98,23 @@ class MainWindow(QMainWindow):
 
         # Auto-load last opened files
         self._auto_load_last_files()
+
+    def _load_tech_descriptions(self):
+        """Load technology descriptions from CSV file"""
+        try:
+            df = pd.read_csv('helpers/message_relations.csv')
+            descriptions = {}
+            for _, row in df.iterrows():
+                descriptions[row['technology']] = {
+                    'group': row['group'],
+                    'parameters': row['parameters'],
+                    'technology-entry': row['technology-entry'],
+                    'description': row['description']
+                }
+            return descriptions
+        except Exception as e:
+            print(f"Failed to load technology descriptions: {e}")
+            return {}
 
     def _setup_data_area_widgets(self):
         """Set up the data area widgets in the dataContainer layout"""
@@ -166,6 +186,7 @@ class MainWindow(QMainWindow):
         self.data_display.view_toggle_button = self.view_toggle_button
         self.data_display.param_table = self.param_table
         self.data_display.selector_container = self.selector_container
+        self.data_display.tech_descriptions = self.tech_descriptions
 
         # Connect chart widget to existing widgets
         self.chart_widget.simple_bar_btn = self.simple_bar_btn

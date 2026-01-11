@@ -794,6 +794,64 @@ class TestDataDisplayWidget:
         if 'technology' in result.columns:
             assert all(result['technology'] == 'tech1')
 
+    @patch('PyQt5.QtWidgets.QApplication')
+    def test_hide_empty_columns_checkbox_functionality(self, mock_app):
+        """Test that 'Hide Empty Columns' checkbox actually hides empty columns in table display"""
+        from ui.components.data_display_widget import DataDisplayWidget
+        from core.data_models import Parameter
+        import pandas as pd
+        from PyQt5.QtWidgets import QLabel, QPushButton, QTableWidget, QWidget
+
+        # Create test DataFrame that will produce empty columns when pivoted
+        # Include some technology combinations that have no data (will result in all-zero columns)
+        data = [
+            ['tech1', 'region1', 2020, 100.0],
+            ['tech1', 'region1', 2025, 120.0],
+            ['tech2', 'region1', 2020, 80.0],
+            ['tech2', 'region1', 2025, 90.0],
+            ['tech3', 'region1', 2020, 0.0],  # tech3 will have all zeros
+            ['tech3', 'region1', 2025, 0.0],  # all zeros for tech3 - should be hidden
+        ]
+        headers = ['technology', 'region', 'year', 'value']
+        df = pd.DataFrame(data, columns=headers)
+
+        metadata = {
+            'units': 'MW',
+            'dims': ['technology', 'region', 'year'],
+            'value_column': 'value',
+            'shape': df.shape
+        }
+        param = Parameter('test_param', df, metadata)
+
+        widget = DataDisplayWidget()
+
+        # Test the transformation directly
+        # Test 1: Transform with hide empty columns DISABLED
+        widget.hide_empty_columns = False
+        transformed_visible = widget.transform_to_display_format(
+            df, is_results=False, current_filters=None, hide_empty=False, for_chart=False
+        )
+
+        # Test 2: Transform with hide empty columns ENABLED
+        widget.hide_empty_columns = True
+        transformed_hidden = widget.transform_to_display_format(
+            df, is_results=False, current_filters=None, hide_empty=True, for_chart=False
+        )
+
+        # Verify that the transformed data has different numbers of columns
+        assert transformed_hidden.shape[1] < transformed_visible.shape[1], \
+            f"Expected fewer columns when hiding empty ones: {transformed_hidden.shape[1]} < {transformed_visible.shape[1]}"
+
+        # Verify that tech3 column is present when not hiding empty columns
+        assert 'tech3' in transformed_visible.columns, "tech3 column should be present when not hiding empty columns"
+
+        # Verify that tech3 column is hidden when hiding empty columns
+        assert 'tech3' not in transformed_hidden.columns, "tech3 column should be hidden when hiding empty columns"
+
+        # Verify that non-empty columns are still present
+        assert 'tech1' in transformed_hidden.columns, "tech1 column should still be visible"
+        assert 'tech2' in transformed_hidden.columns, "tech2 column should still be visible"
+
 
 class TestChartWidget:
     """Test ChartWidget functionality"""

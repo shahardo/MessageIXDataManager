@@ -28,12 +28,13 @@ class DataDisplayWidget(QWidget):
     cell_value_changed = pyqtSignal(str, object, object, object)  # mode, row_or_year, col_or_tech, new_value
     chart_update_needed = pyqtSignal()  # Signal to update chart without refreshing table
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, tech_descriptions=None):
         super().__init__(parent)
         self.table_display_mode = "raw"  # "raw" or "advanced"
         self.hide_empty_columns = False  # Whether to hide empty columns in advanced view
         self.property_selectors = {}
         self.hide_empty_checkbox = None
+        self.tech_descriptions = tech_descriptions or {}
 
         # Widgets will be assigned externally from .ui file
         self.param_title: QLabel
@@ -85,24 +86,32 @@ class DataDisplayWidget(QWidget):
         # Handle view mode (raw vs advanced)
         if is_results:
             # For results data, always show transformed data (years as indices, year column hidden)
-            display_df = self.transform_to_display_format(
-                df,
-                is_results=True,
-                current_filters=None,
-                hide_empty=self.hide_empty_columns,
-                for_chart=False
-            )
+            try:
+                display_df = self.transform_to_display_format(
+                    df,
+                    is_results=True,
+                    current_filters=None,
+                    hide_empty=self.hide_empty_columns,
+                    for_chart=True
+                )
+            except Exception as e:
+                print(f"Transformation failed for results: {e}")
+                display_df = df
             self._setup_property_selectors(df)
         else:
             # For input data, use raw/advanced modes
             if self.table_display_mode == "advanced":
-                display_df = self.transform_to_display_format(
-                    df,
-                    is_results=False,
-                    current_filters=None,
-                    hide_empty=self.hide_empty_columns,
-                    for_chart=False
-                )
+                try:
+                    display_df = self.transform_to_display_format(
+                        df,
+                        is_results=False,
+                        current_filters=None,
+                        hide_empty=self.hide_empty_columns,
+                        for_chart=True
+                    )
+                except Exception as e:
+                    print(f"Transformation failed for advanced: {e}")
+                    display_df = df
                 self._setup_property_selectors(df)
             else:
                 display_df = df
@@ -176,15 +185,17 @@ class DataDisplayWidget(QWidget):
             self.param_table.setVerticalHeaderLabels(year_labels)
         else:
             self.param_table.setColumnCount(len(df.columns))
-            # Set vertical headers to show row numbers starting from 1
+            # Set vertical headers to show row numbers starting from 1 (for raw data)
             row_labels = [str(i + 1) for i in range(len(df))]
             self.param_table.setVerticalHeaderLabels(row_labels)
 
-        # Set headers with better formatting
-        headers = []
-        for col in df.columns:
-            headers.append(str(col))
-        self.param_table.setHorizontalHeaderLabels(headers)
+        # Set headers with tooltips
+        for i, col in enumerate(df.columns):
+            header_item = QTableWidgetItem(str(col))
+            desc = self.tech_descriptions.get(str(col), {}).get('description', '')
+            if desc and type(desc) is str: # since desc could be np.nan when reading empty CSV cells
+                header_item.setToolTip(desc)
+            self.param_table.setHorizontalHeaderItem(i, header_item)
 
     def _populate_table(self, df: pd.DataFrame, parameter: Parameter):
         """Fill table data with proper formatting"""
