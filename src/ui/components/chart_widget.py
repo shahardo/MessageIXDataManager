@@ -14,7 +14,11 @@ import plotly.io as pio
 import tempfile
 import threading
 import os
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from PyQt5.QtWidgets import QPushButton
+    from PyQt5.QtWebEngineWidgets import QWebEngineView
 
 from core.data_models import Parameter
 from ..ui_styler import UIStyler
@@ -30,64 +34,24 @@ class ChartWidget(QWidget):
         super().__init__(parent)
         self.current_chart_type = 'stacked_bar'  # 'bar', 'stacked_bar', 'line', 'stacked_area'
 
-        self.setup_ui()
+        # Widgets will be assigned externally from .ui file
+        self.simple_bar_btn: QPushButton
+        self.stacked_bar_btn: QPushButton
+        self.line_chart_btn: QPushButton
+        self.stacked_area_btn: QPushButton
+        self.param_chart: QWebEngineView
 
-    def setup_ui(self):
-        """Set up the UI components"""
-        layout = QVBoxLayout(self)
-
-        # Chart type buttons
-        button_layout = QHBoxLayout()
-        button_layout.setContentsMargins(0, 5, 0, 5)  # Add space above and below
-
-        self.simple_bar_btn = QPushButton("Simple Bar")
-        UIStyler.setup_chart_button(self.simple_bar_btn)
+    def initialize_with_ui_widgets(self):
+        """Initialize component with UI widgets assigned externally from .ui file"""
+        # Connect signals for existing widgets
         self.simple_bar_btn.clicked.connect(lambda: self._on_chart_type_changed('bar'))
-
-        self.stacked_bar_btn = QPushButton("Stacked Bar")
-        UIStyler.setup_chart_button(self.stacked_bar_btn)
-        self.stacked_bar_btn.setChecked(True)
         self.stacked_bar_btn.clicked.connect(lambda: self._on_chart_type_changed('stacked_bar'))
-
-        self.line_chart_btn = QPushButton("Line Chart")
-        UIStyler.setup_chart_button(self.line_chart_btn)
         self.line_chart_btn.clicked.connect(lambda: self._on_chart_type_changed('line'))
-
-        self.stacked_area_btn = QPushButton("Stacked Area")
-        UIStyler.setup_chart_button(self.stacked_area_btn)
         self.stacked_area_btn.clicked.connect(lambda: self._on_chart_type_changed('stacked_area'))
 
-        button_layout.addWidget(self.simple_bar_btn)
-        button_layout.addWidget(self.stacked_bar_btn)
-        button_layout.addWidget(self.line_chart_btn)
-        button_layout.addWidget(self.stacked_area_btn)
-        button_layout.addStretch()
-
-        layout.addLayout(button_layout)
-
-        # Chart view
-        self.param_chart = QWebEngineView()
-
-        # Enable JavaScript for parameter chart
-        chart_settings = self.param_chart.settings()
-        chart_settings.setAttribute(QWebEngineSettings.JavascriptEnabled, True)
-        chart_settings.setAttribute(QWebEngineSettings.LocalContentCanAccessRemoteUrls, True)
-
-        layout.addWidget(self.param_chart)
-
-        self.setLayout(layout)
-
-    def _initialize_from_existing_widgets(self):
-        """Initialize component to use existing UI widgets instead of creating new layout"""
-        # Connect signals for existing widgets
-        if hasattr(self.simple_bar_btn, 'clicked'):
-            self.simple_bar_btn.clicked.connect(lambda: self._on_chart_type_changed('bar'))
-        if hasattr(self.stacked_bar_btn, 'clicked'):
-            self.stacked_bar_btn.clicked.connect(lambda: self._on_chart_type_changed('stacked_bar'))
-        if hasattr(self.line_chart_btn, 'clicked'):
-            self.line_chart_btn.clicked.connect(lambda: self._on_chart_type_changed('line'))
-        if hasattr(self.stacked_area_btn, 'clicked'):
-            self.stacked_area_btn.clicked.connect(lambda: self._on_chart_type_changed('stacked_area'))
+        # Make buttons checkable
+        for btn in [self.simple_bar_btn, self.stacked_bar_btn, self.line_chart_btn, self.stacked_area_btn]:
+            btn.setCheckable(True)
 
         # Initialize state
         self.current_chart_type = 'stacked_bar'

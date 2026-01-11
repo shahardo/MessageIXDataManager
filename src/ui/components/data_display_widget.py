@@ -11,7 +11,10 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import Qt, pyqtSignal
 import pandas as pd
 import numpy as np
-from typing import Optional, Dict, List, Union, Any
+from typing import Optional, Dict, List, Union, Any, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    pass  # No additional imports needed since we assume UI widgets exist
 
 from core.data_models import Parameter
 from ..ui_styler import UIStyler
@@ -22,7 +25,7 @@ class DataDisplayWidget(QWidget):
 
     # Define PyQt signals
     display_mode_changed = pyqtSignal()
-    cell_value_changed = pyqtSignal(int, str, float)  # year, technology, new_value
+    cell_value_changed = pyqtSignal(str, object, object, object)  # mode, row_or_year, col_or_tech, new_value
     chart_update_needed = pyqtSignal()  # Signal to update chart without refreshing table
 
     def __init__(self, parent=None):
@@ -32,53 +35,17 @@ class DataDisplayWidget(QWidget):
         self.property_selectors = {}
         self.hide_empty_checkbox = None
 
-        self.setup_ui()
+        # Widgets will be assigned externally from .ui file
+        self.param_title: QLabel
+        self.view_toggle_button: QPushButton
+        self.param_table: QTableWidget
+        self.selector_container: QWidget
 
-    def setup_ui(self):
-        """Set up the UI components"""
-        layout = QVBoxLayout(self)
-
-        # Title label
-        self.param_title = QLabel("Select a parameter to view data")
-        UIStyler.setup_parameter_title_label(self.param_title, is_small=True)
-        layout.addWidget(self.param_title)
-
-        # View toggle button
-        self.view_toggle_button = QPushButton("Raw Display")
-        UIStyler.setup_view_toggle_button(self.view_toggle_button)  # Use view toggle button styling for green when checked
-        self.view_toggle_button.clicked.connect(self._toggle_display_mode)
-        layout.addWidget(self.view_toggle_button)
-
-        # Selector container for filters
-        self.selector_container = QWidget()
-        self.selector_container.setVisible(False)
-        self.selector_container.setStyleSheet("border: none; outline: none; background: transparent;")
-        selector_layout = QHBoxLayout(self.selector_container)
-        selector_layout.setContentsMargins(5, 5, 5, 5)
-        layout.addWidget(self.selector_container)
-
-        # Data table
-        self.param_table = QTableWidget()
-        UIStyler.setup_table_widget(self.param_table)
-        header = self.param_table.horizontalHeader()
-        UIStyler.setup_table_header(header)
-        # Enable editing for pivot mode
-        self.param_table.setEditTriggers(QTableWidget.DoubleClicked | QTableWidget.EditKeyPressed | QTableWidget.AnyKeyPressed)
-        self.param_table.cellChanged.connect(self._on_cell_changed)
-        layout.addWidget(self.param_table)
-
-        self.setLayout(layout)
-
-    def _initialize_from_existing_widgets(self):
-        """Initialize component to use existing UI widgets instead of creating new layout"""
+    def initialize_with_ui_widgets(self):
+        """Initialize component with UI widgets assigned externally from .ui file"""
         # Connect signals for existing widgets
-        if hasattr(self.view_toggle_button, 'clicked'):
-            self.view_toggle_button.clicked.connect(self._toggle_display_mode)
-
-        # Reconnect table signals since param_table might have been replaced
-        # SHRD - should be removed
-        if hasattr(self.param_table, 'cellChanged'):
-            self.param_table.cellChanged.connect(self._on_cell_changed)
+        self.view_toggle_button.clicked.connect(self._toggle_display_mode)
+        self.param_table.cellChanged.connect(self._on_cell_changed)
 
         # Initialize state
         self.table_display_mode = "raw"
@@ -182,12 +149,15 @@ class DataDisplayWidget(QWidget):
 
     def _toggle_display_mode(self):
         """Toggle between raw and advanced display modes"""
-        if self.view_toggle_button.isChecked():
+        # Toggle the display mode
+        if self.table_display_mode == "raw":
             self.table_display_mode = "advanced"
+            self.view_toggle_button.setChecked(True)
             self.view_toggle_button.setText("Advanced Display")
             self.selector_container.setVisible(True)
         else:
             self.table_display_mode = "raw"
+            self.view_toggle_button.setChecked(False)
             self.view_toggle_button.setText("Raw Display")
             self.selector_container.setVisible(False)
 
@@ -218,6 +188,9 @@ class DataDisplayWidget(QWidget):
 
     def _populate_table(self, df: pd.DataFrame, parameter: Parameter):
         """Fill table data with proper formatting"""
+        # Disconnect cellChanged signal during population to prevent infinite loops
+        self.param_table.cellChanged.disconnect(self._on_cell_changed)
+
         # Determine formatting for numerical columns based on max values
         column_formats = {}
         for col_idx, col_name in enumerate(df.columns):
@@ -290,6 +263,9 @@ class DataDisplayWidget(QWidget):
                     item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
 
                 self.param_table.setItem(row_idx, col_idx, item)
+
+        # Reconnect cellChanged signal after population
+        self.param_table.cellChanged.connect(self._on_cell_changed)
 
     def _setup_property_selectors(self, df: pd.DataFrame):
         """Set up property selectors for advanced view based on DataFrame columns"""
@@ -386,11 +362,6 @@ class DataDisplayWidget(QWidget):
         """Handle cell value changes in editable table"""
         print(f"DEBUG: Cell changed at row={row}, col={col}")  # Debug print
 
-        # Only allow editing in advanced/pivot mode
-        if self.table_display_mode != "advanced":
-            print("DEBUG: Not in advanced mode, ignoring")  # Debug print
-            return
-
         # Get the new value from the cell
         item = self.param_table.item(row, col)
         if not item:
@@ -414,8 +385,17 @@ class DataDisplayWidget(QWidget):
 
         print(f"DEBUG: Parsed value: {new_value}, syncing...")  # Debug print
 
-        # Sync change to raw data and update chart
-        self._sync_pivot_change_to_raw_data(row, col, new_value)
+        if self.table_display_mode == "advanced":
+            # Handle advanced mode editing (pivot table)
+            self._sync_pivot_change_to_raw_data(row, col, new_value)
+        else:
+            # Handle raw mode editing (direct table editing)
+            # Get column name from horizontal header
+            horizontal_header = self.param_table.horizontalHeaderItem(col)
+            if horizontal_header:
+                column_name = horizontal_header.text()
+                self.cell_value_changed.emit("raw", row, column_name, new_value)
+
         self.chart_update_needed.emit()
 
         print("DEBUG: Cell change handling complete")  # Debug print
@@ -446,7 +426,7 @@ class DataDisplayWidget(QWidget):
         # Emit signal with change information
         # This will be connected to MainWindow which has access to the scenario data
         if hasattr(self, 'cell_value_changed'):
-            self.cell_value_changed.emit(year, technology, new_value)
+            self.cell_value_changed.emit("advanced", year, technology, new_value)
 
     def transform_to_display_format(self, df: pd.DataFrame, is_results: bool = False,
                                    current_filters: Optional[Dict[str, str]] = None, hide_empty: Optional[bool] = None,

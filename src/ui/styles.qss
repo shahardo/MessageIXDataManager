@@ -34,6 +34,7 @@ QTableWidget::item {
 
 QTableWidget::item:selected {
     background-color: #e3f2fd;
+    color: #333;
 }
 
 /* Table header styling */
