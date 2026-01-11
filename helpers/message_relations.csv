@@ -1,0 +1,814 @@
+technology,group,parameters,technology-entry,description
+BCA_Emission,emission_factor,"activity, lower",1,"Emissions of BCA.
+Weight as BCA, kg BCA per kW·a."
+CH4_Emission,emission_factor,"activity, lower, upper",1,"Emissions of CH4 (weight as CH4, kg CH4 per kWyr)"
+CO_Emission,emission_factor,"activity, lower",1,"Emissions of CO (weight as CO, kg CO per kWyr)"
+CO2_Emission_Global_Total,,,,Used by message_data.tools.utilities to constrain global total CO₂ emissions to be non-negative.
+CO2_r_c,removed,activity,1,CO₂ emissions of residential and commercial buildings sector.
+CO2_trp,removed,activity,1,CO₂ emissions of transport sector.
+HFC_Emission,emission_factor,"activity, lower, upper",1,"Emissions of HFC (weight as HFC, kg HFC-134a-equivalent per kWyr)"
+HFC_foam_red,emission_factor,"activity, lower",1,Constraint to link HFC emissions from insulation foams to reduction efficiency of abatement technologies.
+HFC_mobile_red,emission_factor,"activity, lower",1,Constraint to link HFC emissions from mobile air conditioning to reduction efficiency of abatement technologies.
+HFC_rescom_red,emission_factor,"activity, lower",1,Constraint to link HFC emissions from residential & commercial refrigeration & AC to reduction efficiency of abatement technologies.
+N2O_Emission,emission_factor,"activity, lower, upper",1,"Emissions of N2O (weight as N2O, kg N2O per kWyr)"
+NH3_Emission,emission_factor,"activity, lower",1,"Emissions of NH3 (weight as NH3, kg NH3 per kWyr)"
+NOx_Emission,emission_factor,"activity, lower",1,"Emissions of nitrous oxides (NOx)
+Weight as NOx, kg NOx per kW·a."
+OCA_Emission,emission_factor,"activity, lower",1,"Emissions of OCA (weight as OCA, kg OCA per kWyr)"
+oper_res,renewable formulation,"activity, lower",1,Operating reserve equation for electricity systems integration.
+SF6_Emission,emission_factor,"activity, lower, upper",1,"Emissions of SF6 (weight as SF6, kg SF6 per kWyr)"
+SF6_mag_red,emission_factor,"activity, lower",1,Constraint to link SF₆ emissions from electrical equipment to reduction efficiency of abatement technologies.
+SO2_Emission,emission_factor,"activity, lower",1,"Emissions of SO2 (weight as SO2, kg SO2 per kWyr)"
+solar_th_pot,renewable formulation,"activity, upper",1,Solar thermal potential
+VOC_Emission,emission_factor,"activity, lower",1,"Emissions of volatile organic compounds (VOCs)
+Weight as VOC, kg VOC per kW·a."
+BCA_Emission_bunkers,removed,activity,1,BC emission from international shipping (bunker fuel)
+CF4_Emission,emission_factor,"activity, lower, upper",1,"Emissions of CF4 (weight as CF4, kg CF4 per kWyr)"
+CF4_alm_red,add-on,"activity, lower",1,Constraint to link CF4 emissions from aluminum to reduction efficiency of abatement technologies.
+CH4_Emission_bunkers,emission_factor,"activity, lower, upper",1,Counter - R11-GLB only - CH4 emissions of international shipping
+CH4_RemainingLink,emission_factor,"activity, lower, upper",1,Constraint links the remaining CH4 emissions to oil extraction
+CH4_new_Emission,emission_factor,"activity, lower, upper",1,Counter for CH4 emissions from newly added sources
+CH4_nonenergy,emission_factor,"activity, lower, upper",1,"Emissions of CH4 from nonenergy sources (weight as CH4, kg CH4 per kWyr)"
+CH4n_landfills_red,add-on,"activity, lower",1,Constraint to link landfill emissions to reduction efficiency of CH4 abatement technologies.
+CO2_Emission,emission_factor,"activity, lower, upper",1,"Emissions of CO2 (weight as carbon, ton C/kWyr)"
+CO2_cc,removed,activity,1,Emissions of CO2 in central conversion and extraction
+CO2_feedstocks,emission_factor,"activity, lower",1,CO2 emissions of feedstock use (non-energy use)
+CO2_ind,removed,activity,1,CO2 emissions of industry sector
+CO2_shipping,emission_factor,"activity, lower, upper",1,Counter - R11-GLB only - CO2 emissions of international shipping
+CO2_trade,emission_factor,"activity, lower, upper",1,Counter - R11-GLB only - CO2 emissions of energy trade
+CO_Emission_bunkers,removed,activity,1,CO emission from international shipping (bunker fuel)
+CO_nonenergy,emission_factor,"activity, lower",1,CO emission from non-energy sectors
+FE_coal,removed,activity,1,final energy accounting equation
+FE_electricity+dh,,,,
+FE_feedstock,removed,activity,1,final energy accounting equation
+FE_final_energy,removed,activity,1,final energy accounting equation
+FE_gaseous,removed,activity,1,final energy accounting equation
+FE_industry,removed,activity,1,final energy accounting equation
+FE_liquids,removed,activity,1,final energy accounting equation
+FE_new_biomass,removed,activity,1,final energy accounting equation
+FE_old_biomass,removed,activity,1,final energy accounting equation
+FE_resid_comm,removed,activity,1,final energy accounting equation
+FE_transport,removed,activity,1,final energy use in transport sector
+HFCequivOther,emission_factor,"activity, lower, upper",1,"Counter for the HFC-134 equiv. emissions from solvents, fire extinguishers, aerosols MDI, aerosols non-MDI."
+IndGDPAdLink,emission_factor,"activity, lower, upper",1,link of GDP to adipic acid
+IndGDPNiLink,emission_factor,"activity, lower, upper",1,link of GDP to nitric acid
+IndThermDemLink,emission_factor,"activity, lower, upper",1,Constraint links industry waste water CH4 emissions to its driver: the industrial themal demand.
+N2O_Emission_bunkers,emission_factor,"activity, lower, upper",1,Counter - R11-GLB only - N2O emissions of international shipping
+N2O_nonenergy,emission_factor,"activity, lower, upper",1,"Emissions of N2O from nonenergy sources (weight as N2O, kg N2O per kWyr)"
+N2On_adipic_red,emission_factor,"activity, lower",1,Constraint to link adipic acid emissions to reduction efficiency of N2O abatement technologies.
+N2On_nitric_red,emission_factor,"activity, lower",1,Constraint to link nitric acid emissions to reduction efficiency of N2O abatement technologies.
+N2Oother,emission_factor,"activity, lower, upper",1,"Counter for the N2O emissions from Manure Management, Human Sewage, Other Agricultural sources, Other Non Ag Sources."
+NOx_Emission_bunkers,removed,activity,1,NOx emission from international shipping (bunker fuel)
+NOx_nonenergy,emission_factor,"activity, lower",1,NOx emission from non-energy sectors
+OCA_Emission_bunkers,removed,activity,1,OC emission from international shipping (bunker fuel)
+OilPrices,removed,activity,1,crude oil import prices
+PE_BACKSTOPS,removed,activity,1,primary energy accounting equation
+PE_coal,removed,activity,1,primary energy accounting equation
+PE_domestic_total,obsolete (?),"activity, lower, upper",1,primary energy accounting equation
+PE_export_total,obsolete (?),"activity, lower, upper",1,primary energy accounting equation
+PE_gas,removed,activity,1,primary energy accounting equation
+PE_hydro,removed,activity,1,primary energy accounting equation
+PE_import_share,obsolete (?),"activity, lower",1,primary energy accounting equation
+PE_import_total,obsolete (?),"activity, lower, upper",1,primary energy accounting equation
+PE_new_renewables,removed,activity,1,primary energy accounting equation
+PE_nuclear,removed,activity,1,primary energy accounting equation
+PE_oil,removed,activity,1,primary energy accounting equation
+PE_old_renewables,removed,activity,1,primary energy accounting equation
+PE_synliquids,removed,activity,1,primary energy accounting equation
+PE_total_direct,removed,activity,1,primary energy accounting equation
+PE_total_engineering,removed,activity,1,primary energy accounting equation
+PE_total_traditional,removed,activity,1,primary energy accounting equation
+PM2_Emission,emission_factor,"activity, lower",1,PM2.5 emission
+POPtoAeroNonMDILink,emission_factor,"activity, lower, upper",1,link from population to aerosol non-medical use (driver for F gas emission)
+POPtoAerosolMDILink,emission_factor,"activity, lower, upper",1,link from population to aerosol medical use (driver for F gas emission)
+POPtoDomWasteWaLink,emission_factor,"activity, lower, upper",1,link from population to domestic waste water
+POPtoFireExtLink,emission_factor,"activity, lower, upper",1,link from population to fire extiguisher (driver for F gas emission)
+POPtoHuSewageLink,emission_factor,"activity, lower, upper",1,link from population to human sewage
+POPtoSolvent,emission_factor,"activity, lower, upper",1,link from population to solvent use
+RES_variable_limt,"share-constraint formulation, renewable formulation","activity, upper",1,variable renewable energy limit
+SF6_elec_red,emission_factor,"activity, lower",1,Constraint to link SF6 emissions from electrical equipment to reduction efficiency of abatement technologies.
+SO2_Emission_bunkers,removed,activity,1,SO2 emission from international shipping (bunker fuel)
+SO2_elec,emission_factor,"activity, lower",1,"Emissions of SO2 in ppl, counter for DESOX (formerly SO2_emi_el)"
+SO2_import,emission_factor,"activity, lower",1,Import of of low sulfur coal (0.6% S)
+SO2_ind,obsolete (?),"activity, lower",1,Counter - Emissions of CO2 in industrial sector
+SO2_r_c,obsolete (?),"activity, lower",1,Counter - Emissions of CO2 in residential/commercial sector
+SO2_red_ref,emission_factor,"activity, lower",1,Limit on SO2 Emission reduction in refinery products
+SO2_red_synf,emission_factor,"activity, lower",1,Limit on SO2 Emission reduction in synfuel production
+SolWaPOPLink,emission_factor,"activity, lower, upper",1,link from population to solid waste
+TCE_Emission,emission_factor,"activity, lower",1,R11-only - total carbon-equivalent emission equation
+TCE_Emission_AFR_CPA_LAC_MEA_PAS_SAS,removed,activity,1,total carbon-equivalent emissions for set of regions
+TCE_Emission_FSU_MEA,removed,activity,1,total carbon-equivalent emissions for set of regions
+TCE_Emission_NAM_PAO_EEU_WEU,removed,activity,1,total carbon-equivalent emissions for set of regions
+TCE_Emission_NAM_PAO_EEU_WEU_FSU,removed,activity,1,total carbon-equivalent emissions for set of regions
+TCE_regional,removed,activity,1,total carbon-equivalent emission equation (regional)
+TCE_rel2020,removed,activity,1,"""(?) Counter - TCE in 2020"
+TCE_trade,removed,activity,1,trade in carbon-equivalent emissions
+TCEl,obsolete (?),lower,0,
+TCF4_Emission,removed,activity,1,"R11-GLB only - Total Emissions of CF4 (weight as CF4, kg CF4 per kWyr)"
+TCH4_Emission,removed,activity,1,total CH4 emission equation
+TCO2_Emission,removed,activity,1,total CO2 emission equation
+THFC_Emission,removed,activity,1,R11-GLB only - Counter for HFC emissions
+TN2O_Emission,removed,activity,1,total N2O emission equation
+TSF6_Emission,removed,activity,1,"R11-GLB only - Total Emissions of SF6 (weight as SF6, kg SF6 per kWyr)"
+UE_feedstock,share-constraint formulation,"activity, lower, upper",1,Feedstock share constraint - connects all relevant technologies
+UE_feedstock_coal,share-constraint formulation,"activity, upper",1,Feedstock share constraint - restrict contribution of coal to x % of feedstock demand.
+UE_feedstock_foil,share-constraint formulation,"activity, upper",1,Feedstock share constraint - restrict contribution of liquid fuels to x % of feedstock demand.
+UE_feedstock_gas,share-constraint formulation,"activity, upper",1,Feedstock share constraint - restrict contribution of heavy fuel oil to x % of feedstock demand.
+UE_feedstock_liquid,share-constraint formulation,"activity, upper",1,Feedstock share constraint - restrict contribution of gaseous fuels to x % of feedstock demand.
+UE_industry_sp,share-constraint formulation,"activity, lower, upper",1,share constraint for useful energy industry specific
+UE_industry_sp_fc,share-constraint formulation,"activity, upper",1,share constraint for fuel cell (onsite FC) useful energy industry specific
+UE_industry_sp_liquid,share-constraint formulation,"activity, upper",1,share constraint for liquids (onsite IC generator) useful energy industry specific.
+UE_industry_sp_solar,share-constraint formulation,"activity, upper",1,Industry Specific sahre constraint - restrict contribution of solar technologies to x % of industry thermal energy demand.
+UE_industry_th,share-constraint formulation,"activity, lower, upper",1,share constraint for useful energy industry thermal
+UE_industry_th_electric,share-constraint formulation,"activity, upper",1,share constraint for electric useful energy industry thermal
+UE_industry_th_foil,share-constraint formulation,"activity, upper",1,share constraint for fuel oil useful energy industry thermal
+UE_industry_th_gas,share-constraint formulation,"activity, upper",1,share constraint for gas useful energy industry thermal
+UE_industry_th_hydrogen,share-constraint formulation,"activity, upper",1,share constraint for hydrogen useful energy industry thermal
+UE_industry_th_liquid,share-constraint formulation,"activity, upper",1,share constraint for liquids useful energy industry thermal
+UE_industry_th_low_temp_heat,share-constraint formulation,"activity, upper",1,share constraint for low temperature heat useful energy industry thermal
+UE_industry_th_solar,share-constraint formulation,"activity, upper",1,share constraint for solar thermal useful energy industry thermal
+UE_industry_th_solid,share-constraint formulation,"activity, upper",1,share constraint for solids useful energy industry thermal
+UE_res_comm_sp,share-constraint formulation,"activity, lower, upper",1,Residential&Commercial Specific share constraint  - connects all relevant technologies.
+UE_res_comm_sp_fc,share-constraint formulation,"activity, upper",1,Residential&Commercial Specific share constraint - restrict contribution of fuel cell technologies to x % of residential specific energy demand.
+UE_res_comm_sp_solar,share-constraint formulation,"activity, upper",1,Residential&Commercial Specific share constraint - restrict contribution of solar technologies to x % of residential specific energy demand.
+UE_res_comm_th,share-constraint formulation,"activity, lower, upper",1,Residential&Commercial Thermal share constraint  - connects all relevant technologies.
+UE_res_comm_th_biomass,share-constraint formulation,"activity, lower",1,Residential&Commercial Thermal share constraint  - restrict contribution of biomass technologies to x % of residential/commercial thermal energy demand.
+UE_res_comm_th_electric,share-constraint formulation,"activity, upper",1,Residential&Commercial Thermal share constraint  - restrict contribution of electricity to x % of residential/commercial thermal energy demand.
+UE_res_comm_th_foil,share-constraint formulation,"activity, upper",1,Residential&Commercial Thermal share constraint  - restrict contribution of heavy fuel oil to x % of residential/commercial thermal energy demand.
+UE_res_comm_th_gas,share-constraint formulation,"activity, upper",1,Residential&Commercial Thermal share constraint  - restrict contribution of gaseous fuels to x % of residential/commercial thermal energy demand.
+UE_res_comm_th_heat,share-constraint formulation,"activity, upper",1,Residential&Commercial Thermal share constraint  - restrict contribution of district heat to x % of residential/commercial thermal energy demand.
+UE_res_comm_th_hp,share-constraint formulation,"activity, upper",1,Residential&Commercial Thermal share constraint  - restrict contribution of heat pumps to x % of residential/commercial thermal energy demand.
+UE_res_comm_th_hydrogen,share-constraint formulation,"activity, upper",1,Residential&Commercial Thermal share constraint  - restrict contribution of hydrogen to x % of residential/commercial thermal energy demand.
+UE_res_comm_th_liquid,share-constraint formulation,"activity, upper",1,Residential&Commercial Thermal share constraint  - restrict contribution of liquid fuels to x % of residential/commercial thermal energy demand.
+UE_res_comm_th_solar,share-constraint formulation,"activity, upper",1,Residential&Commercial Thermal share constraint  - restrict contribution of solar technologies to x % of residential/commercial thermal energy demand.
+UE_res_comm_th_solids,share-constraint formulation,"activity, upper",1,Residential&Commercial Thermal share constraint  - restrict contribution of solid fuels to x % of residential/commercial thermal energy demand.
+UE_transport,share-constraint formulation,"activity, lower, upper",1,Transport share constraint  - connects all relevant technologies
+UE_transport_electric,share-constraint formulation,"activity, upper",1,Transport share constraint  - restrict contribution of electric technologies to x % of transport energy demand.
+UE_transport_electric_Minimum,share-constraint formulation,"activity, lower",1,Transport share constraint  - restrict LOWER contribution of electric technologies to x % of transport energy demand.
+UE_transport_fc,share-constraint formulation,"activity, upper",1,Transport share constraint  - restrict contribution of fuel cell technologies to x % of transport energy demand.
+UE_transport_foil,share-constraint formulation,"activity, upper",1,Transport share constraint  - restrict contribution of heavy fuel oil to x % of transport energy demand.
+UE_transport_gas,share-constraint formulation,"activity, upper",1,Transport share constraint  - restrict contribution of gaseous fuels to x % of transport energy demand.
+UE_transport_liquid,share-constraint formulation,"activity, upper",1,Transport share constraint  - restrict contribution of liquid fuels to x % of transport energy demand.
+VOC_Emission_bunkers,removed,activity,1,VOC emission from international shipping (bunker fuel)
+VOC_IndThermLink,removed,activity,1,Constraint links VOC solvent emissions to its driver: the industrial themal demand.
+VOC_nonenergy,emission_factor,"activity, lower",1,VOC emission from non-energy sectors
+WasteGenToBCALink,emission_factor,"activity, lower, upper",1,link from waste generation to BC
+WasteGenToCH4Link,emission_factor,"activity, lower, upper",1,link from waste generation to CH4
+WasteGenToCOLink,emission_factor,"activity, lower, upper",1,link from waste generation to CO
+WasteGenToNOxLink,emission_factor,"activity, lower, upper",1,link from waste generation to Nox
+WasteGenToOCALink,emission_factor,"activity, lower, upper",1,link from waste generation to OC
+WasteGenToPM2Link,emission_factor,"activity, lower, upper",1,link from waste generation to PM2.5
+WasteGenToSO2Link,emission_factor,"activity, lower, upper",1,link from waste generation to SO2
+WasteGenToVOCLink,emission_factor,"activity, lower, upper",1,link from waste generation to VOC
+bco2_trans_disp,,"activity, lower, upper",1,CO2 transport and injection from BECCS
+bio_extr_mpen_c,,"activity, lower, upper",1,link equation for joint diffusion constraint of biomass extraction technologies (deprecated?)
+bio_scrub_lim,,"activity, upper",1,limit on CO2 scrubber application (CCS add-on) for biomass power plants
+co2_trans_disp,add-on,"activity, lower, upper",1,Constraint to connect captured carbon to transportation and disposal
+co_gen_limit,share-constraint formulation,"activity, lower",1,Limits cogeneration as share of total central heat production
+coal-exp,share-constraint formulation,"activity, upper",1,Restricts coal exports to hard coal only  by limiting lignite to power plants and other central conversion.
+coal_extr,removed,activity,1,In R11 GLB only - used for accounting or limiting global coal extraction (currently inactive as only positive entries)
+coal_extr_mpen_c,fossil resources,"activity, lower, upper",1,link equation for joint diffusion constraint of coal extraction technologies
+coal_scrub_lim,add-on,"activity, upper",1,limit on CO2 scrubber application (CCS add-on) for coal power plants
+csp_japan_limit,renewable formulation,"activity, upper",1,limit on renewable resource use of Japan in PAO region
+demF_limit,share-constraint formulation,"activity, lower, upper",1,Constraint linking mpa for additional VOM costs for breaching share constraints related to Feedstock sector to growth rate
+demI_limit,share-constraint formulation,"activity, lower, upper",1,Constraint linking mpa for additional VOM costs for breaching share constraints related to Industrial Specific sector to growth rate (currently inactive as all technologies have bda up 0)
+demR_limit,share-constraint formulation,"activity, lower, upper",1,Constraint linking mpa for additional VOM costs for breaching share constraints related to Residential Commercial Specific sector to growth rate
+demb_limit,share-constraint formulation,"activity, lower, upper",1,Constraint linking mpa for additional VOM costs for breaching share constraints related to Industrial Thermal sector to growth rate
+demp_limit,share-constraint formulation,"activity, lower, upper",1,Constraint linking mpa for additional VOM costs for breaching share constraints related to Transport sector to growth rate
+demt_limit,share-constraint formulation,"activity, lower, upper",1,Constraint linking mpa for additional VOM costs for breaching share constraints related to Residential Commercial Thermal sector to growth rate
+domestic_coal,share-constraint formulation,"activity, upper",1,R11-PAO only - Constraint - limits domestic coal use to x% of total primary energy.
+domestic_gas,share-constraint formulation,"activity, upper",1,R11-PAO only - Constraint - limits domestic coal use to x% of total primary energy.
+ele_nuc,hisc,"activity, lower",1,Constrains/calibrates historical nuclear
+elec_coal,hisc,"activity, lower, upper",1,Constrains/calibrates historical electricity production from coal
+elec_gas,hisc,"activity, lower, upper",1,Constrains/calibrates historical electricity production from natural gas
+elec_hydro,hisc,"activity, lower, upper",1,Constrains/calibrates historical electricity production from hydro
+elec_nuclear,hisc,"activity, lower, upper",1,Constrains/calibrates historical electricity production from nuclear
+elec_relations2_coal,removed,activity,1,"""(?) Counter - electricty from coal (inactive as no -1)"
+elec_relations2_gas,removed,activity,1,"""(?) Counter - electricty from gas (inactive as no -1)"
+elec_relations2_hydro,removed,activity,1,"""(?) Counter - electricty from hydro (inactive as no -1)"
+elec_relations2_nuclear,removed,activity,1,"""(?) Counter - electricty from nuclear (inactive as no -1)"
+elec_relations2_oil,removed,activity,1,"""(?) Counter - electricty from oil (inactive as no -1)"
+elec_relations2_renewable,removed,activity,1,"""(?) Counter - electricty from renewable (inactive as no -1)"
+extraction_coal,removed,activity,1,Constrains/calibrates historical coal extraction (inactive as no -1)
+extraction_gas,removed,activity,1,Constrains/calibrates historical gas extraction (inactive as no -1)
+extraction_oil,removed,activity,1,Constrains/calibrates historical oil extraction (inactive as no -1)
+foil_prod,hisc,"activity, lower, upper",1,Constrains/calibrates historical refinery output
+gas_export,hisc,"activity, lower, upper",1,Constrains/calibrates historical gas exports
+gas_extr_mpen_c,fossil resources,"activity, lower, upper",1,link equation for joint diffusion constraint of gas extraction technologies
+gas_mix_lim,share-constraint formulation,"activity, upper",1,R11-AFR only - Constrains hydrogen contribution to final gas usage
+gas_prod,obsolete (?),"activity, upper",1,links and stabilizes gas production (currently inactive - no positive entry)
+gas_scrub_lim,add-on,"activity, upper",1,limit on CO2 scrubber application (CCS add-on) for gas power plants
+gas_util,obsolete (?),"activity, lower",1,Links gas infrastructure growth between utilities versus residential and industry (inactive as not negative entry).
+global_GCO2,removed,activity,1,R11-GLB only - Total CO2 emissions
+global_GSO2,removed,activity,1,R11-GLB only - Total SO2 Emissions
+h2_exp_limit,share-constraint formulation,"activity, lower",1,limits hydrogen exports as share of total hydrogen production
+h2_scrub_limit,add-on,"activity, lower",1,scrubbing limit of CO2 from natural gas due to hydrogen blending
+h2mix_direct,RES,"activity, lower",1,blending of hydrogen into gas grid
+hydro_min,hydro resource,"activity, lower",1,Constraint limiting minimum hydro production
+hydro_pot,hydro resource,"activity, upper",1,Constraint limiting maximum hydro potential
+import_dependence,removed,activity,1,maximum import dependence
+lfil_limit,emission_factor,"activity, lower, upper",1,Constraint limiting gr of landfill mitigaiton technology activty (mpa)
+lim_exp_afr_LNG,share-constraint formulation,"activity, upper",1,R11_GLB only - limits LNG exports from afr
+lim_exp_afr_coal,share-constraint formulation,"activity, upper",1,limit on coal exports
+lim_exp_afr_eth,share-constraint formulation,"activity, upper",1,limit on hydrogen exports
+lim_exp_afr_meth,share-constraint formulation,"activity, upper",1,limit on methanol (synthetic fossil fuel) exports
+lim_exp_cpa_oil,share-constraint formulation,"activity, upper",1,limit on oil exports
+lim_exp_eeu_eth,share-constraint formulation,"activity, upper",1,limit on ethanol (biofuel) exports
+lim_exp_eeu_meth,share-constraint formulation,"activity, upper",1,limit on methanol (synthetic fossil fuel) exports
+lim_exp_fsu_LNG,share-constraint formulation,"activity, upper",1,R11_GLB only - limits LNG exports from fsu
+lim_exp_fsu_coal,share-constraint formulation,"activity, upper",1,limit on coal exports
+lim_exp_fsu_eth,share-constraint formulation,"activity, upper",1,limit on ethanol (biofuel) exports
+lim_exp_fsu_meth,share-constraint formulation,"activity, upper",1,limit on methanol (synthetic fossil fuel) exports
+lim_exp_fsu_oil,share-constraint formulation,"activity, upper",1,limit on oil exports
+lim_exp_lam_LNG,share-constraint formulation,"activity, upper",1,R11_GLB only - limits LNG exports from lam
+lim_exp_lam_oil,share-constraint formulation,"activity, upper",1,limit on oil exports
+lim_exp_mea_LNG,share-constraint formulation,"activity, upper",1,R11_GLB only - limits LNG exports from mea
+lim_exp_mea_oil,share-constraint formulation,"activity, upper",1,limit on oil exports
+lim_exp_nam_LNG,share-constraint formulation,"activity, upper",1,R11_GLB only - limits LNG exports from nam
+lim_exp_nam_coal,share-constraint formulation,"activity, upper",1,limit on coal exports
+lim_exp_pao_coal,share-constraint formulation,"activity, upper",1,limit on coal exports
+lim_exp_pao_eth,share-constraint formulation,"activity, upper",1,limit on ethanol (biofuel) exports
+lim_exp_pao_meth,share-constraint formulation,"activity, upper",1,limit on methanol (synthetic fossil fuel) exports
+lim_exp_pas_LNG,share-constraint formulation,"activity, upper",1,R11_GLB only - limits LNG exports from pas
+lim_exp_weu_eth,share-constraint formulation,"activity, upper",1,limit on ethanol (biofuel) exports
+lim_exp_weu_meth,share-constraint formulation,"activity, upper",1,limit on methanol (synthetic fossil fuel) exports
+limit_tot_BECCS,share-constraint formulation,"activity, lower",1,limit on BECCS application
+max_coal_ind,share-constraint formulation,"activity, lower",1,R11-NAM only - limits coal to max of 50% of gas in industries
+meth_exp_limit,share-constraint formulation,"activity, lower",1,limits methanol exports as share of total methanol production
+min-liquids_industry,share-constraint formulation,"activity, lower",1,
+min-liquids_res-com,,,,
+minimum_recycling_aluminum,,,,
+minimum_recycling_steel,,,,
+nica_limit,emission_factor,"activity, lower, upper",1,Constraint limiting gr of catalytic converter (mitigaiton) technology activty (mpa).
+nuc_lc_in_el,removed,activity,1,Constrains nuc_lc contribution to electricity production
+oil_based_elec_gen,hisc,"activity, lower",1,Constrains/calibrates historical minimum share of oil for electricity generation.
+oil_extr_mpen_c,fossil resources,"activity, lower, upper",1,link equation for joint diffusion constraint of oil extraction technologies
+oil_imp_c,share-constraint formulation,"activity, upper",1,R11-NAM only - Limits import dependence of crude oil in relation to oil extraction.
+oil_prod,removed,activity,1,R11-NAM only - Limits import dependence of crude oil to max 60% (inactive as there are no negative entries and no limits)
+oil_trd,removed,activity,1,In R11 GLB only - penalty for international trade introduced to reflect costs for importing region. In SOME other regions - links/limits net oil product imports to fraction of net crude imports.
+pass_out_trb,add-on,"activity, upper",1,link to use of passout turbine from thermal generators
+prod_low_lim_BIEL,removed,,0,INDC Policy constraint
+prod_low_lim_BIFU,removed,,0,INDC Policy constraint
+prod_low_lim_BIHE,removed,,0,INDC Policy constraint
+prod_low_lim_COEL,removed,,0,INDC Policy constraint
+prod_low_lim_GAEL,removed,,0,INDC Policy constraint
+prod_low_lim_GEEL,removed,,0,INDC Policy constraint
+prod_low_lim_HYEL,removed,,0,INDC Policy constraint
+prod_low_lim_NUEL,removed,,0,INDC Policy constraint
+prod_low_lim_OIEL,removed,,0,INDC Policy constraint
+prod_low_lim_SOEL,removed,,0,INDC Policy constraint
+prod_low_lim_WIEL,removed,,0,INDC Policy constraint
+res_japan_limit,fossil resources,"activity, upper",1,limit on renewable resource use of Japan in PAO region
+res_marg,renewable formulation,"activity, new_capacity, total_capacity",3,electricity systems integration - reserve margin
+share_low_lim_NFEG,,,0,removed
+share_low_lim_NFPE,,,0,removed
+share_low_lim_PEGas,,,0,removed
+share_low_lim_REEG,removed,,0,
+share_low_lim_REFE,removed,,0,
+share_low_lim_REPE,removed,,0,
+sm1_ppl_res,,"total_capacity, lower, upper",1,renewable formulation
+sm3_ppl_res,,"total_capacity, lower, upper",1,renewable formulation
+solar_csp_pot,renewable formulation,"activity, upper",1,CSP resource potential category
+solar_csp_pot1,renewable formulation,"activity, upper",1,CSP resource potential category
+solar_csp_pot2,renewable formulation,"activity, upper",1,CSP resource potential category
+solar_csp_pot3,renewable formulation,"activity, upper",1,CSP resource potential category
+solar_csp_pot4,renewable formulation,"activity, upper",1,CSP resource potential category
+solar_csp_pot5,renewable formulation,"activity, upper",1,CSP resource potential category
+solar_csp_pot6,renewable formulation,"activity, upper",1,CSP resource potential category
+solar_csp_pot7,renewable formulation,"activity, upper",1,CSP resource potential category
+solar_curtailment_1,renewable formulation,"activity, total_capacity",2,electricity systems integration constraint (curtailment)
+solar_curtailment_2,renewable formulation,"activity, total_capacity",2,electricity systems integration constraint (curtailment)
+solar_curtailment_3,renewable formulation,"activity, total_capacity",2,electricity systems integration constraint (curtailment)
+solar_pot,renewable formulation,"activity, upper",1,solar PV resource potential
+solar_pot2,renewable formulation,"activity, upper",1,solar PV resource potential
+solar_pot3,renewable formulation,"activity, upper",1,solar PV resource potential
+solar_pot4,renewable formulation,"activity, upper",1,solar PV resource potential
+solar_pot5,renewable formulation,"activity, upper",1,solar PV resource potential
+solar_pot6,renewable formulation,"activity, upper",1,solar PV resource potential
+solar_pot7,renewable formulation,"activity, upper",1,solar PV resource potential
+solar_pot8,renewable formulation,"activity, upper",1,solar PV resource potential
+solar_pot_hist_2010,,,,
+solar_pot_hist_2015,,,,
+solar_pot_hist_2020,,,,
+solar_ppl_res,renewable formulation,"total_capacity, lower, upper",1,
+solar_res_cv,renewable formulation,"activity, lower, upper",1,balances the solar_res and solar_cv technologies
+solar_step,renewable formulation,"activity, lower",1,first step of solar PV generation is limited to a certain fraction of load (higher steps have worse oper and resm).
+solar_step2,renewable formulation,"activity, lower",1,second step of solar PV generation is limited to a certain fraction of load (higher steps have worse oper and resm).
+solar_step3,renewable formulation,"activity, lower",1,third step of solar PV generation is limited to a certain fraction of load (higher steps have worse oper and resm).
+solar_th_pot',,,,
+syn_liq_exp,share-constraint formulation,"activity, upper",1,R11-FSU only - constraints the export of synthetic liquids to x% of indigenous oil use.
+total_TCO2,removed,activity,1,Total CO2 emissions including feedstocks
+trp_energy,removed,activity,1,"limits total final energy in transport, if necessary (inactive as set to free)"
+unabated_coal_lim,share-constraint formulation,"activity, upper",1,"R11-PAO, R11-NAM, R11-WEU only - Limits unabated coal power plants to present share."
+wind_curtailment_1,renewable formulation,"activity, total_capacity",2,electricity systems integration constraint (curtailment)
+wind_curtailment_2,renewable formulation,"activity, total_capacity",2,electricity systems integration constraint (curtailment)
+wind_curtailment_3,renewable formulation,"activity, total_capacity",2,electricity systems integration constraint (curtailment)
+wind_pof,renewable formulation,"activity, upper",1,offshore wind resource potential
+wind_pof2,renewable formulation,"activity, upper",1,offshore wind resource potential
+wind_pof3,renewable formulation,"activity, upper",1,offshore wind resource potential
+wind_pof4,renewable formulation,"activity, upper",1,offshore wind resource potential
+wind_pof5,renewable formulation,"activity, upper",1,offshore wind resource potential
+wind_pot,renewable formulation,"activity, upper",1,onshore wind resource potential
+wind_pot2,renewable formulation,"activity, upper",1,onshore wind resource potential
+wind_pot3,renewable formulation,"activity, upper",1,onshore wind resource potential
+wind_pot4,renewable formulation,"activity, upper",1,onshore wind resource potential
+wind_pot_hist_2005,,,,
+wind_pot_hist_2010,,,,
+wind_pot_hist_2015,,,,
+wind_pot_hist_2020,,,,
+wind_ppl_offshore_res,renewable formulation,"total_capacity, lower, upper",1,
+wind_ppl_res,renewable formulation,"total_capacity, lower, upper",1,
+wind_res_cv,renewable formulation,"activity, lower, upper",1,balances the wind_res and wind_cv technologies
+wind_step,renewable formulation,"activity, lower",1,first step of wind generation is limited to a certain fraction of load (higher steps have worse oper and resm).
+wind_step2,renewable formulation,"activity, lower",1,second step of wind generation is limited to a certain fraction of load (higher steps have worse oper and resm).
+wind_step3,renewable formulation,"activity, lower",1,third step of wind generation is limited to a certain fraction of load (higher steps have worse oper and resm).
+FE_electricity,removed,,1,final energy accounting equation
+cement_pro,,"activity, lower, upper",1,relation for cement production linked to ind thermal
+cement_scrub_lim,,"activity, upper",1,Constraint limiting cement scrubber activity to cement CO2 production
+min-liquids_res_com,share-constraint formulation,"activity, lower",1,
+weight_ind,,"activity, cost",1,"Weight factor representing costs, inconvenience, etc  in lieu of end-use technology costs in industries."
+weight_rc,,"activity, cost",1,inconvenience costs for residential and commercial sector
+weight_trp,,"activity, cost",1,inconvenience costs for transport sector
+biomass,,,,
+coal,,,,
+crude_1,,,,Crude oil resource.
+crude_2,,,,Crude oil resource.
+crude_3,,,,Crude oil resource.
+Oil|Conventional,,,,Reporting aggregate for oil resources.
+crude_4,,,,Crude oil resource.
+crude_5,,,,Crude oil resource.
+crude_6,,,,Crude oil resource.
+crude_7,,,,Crude oil resource.
+crude_8,,,,Crude oil resource.
+Oil|Unconventional,,,,Reporting aggregate for oil resources.
+Oil,,,,Reporting aggregate for oil resources.
+crudeoil,,,,"For secondary energy, use 'fueloil', 'lightoil', etc."
+d_heat,,,,FIXME provide an unambiguous description of what this commodity represents.
+electr,,,,
+ethanol,,,,
+freshwater_supply,,,,FIXME provide an unambiguous description of what this commodity represents.
+fueloil,,,,Heavy fuel oil
+gas,,,,
+gas_1,,,,Natural gas resource.
+gas_2,,,,Natural gas resource.
+gas_3,,,,Natural gas resource.
+gas_4,,,,Natural gas resource.
+Gas|Conventional,,,,Reporting aggregate for gas resources.
+gas_5,,,,Natural gas resource.
+gas_6,,,,Natural gas resource.
+gas_7,,,,Natural gas resource.
+gas_8,,,,Natural gas resource.
+Gas|Unconventional,,,,Reporting aggregate for gas resources.
+_Gas,,,,"Reporting aggregate for gas resources. The ID is prefixed with an underscore to distinguish from ""gas"", which is not a component."
+hydrogen,,,,
+lh2,,,,
+lightoil,,,,"Includes gasoline, diesel oil."
+lignite,,,,
+_Coal,,,,"Reporting aggregate for coal resources. The ID is prefixed with an underscore to distinguish from ""coal"", which is only 1 of multiple children."
+methanol,,,,
+non-comm,,,,
+rc_spec,,,,
+rc_therm,,,,
+transport,,,,"For MESSAGEix-Transport, this commodity is not used; it is replaced by a disaggregated set of transport service demands (representing e.g. light- duty vehicles, civil aviation, freight transport, etc.)"
+uranium,,,,Uranium resource.
+_Uranium,,,,Reporting aggregate for uranium resources.
+BCA,,,,
+CH4,,,,
+CO,,,,
+CO2,,,,
+N2O,,,,
+NH3,,,,
+NOx,,,,
+OCA,,,,
+SO2,,,,
+TCE,,,,
+VOC,,,,
+export,,,,
+final,,,,"Represents end-use demands of the end-use sectors (e.g. industry, transport, residential, commercial and agriculture)."
+import,,,,
+primary,,,,A form found in nature that has not been subjected to any human engineered conversion process.
+secondary,,,,Forms which have been transformed from primary energy.
+useful,,,,Represents energy-service demands (or activity levels) of the end-use sectors in non-energy units.
+water_supply,,,,FIXME provide an unambiguous description of what this level represents.
+CF4_TCE,,,,Tetrafluoromethane (CF4) Total Carbon Emissions
+CH4_TCE,,,,Methane total carbon equivalent emissions
+CH4g_TCE,,,,CH4 emissions from animals directly in Total Carbon Equivalent emissions
+CH4n_TCE,,,,CH4 emissions from anaerobic waste decomposition in Total Carbon Equivalent emissions
+CH4o_TCE,,,,"Dummy technology converting CH4 emissions from industrial and domestic wastewater, non energy biomass burning and other CH4 emissions, to total carbon equivalent emissions (TCE)"
+CO2_TCE,,,,CO2 total carbon equivalent emissions
+dac_lt,,,,FIXME Something related to direct air capture?
+dac_hte,,,,FIXME Something related to direct air capture?
+dac_htg,,,,FIXME Something related to direct air capture?
+dom_total,,,,Used in balance equation for domestic energy supply and in the equation for constraining net imports
+dummy_producer,,,,Technology added to produce dummy energy to avoid infeasibility if needed (e.g. when CO2_TCE needs to go negative)
+exp_total,,,,Used in balance equation for exported energy supply and in the equation for constraining net imports
+HFC_TCE,,,,HFC total carbon equivalent emissions
+HFCo_TCE,,,,"Dummy technology converting HFC equiv emissions from solvents, fire extinguishers, aerosols MDI, aerosols non-MDI to total carbon equivalent emissions (TCE)"
+imp_total,,,,Used in balance equation for imported energy supply
+N2O_TCE,,,,N2O total carbon equivalent emissions
+N2OG_TCE,,,,N2O soil emissions total carbon equivalent emissions
+N2On_TCE,,,,N2O adipic acid total carbon equivalent emissions
+N2Oo_TCE,,,,"Dummy technology converting N2O emissions from Manure Management, Human Sewage, Other Agricultural sources, Other Non Ag Sources to total carbon equivalent emissions (TCE)"
+nica_con,,,,
+nitric_catalytic1,,,,Mitigation technology (catalytic converter) category 2 for N2O emissions
+nitric_catalytic2,,,,Mitigation technology (catalytic converter) category 1 for N2O emissions
+nitric_catalytic3,,,,Mitigation technology (catalytic converter) category 3 for N2O emissions
+nitric_catalytic4,,,,Mitigation technology (catalytic converter) category 4 for N2O emissions
+nitric_catalytic5,,,,Mitigation technology (catalytic converter) category 5 for N2O emissions
+nitric_catalytic6,,,,Mitigation technology (catalytic converter) category 6 for N2O emissions
+nitric_catalytic7,,,,Mitigation technology (catalytic converter) category 7 for N2O emissions
+SF6_TCE,,,,SF6 total carbon equivalent emissions
+useful_feedstock,,,,Share constraint for industry feedstocks
+useful_industry_sp,,,,Share constraint for Industry Specific
+useful_industry_th,,,,Share constraint for Industry Thermal
+useful_res/comm_sp,,,,Share constraint for Residential and Commercial Specific
+useful_res/comm_th,,,,Share constraint for Residential and Commercial Thermal
+useful_transport,,,,Share constraint for Transport
+bio_istig,,,,Advanced biomass power plant- gasified biomass is burned in gas turbine plant - modes with and without net carbon release
+bio_istig_ccs,,,,Advanced biomass power plant with carbon capture and storage- gasified biomass is burned in gas turbine plant - modes with and without net carbon release
+bio_ppl,,,,Bio powerplant
+coal_adv,,,,Advanced coal power plant
+coal_adv_ccs,,,,Advanced coal power plant with carbon capture and storage
+coal_ppl,,,,Coal power-plant
+coal_ppl_u,,,,Coal power plant without abatement measures
+elec_exp,,,,Net export of electricity
+elec_imp,,,,Net import of electricity
+elec_t/d,,,,Grid technology cost converted to 2005$
+foil_ppl,,,,"New standard oil power plant, Rankine cycle"
+gas_cc,,,,Gas combined cycle power-plant
+gas_cc_ccs,,,,Gas combined cycle power-plant with carbon capture and storage
+gas_ct,,,,Gas combustion-turbine power plant
+gas_htfc,,,,High temperature fuel cell powered with natural gas
+gas_ppl,,,,"Gas power plant, Rankine cycle"
+geo_ppl,,,,Geothermal power plant
+glb_elec_exp,,,,Global net export of electricity
+glb_elec_imp,,,,Global net import of electricity
+hydro_hc,,,,High cost hydro power plant
+hydro_lc,,,,Low cost hydro power plant
+igcc,,,,Integrated gasification combined cycle (IGCC) power plant
+igcc_ccs,,,,Integrated gasification combined cycle (IGCC) power plant with carbon capture and storage
+igcc_co2scr,,,,New coal scrubber for igcc plants
+loil_cc,,,,Light oil combined cycle
+loil_ppl,,,,Existing light oil power-plant
+nuc_hc,,,,"Nuclear power plant (~GEN III+), high cost"
+nuc_lc,,,,"Nuclear power plant (~GEN II), low cost"
+solar_curtailment1,,,,Solar PV curtailment steps
+solar_curtailment2,,,,Solar PV curtailment steps
+solar_curtailment3,,,,Solar PV curtailment steps
+solar_cv1,,,,Quadratic systems integration costs added to solar PV
+solar_cv2,,,,Quadratic systems integration costs added to solar PV
+solar_cv3,,,,Quadratic systems integration costs added to solar PV
+solar_cv4,,,,Quadratic systems integration costs added to solar PV
+solar_pv_ppl,,,,Solar photovoltaic power plant (no storage)
+solar_res1,,,,Maximum solar electricity potential 1
+solar_res2,,,,Maximum solar electricity potential 2
+solar_res3,,,,Maximum solar electricity potential 3
+solar_res4,,,,Maximum solar electricity potential 4
+solar_res5,,,,Maximum solar electricity potential 5
+solar_res6,,,,Maximum solar electricity potential 6
+solar_res7,,,,Maximum solar electricity potential 7
+solar_res8,,,,Maximum solar electricity potential 8
+solar_res_hist_2000,,,,Currently installed solar electricity capacity with 2000 year bin
+solar_res_hist_2005,,,,Currently installed solar electricity capacity with 2005 year bin
+solar_res_hist_2010,,,,Currently installed solar electricity capacity with 2010 year bin
+solar_res_hist_2015,,,,Currently installed solar electricity capacity with 2015 year bin
+solar_res_hist_2020,,,,Currently installed solar electricity capacity with 2020 year bin
+solar_res_hist_2025,,,,Currently installed solar electricity capacity with 2025 year bin.
+solar_res_rt_hist_2000,,,,Currently installed rooftop solar electricity capacity with 2000 year bin.
+solar_res_rt_hist_2005,,,,Currently installed rooftop solar electricity capacity with 2005 year bin.
+solar_res_rt_hist_2010,,,,Currently installed rooftop solar electricity capacity with 2010 year bin.
+solar_res_rt_hist_2015,,,,Currently installed rooftop solar electricity capacity with 2015 year bin.
+solar_res_rt_hist_2020,,,,Currently installed rooftop solar electricity capacity with 2020 year bin.
+solar_res_rt_hist_2025,,,,Currently installed rooftop solar electricity capacity with 2025 year bin.
+solar_res_RT1,,,,FIXME Something related to rooftop solar?
+solar_res_RT2,,,,FIXME Something related to rooftop solar?
+solar_res_RT3,,,,FIXME Something related to rooftop solar?
+solar_res_RT4,,,,FIXME Something related to rooftop solar?
+solar_res_RT5,,,,FIXME Something related to rooftop solar?
+solar_res_RT6,,,,FIXME Something related to rooftop solar?
+solar_res_RT7,,,,FIXME Something related to rooftop solar?
+solar_res_RT8,,,,FIXME Something related to rooftop solar?
+solar_th_ppl,,,,Solar thermal power plant with storage
+stor_ppl,,,,Generic electric storage
+wind_curtailment1,,,,Wind curtailment steps
+wind_curtailment2,,,,Wind curtailment steps
+wind_curtailment3,,,,Wind curtailment steps
+wind_cv1,,,,"Wind flexibility requirement and firm capacity contribution, quadratic systems integration costs added to wind"
+wind_cv2,,,,"Wind flexibility requirement and firm capacity contribution, quadratic systems integration costs added to wind"
+wind_cv3,,,,"Wind flexibility requirement and firm capacity contribution, quadratic systems integration costs added to wind"
+wind_cv4,,,,"Wind flexibility requirement and firm capacity contribution, quadratic systems integration costs added to wind"
+wind_ppl,,,,Wind power plant onshore (provides capacity only)
+wind_res1,,,,Wind onshore potential and generation 1
+wind_res2,,,,Wind onshore potential and generation 2
+wind_res3,,,,Wind onshore potential and generation 3
+wind_res4,,,,Wind onshore potential and generation 4
+wind_res_hist_2000,,,,Currently installed wind onshore capacity with 2005 year bin
+wind_res_hist_2005,,,,Currently installed wind onshore capacity with 2005 year bin
+wind_res_hist_2010,,,,Currently installed wind onshore capacity with 2010 year bin
+wind_res_hist_2015,,,,Currently installed wind onshore capacity with 2015 year bin
+wind_res_hist_2020,,,,Currently installed wind onshore capacity with 2020 year bin
+wind_res_hist_2025,,,,Currently installed wind onshore capacity with 2025 year bin.
+wind_ppf,,,,Wind power plant offshore (provides capacity only)
+wind_ref1,,,,Wind offshore potential and generation 1
+wind_ref2,,,,Wind offshore potential and generation 2
+wind_ref3,,,,Wind offshore potential and generation 3
+wind_ref4,,,,Wind offshore potential and generation 4
+wind_ref5,,,,Wind offshore potential and generation 5
+wind_ref_hist_2000,,,,Currently installed wind offshore capacity with 2000 year bin
+wind_ref_hist_2005,,,,Currently installed wind offshore capacity with 2005 year bin
+wind_ref_hist_2010,,,,Currently installed wind offshore capacity with 2010 year bin
+wind_ref_hist_2015,,,,Currently installed wind offshore capacity with 2015 year bin
+wind_ref_hist_2020,,,,Currently installed wind offshore capacity with 2020 year bin
+wind_ref_hist_2025,,,,Currently installed wind offshore capacity with 2025 year bin.
+csp_sm3_res,,,,Concentrating solar power (CSP) with solar multiple of 3 potential and generation 1
+csp_sm3_res1,,,,Concentrating solar power (CSP) with solar multiple of 3 potential and generation 2
+csp_sm3_res2,,,,Concentrating solar power (CSP) with solar multiple of 3 potential and generation 3
+csp_sm3_res3,,,,Concentrating solar power (CSP) with solar multiple of 3 potential and generation 4
+csp_sm3_res4,,,,Concentrating solar power (CSP) with solar multiple of 3 potential and generation 5
+csp_sm3_res5,,,,Concentrating solar power (CSP) with solar multiple of 3 potential and generation 6
+csp_sm3_res6,,,,Concentrating solar power (CSP) with solar multiple of 3 potential and generation 7
+csp_sm3_res7,,,,Concentrating solar power (CSP) with solar multiple of 3 potential and generation 8
+csp_sm3_ppl,,,,Concentrating solar power (CSP) with solar multiple of 3 (provides capacity only)
+csp_sm1_res,,,,Concentrating solar power (CSP) with solar multiple of 1 potential and generation 1
+csp_sm1_res1,,,,Concentrating solar power (CSP) with solar multiple of 1 potential and generation 2
+csp_sm1_res2,,,,Concentrating solar power (CSP) with solar multiple of 1 potential and generation 3
+csp_sm1_res3,,,,Concentrating solar power (CSP) with solar multiple of 1 potential and generation 4
+csp_sm1_res4,,,,Concentrating solar power (CSP) with solar multiple of 1 potential and generation 5
+csp_sm1_res5,,,,Concentrating solar power (CSP) with solar multiple of 1 potential and generation 6
+csp_sm1_res6,,,,Concentrating solar power (CSP) with solar multiple of 1 potential and generation 7
+csp_sm1_res7,,,,Concentrating solar power (CSP) with solar multiple of 1 potential and generation 8
+csp_sm1_ppl,,,,Concentrating solar power (CSP) with solar multiple of 1 (provides capacity only)
+bio_extr_1,,,,Biomass Extraction
+bio_extr_2,,,,Biomass Extraction
+bio_extr_3,,,,Biomass Extraction
+bio_extr_4,,,,Biomass Extraction
+bio_extr_5,,,,Biomass Extraction
+bio_extr_6,,,,Biomass Extraction
+coal_extr,,,,"Hard coal extraction, world average grade A"
+coal_extr_ch4,,,,Describes efforts in CH4-reduction from coal mining
+flaring_CO2,,,,Co2 emissions from gas flaring
+gas_extr_1,,,,"Natural gas extraction, Cat I = Master et al.14.WPC ""Identified Reserves"""
+gas_extr_2,,,,"Natural gas extraction, Cat II = Master et al.14.WPC ""Mode"" undiscovered natural gas"
+gas_extr_3,,,,"Natural gas extraction, Cat III = Masters  et al.14.WPC Difference between ""Mode and 5%""  undiscovered natural gas"
+gas_extr_4,,,,"Natural gas extraction, Cat IV = Estimated enhanced Recovery (30% of Resources I+II+III)  plus 15% of historical production"
+gas_extr_5,,,,"Natural gas extraction, Cat V = Non-conventional reserves (20% of Coal bed; 15% of fractured Shale; 15% of Tight formation)"
+gas_extr_6,,,,"Natural gas extraction, Cat VI -VII= Non-conventional resources. Rest of Coal bed (80%), fractured Shale (85%) and Tight formation (85%) were aggregated and then distributed to VI (40%) nd VII (60%)"
+gas_extr_mpen,,,,Common Market penetration for all gas extraction technologies
+lignite_extr,,,,"Lignite extraction, world average grade A"
+oil_extr_1,,,,"Crude oil extraction, Cat I = Masters 14 WPC conv. oil reserves"
+oil_extr_1_ch4,,,,Describes efforts in CH4-reduction from oil extraction of Cat I
+oil_extr_2,,,,"Crude oil extraction, Cat II = Masters mode undiscovered conv. oil (incl. NGL)"
+oil_extr_2_ch4,,,,Describes efforts in CH4-reduction from oil extraction of Cat II
+oil_extr_3,,,,"Crude oil extraction, Cat III = Masters 5% - Masters 50%"
+oil_extr_3_ch4,,,,Describes efforts in CH4-reduction from oil extraction of Cat III
+oil_extr_4,,,,"Crude oil extraction, Cat IV = Recoverable ""reserves"" non-conventional oil"
+oil_extr_4_ch4,,,,Describes efforts in CH4-reduction from oil extraction of Cat IV
+oil_extr_5,,,,"Crude oil extraction, Cat V = Recoverable reserves of nonconventional oil = Shale, tarsands/bitumen and heavy oils"
+oil_extr_6,,,,"Crude oil extraction, Cat VI = 20% of estimated occurrences (-reserves) of shale, heavy oils, tarsands/bitumen"
+oil_extr_mpen,,,,Common Market penetration for all oil extraction technologies
+Feeds_1,,,,Conservation cost curve step for industry feedstock demand
+Feeds_2,,,,Conservation cost curve step for industry feedstock demand
+Feeds_3,,,,Conservation cost curve step for industry feedstock demand
+Feeds_4,,,,Conservation cost curve step for industry feedstock demand
+Feeds_5,,,,Conservation cost curve step for industry feedstock demand
+Feeds_con,,,,Joint diffusion constraint for feedstock conservation cost curve steps
+coal_fs,,,,Coal as industry feedstock
+ethanol_fs,,,,Ethanol as industry feedstock
+foil_fs,,,,Fuel oil as industry feedstock
+gas_fs,,,,Gas as industry feedstock
+loil_fs,,,,Lightoil as industry feedstock
+methanol_fs,,,,Methanol as industry feedstock
+coal_gas,,,,Hard coal gasification
+g_ppl_co2scr,,,,CO2 scrubber for natural gas power plant
+gas_bal,,,,Link technology to stabilize gas production
+gas_bio,,,,Synthesis gas production from biomass
+gas_imp,,,,Piped Gas imports
+gas_rc,,,,Gas heating in residential/commercial sector
+gas_t_d,,,,Transmission/Distribution of gas
+gas_t_d_ch4,,,,Transmission/Distribution of gas with CH4 mitigation
+gfc_co2scr,,,,New co2 scrubber for gas fuel cells
+glb_gas_exp,,,,Global net export of gas
+glb_LNG_exp,,,,Global net export of liquified natural gas
+h2_mix,,,,Hydrogen injection into the natural gas system
+LNG_bal,,,,Link technology to stabilize liquified natural gas production
+LNG_imp,,,,LNG Imports
+LNG_regas,,,,LNG regasification (just link; losses are in trade)
+bio_hpl,,,,Biomass heating plant
+coal_hpl,,,,Coal heating plant
+foil_hpl,,,,Fuel oil heating plant
+gas_hpl,,,,Natural gas heating plant
+geo_hpl,,,,Geothermal heat plant
+heat_t/d,,,,Transmission/Distribution of district heat
+po_turbine,,,,Pass out turbine
+glb_lh2_imp,,,,Global net import of liquid hydrogen
+h2_bio,,,,Hydrogen production from biomass with C (via gasification)
+h2_bio_ccs,,,,Hydrogen production from biomass with C (via gasification) with carbon capture and storage
+h2_co2_scrub,,,,CO2 scrubber for h2 production from coal and gas
+h2_coal,,,,Hydrogen production via coal gasification
+h2_coal_ccs,,,,Hydrogen production via coal gasification with carbon capture and storage
+h2_elec,,,,Hydrogen production via electrolysis
+h2_liq,,,,Hydrogen liquefaction
+h2_smr,,,,Hydrogen production via steam-methane reforming of natural gas
+h2_smr_ccs,,,,Hydrogen production via steam-methane reforming of natural gas with carbon capture and storage
+h2_t/d,,,,Transmission/Distribution of gaseous hydrogen (just linking technology)
+h2b_co2_scrub,,,,CO2 scrubber for h2 production from biomass
+lh2_bal,,,,Link technology to stabilize liquid hydrogen production
+lh2_exp,,,,Exports of liquid hydrogen
+lh2_imp,,,,Imports of liquid hydrogen
+lh2_regas,,,,Regasification of liquid hydrogen
+lh2_t/d,,,,Transmission/Distribution of liquid hydrogen
+back_bio_ind,,,,Backstop for diagnosing model infeasibility
+back_fs,,,,Backstop for diagnosing model infeasibility
+back_I,,,,Backstop for diagnosing model infeasibility
+cement_CO2,,,,Co2 emissions from cement production
+cement_co2scr,,,,Cement CO2 scrubber (CCS)
+coal_i,,,,Coal in industry thermal
+elec_i,,,,Electricity in industry thermal
+eth_i,,,,Ethanol (without C) replacement for use as liquid fuel in industry thermal
+foil_i,,,,Fuel oil for thermal uses in industry thermal
+gas_i,,,,Gas for thermal uses in industry thermal
+h2_i,,,,Gaseous hydrogen in industry thermal
+heat_i,,,,District heating for thermal uses in industry thermal
+hp_el_i,,,,Electric heat pump in industry thermal
+hp_gas_i,,,,Natural gas heat pump in industry thermal
+loil_i,,,,Lightoil for thermal uses in industry thermal
+meth_i,,,,Methanol (with C) replacement for use as liquid fuel in industry thermal
+solar_i,,,,Solar thermal in industry thermal sector
+Ispec_1,,,,Conservation cost curve step for industry specific demand
+Ispec_2,,,,Conservation cost curve step for industry specific demand
+Ispec_3,,,,Conservation cost curve step for industry specific demand
+Ispec_4,,,,Conservation cost curve step for industry specific demand
+Ispec_5,,,,Conservation cost curve step for industry specific demand
+Ispec_con,,,,Joint diffusion constraint for industry specific conservation cost curve steps
+Itherm_1,,,,Conservation cost curve step for industry thermal demand
+Itherm_2,,,,Conservation cost curve step for industry thermal demand
+Itherm_3,,,,Conservation cost curve step for industry thermal demand
+Itherm_4,,,,Conservation cost curve step for industry thermal demand
+Itherm_5,,,,Conservation cost curve step for industry thermal demand
+Itherm_con,,,,Joint diffusion constraint for industry thermal conservation cost curve steps
+solar_pv_I,,,,On-site solar photovoltaic power plant (no storage) in industry specific
+h2_fc_I,,,,Hydrogen fuel cell cogeneration system for industry specific
+sp_coal_I,,,,Specific use of coal in industry
+sp_el_I,,,,Specific use of electricity in industry
+sp_eth_I,,,,Ethanol (without net C) replacement for specific use of light oil in industry
+sp_liq_I,,,,Specific use of light oil in industry
+sp_meth_I,,,,Methanol (with C) replacement for  specific use of light oil in industry
+bio_extr_mpen,,,,Slack primary biomass created with new implementation of non commercial biomass
+forest_CO2,,,,Co2 emissions from forests
+sinks_1,,,,Potential for sinks (50. US$)
+sinks_2,,,,Potential for sinks (100. US$)
+sinks_3,,,,Potential for sinks (200. US$)
+sinks_4,,,,Potential for sinks (300. US$)
+eth_bal,,,,Link technology to stabilize ethanol production
+eth_bio,,,,Ethanol synthesis via biomass gasification
+eth_bio_ccs,,,,Ethanol synthesis via biomass gasification with carbon capture and storage
+eth_exp,,,,Exports of ethanol (no accounting of CO2 transferred)
+eth_imp,,,,Imports of ethanol (no accounting of CO2 transferred)
+eth_t/d,,,,Transmission/Distribution of methanol without net C (just linking technology)
+foil_exp,,,,Net exports of crude oil at 95% of oil price
+foil_imp,,,,Net imports of residual oil at 95% of oil price
+foil_t/d,,,,Transmission/Distribution of fueloil  (just linking technology)
+glb_eth_imp,,,,Global net import of ethanol
+glb_foil_exp,,,,Global net export of fuel oil
+glb_foil_imp,,,,Global net import of fuel oil
+glb_loil_exp,,,,Global net export of light oil
+glb_loil_imp,,,,Global net import of light oil
+glb_meth_imp,,,,Global net import of methanol
+glb_oil_exp,,,,Global net export of crude oil
+glb_oil_imp,,,,Global net import of crude oil
+liq_bio,,,,Second Generation Ethanol Production based on Biomass to FTL
+liq_bio_ccs,,,,Second Generation Ethanol Production with carbon capture and storage based on Biomass to FTL
+loil_exp,,,,Net exports of crude oil at 15% above oil price
+loil_imp,,,,Net imports of light oil at 15% above crude price
+loil_std,,,,Standard light oil power-plant
+loil_t/d,,,,Transmission/Distribution of light oil (just linking technology)
+meth_coal,,,,Methanol synthesis via coal gasification
+meth_coal_ccs,,,,Methanol synthesis via coal gasification with carbon capture and storage
+meth_exp,,,,Exports of methanol (no accounting of CO2 transferred)
+meth_imp,,,,Imports of methanol (no accounting of CO2 transferred)
+meth_ng,,,,Methanol synthesis via natural gas
+meth_ng_ccs,,,,Methanol synthesis via natural gas with carbon capture and storage
+meth_t/d,,,,Transmission/Distribution of methanol with C
+oil_bal,,,,Link technology to stabilize crude oil production
+oil_exp,,,,Net exports of crude oil at 100% of oil price
+oil_imp,,,,Net imports of oil
+plutonium_prod,,,,Plutonium production
+ref_hil,,,,New deeply upgraded refineries
+ref_lol,,,,Existing refineries (low yield)
+SO2_scrub_ref,,,,SO2 scrubber for refineries
+syn_liq,,,,Coal liquefaction and light oil synthesis
+syn_liq_ccs,,,,Coal liquefaction and light oil synthesis with carbon capture and storage
+adipic_thermal,,,,Thermal destruction tech for adipic acid sector
+ammonia_secloop,,,,Ammonia Secondary Loop Systems
+enre_con,,,,Joint diffusion constraint for enteric fermentation mitigation technologies
+ent_red1,,,,Mitigation for CH4 emissions from animals directly
+ent_red2,,,,Mitigation for CH4 emissions from animals directly
+ent_red3,,,,Mitigation for CH4 emissions from animals directly
+landfill_compost1,,,,Landfill mitigation technology (composting) technology 1 for CH4 mitigation
+landfill_compost2,,,,Landfill mitigation technology (composting) technology 2 for CH4 mitigation
+landfill_direct1,,,,Landfill mitigation technology (direct) 1 for CH4 mitigation
+landfill_direct2,,,,Landfill mitigation technology (direct) 1 for CH4 mitigation
+landfill_ele,,,,Landfill mitigation technology (ele) 1 for CH4 mitigation
+landfill_flaring,,,,Landfill mitigation technology (flaring) 1 for CH4 mitigation
+landfill_heatprdn,,,,Landfill mitigation technology (heat production) 1 for CH4 mitigation
+landfill_oxdn,,,,Landfill mitigation technology (oxidation) 1 for CH4 mitigation
+leak_repair,,,,"Leak-repairs, HFC-134a from refrigeration & AC(SR)"
+leak_repairsf6,,,,Recycling gas carts for SF6 recovery during assembly of gas insulated equipment
+lfil_con,,,,Joint diffusion constraint for landfill mitigation technologies
+manu_con,,,,Joint diffusion constraint for manure management+B249 mitigation technologies
+meth_bal,,,,Link technology to stabilize methanol production
+mvac_co2,,,,Transcritical vapor cycle CO2 systems for mobile vehicle air conditioners
+recycling_gas1,,,,Recycling gas carts for SF6 recovery during maintenance of gas insulated equipment(SR)
+refrigerant_recover,,,,"Recovery of refrigerant, HFC-134a from refrigeration and AC (SR)"
+repl_hc,,,,Replacement with HC for foams
+replacement_so2,,,,Replacing SF6 by SO2(SR)
+rice_red1,,,,Mitigation for CH4 emissions from rice
+rice_red2,,,,Mitigation for CH4 emissions from rice
+rice_red3,,,,Mitigation for CH4 emissions from rice
+rire_con,,,,Joint diffusion constraint for rice cultivation mitigation technologies
+soil_red1,,,,Mitigation for N2Oemissions from soil
+soil_red2,,,,Mitigation for N2Oemissions from soil
+soil_red3,,,,Mitigation for N2Oemissions from soil
+vertical_stud,,,,Soderberg process for CF4 from aluminum (SR)
+u5-reproc,,,,Uranium reprocessing
+Uran_extr,,,,"Uranium extraction, milling for FBR blanket"
+uran2u5,,,,"Uranium extraction, milling, fluorination and enrichment per t U5"
+bco2_tr_dis,,,,Technology for co2 transportation and disposal from biomass technologies
+co2_tr_dis,,,,Technology for co2 transportation and disposal
+back_rc,,,,Backstop for diagnosing model infeasibility
+solar_rc,,,,Solar thermal in residential/commercial sector
+biomass_rc,,,,Biomass with C for heating in residential/commercial sector
+coal_rc,,,,Coal heating in residential/commercial sector
+elec_rc,,,,Electricity heating in residential/commercial sector
+eth_rc,,,,Ethanol (without C) replacement for use as liquid fuel in residential/commercial
+foil_rc,,,,Fuel oil heating in residential/commercial sector
+h2_rc,,,,Hydrogen (gaseous) catalytic heating in the residential/commercial sector
+heat_rc,,,,District heating in residential/commercial sector
+hp_el_rc,,,,Electric heat pump in residential/commercial sector
+hp_gas_rc,,,,Natural gas heat pump in residential/commercial sector
+loil_rc,,,,Lightoil heating in residential/commercial sector
+meth_rc,,,,Methanol (with C) replacement for use as liquid fuel in residential/commercial
+RCspec_1,,,,Conservation cost curve step for residential/commercial specific demand
+RCspec_2,,,,Conservation cost curve step for residential/commercial specific demand
+RCspec_3,,,,Conservation cost curve step for residential/commercial specific demand
+RCspec_4,,,,Conservation cost curve step for residential/commercial specific demand
+RCspec_5,,,,Conservation cost curve step for residential/commercial specific demand
+RCspec_con,,,,Joint diffusion constraint for residential/commercial specific conservation cost curve steps
+RCtherm_1,,,,Conservation cost curve step for residential/commercial thermal demand
+RCtherm_2,,,,Conservation cost curve step for residential/commercial thermal demand
+RCtherm_3,,,,Conservation cost curve step for residential/commercial thermal demand
+RCtherm_4,,,,Conservation cost curve step for residential/commercial thermal demand
+RCtherm_5,,,,Conservation cost curve step for residential/commercial thermal demand
+RCtherm_con,,,,Joint diffusion constraint for residential/commercial thermal conservation cost curve steps
+solar_pv_RC,,,,Specific use of on-site solar photovoltaic power plant (no storage) in residential/commercial
+sp_el_RC,,,,Specific use of electricity in residential/commercial
+h2_fc_RC,,,,Specific use of hydrogen fuel cell cogeneration system in res/comm
+bio_extr_chp,,,,"Supply of biomass without net C emissions;  defined here as agricultural wastes, and other crops with cycle of 1 year or less"
+bio_ppl_co2scr,,,,New coal scrubber for power plants
+biomass_i,,,,Biomass with C in industry thermal
+biomass_nc,,,,Non-commercial biomass with C
+biomass_t/d,,,,Transmission/Distribution of biomass with C
+c_ppl_co2scr,,,,New coal scrubber for coal power plants
+cfc_co2scr,,,,Co2 scrubber for coal fuel cells (CCS)
+coal_bal,,,,Link technology to stabilize coal production
+coal_exp,,,,Net exports of coal at fixed price of about US$ 42/tce
+coal_imp,,,,Net imports of coal
+coal_t/d,,,,Transmission/Distribution of coal
+coal_t/d-in-06%,,,,Transmission/Distribution of coal industry like coal_t/d but imported coal  with 0.6% S content
+coal_t/d-in-SO2,,,,Transmission/Distribution of coal industry like coal_t/d but processed coal
+coal_t/d-rc-06%,,,,Transmission/Distribution of coal residential/commercial like coal_t/d but imported coal with 0.6% S content
+coal_t/d-rc-SO2,,,,Transmission/Distribution of coal like coal_t/d but processed coal
+glb_coal_exp,,,,Global net export of coal
+glb_coal_imp,,,,Global net import of coal
+back_trp,,,,Backstop for diagnosing model infeasibility
+coal_trp,,,,Coal-based transport
+elec_trp,,,,Electricity-based transport
+eth_fc_trp,,,,Ethanol (without net C) fuel cell-based transport
+eth_ic_trp,,,,Ethanol (without net C) ic-engine-based transport
+foil_trp,,,,Fueloil-based transport
+gas_trp,,,,Gas-based transport
+h2_fc_trp,,,,Hydrogen fuel cell-based transport (plus off-hours electricity generation)
+loil_trp,,,,Lightoil-based transport
+meth_fc_trp,,,,Methanol (with C) fuel cell-based transport
+meth_ic_trp,,,,Methanol (with C) ic-engine-based transport
+Trans_1,,,,Conservation cost curve step for transport demand
+Trans_2,,,,Conservation cost curve step for transport demand
+Trans_3,,,,Conservation cost curve step for transport demand
+Trans_4,,,,Conservation cost curve step for transport demand
+Trans_5,,,,Conservation cost curve step for transport demand
+Trans_con,,,,Joint diffusion constraint for transport conservation cost curve steps
+foil_bunker,,,,Fuel oil demand for international shipping bunkers (global trade)
+loil_bunker,,,,Light oil demand for international shipping bunkers (global trade)
+meth_bunker,,,,Methanol demand for international shipping bunkers (global trade)
+eth_bunker,,,,Ethanol demand for international shipping bunkers (global trade)
+LNG_bunker,,,,Liquified natural gas demand for international shipping bunkers (global trade)
+LH2_bunker,,,,Liquified hydrogen  demand for international shipping bunkers (global trade)
+LH2_tobunker,,,,Added in the ScenarioMIP7/SSP2024 project.
+LNG_occ_bunker,,,,Added in the ScenarioMIP7/SSP2024 project.
+LNG_tobunker,,,,Added in the ScenarioMIP7/SSP2024 project.
+NH3_tobunker,,,,Added in the ScenarioMIP7/SSP2024 project.
+eth_tobunker,,,,Added in the ScenarioMIP7/SSP2024 project.
+foil_occ_bunker,,,,Added in the ScenarioMIP7/SSP2024 project.
+loil_occ_bunker,,,,Added in the ScenarioMIP7/SSP2024 project.
+loil_tobunker,,,,Added in the ScenarioMIP7/SSP2024 project.
+meth_tobunker,,,,Added in the ScenarioMIP7/SSP2024 project.
