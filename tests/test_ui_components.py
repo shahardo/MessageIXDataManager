@@ -1017,6 +1017,10 @@ class TestParameterTreeWidget:
             ('duration_param', 'Technical'),
             ('operation_cost', 'Operational'),
             ('bound_limit', 'Bounds & Constraints'),
+            ('capacity_lo', 'Bounds & Constraints'),
+            ('capacity_up', 'Bounds & Constraints'),
+            ('flow_lo', 'Bounds & Constraints'),
+            ('flow_up', 'Bounds & Constraints'),
             ('unknown_param', 'Other'),
         ]
 

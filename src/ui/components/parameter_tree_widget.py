@@ -174,6 +174,11 @@ class ParameterTreeWidget(QTreeWidget):
         # Environmental (check first since emission_factor contains 'factor')
         if any(keyword in name_lower for keyword in ['emission', 'emiss', 'carbon', 'co2']):
             return "Environmental"
+        
+        # Bounds and constraints (check before capacity since capacity_lo should be bounds)
+        elif (any(keyword in name_lower for keyword in ['bound', 'limit', 'max', 'min']) or
+              param_name.endswith('_lo') or param_name.endswith('_up')):
+            return "Bounds & Constraints"
 
         # Operational (check before Economic since operation_cost should be Operational)
         elif any(keyword in name_lower for keyword in ['operation', 'oper', 'maintenance']):
@@ -198,10 +203,6 @@ class ParameterTreeWidget(QTreeWidget):
         # Temporal
         elif any(keyword in name_lower for keyword in ['duration', 'lifetime', 'year']):
             return "Temporal"
-
-        # Bounds and constraints
-        elif any(keyword in name_lower for keyword in ['bound', 'limit', 'max', 'min']):
-            return "Bounds & Constraints"
 
         # Default category
         else:
