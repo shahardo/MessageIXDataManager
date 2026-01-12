@@ -19,7 +19,9 @@ The application icon is inspired by the official MessageIX logo and represents t
 
 - `messageix_data_manager.ico`: Main Windows ICO file with multiple sizes (16x16 to 256x256)
 - `icon_{size}x{size}.png`: Individual PNG files for each size
-- `generate_icon.py`: Python script to regenerate icons programmatically
+- `excel_icon_{size}x{size}.png`: Excel spreadsheet icons for XLSX files (16x16, 32x32, 48x48, 64x64)
+- `generate_icon.py`: Python script to regenerate main application icons programmatically
+- `generate_excel_icon.py`: Python script to regenerate Excel icons programmatically
 
 ## Usage
 

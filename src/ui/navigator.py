@@ -8,7 +8,7 @@ with support for file removal and loading new files.
 import os
 from typing import List, Optional
 from PyQt5.QtWidgets import QTreeWidget, QTreeWidgetItem, QPushButton, QHBoxLayout, QWidget, QHeaderView
-from PyQt5.QtCore import Qt, pyqtSignal, QEvent
+from PyQt5.QtCore import Qt, pyqtSignal, QEvent, QSize
 from PyQt5.QtGui import QIcon, QResizeEvent
 from .ui_styler import UIStyler
 
@@ -50,6 +50,7 @@ class ProjectNavigator(QTreeWidget):
         self.setHeaderLabels(["Files", ""])  # Two columns: filename and action
         self.input_files: List[str] = []  # Store input file paths
         self.results_files: List[str] = []  # Store results file paths
+        self.excel_icon = self._load_excel_icon()
         self._setup_ui()
         self._load_recent_files()
         self.itemSelectionChanged.connect(self._on_item_selected)
@@ -118,6 +119,43 @@ class ProjectNavigator(QTreeWidget):
         # TODO: Implement actual recent files management
         print(f"Adding recent file: {file_path} (type: {file_type})")
 
+    def _load_excel_icon(self) -> QIcon:
+        """
+        Load the Excel icon for XLSX files.
+
+        Returns:
+            QIcon: Excel icon with multiple sizes, or default file icon if loading fails
+        """
+        excel_icon = QIcon()
+        icons_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "assets", "icons")
+
+        # Add multiple PNG sizes to the icon
+        sizes = [64, 48, 32, 16]
+        for size in sizes:
+            png_path = os.path.join(icons_dir, f"excel_icon_{size}x{size}.png")
+            if os.path.exists(png_path):
+                excel_icon.addFile(png_path, QSize(size, size))
+
+        # Return the icon (will be null if no files were found, which is handled)
+        return excel_icon
+
+    def _get_file_icon(self, file_path: str) -> QIcon:
+        """
+        Get the appropriate icon for a file based on its extension.
+
+        Args:
+            file_path: Path to the file
+
+        Returns:
+            QIcon: Excel icon for XLSX files, default file icon otherwise
+        """
+        if file_path.lower().endswith('.xlsx') or file_path.lower().endswith('.xls'):
+            if not self.excel_icon.isNull():
+                return self.excel_icon
+
+        # Default to standard file icon
+        return self.style().standardIcon(self.style().SP_FileIcon)
+
     def _remove_file(self, file_path: str, file_type: str) -> None:
         """
         Handle file removal request.
@@ -160,7 +198,7 @@ class ProjectNavigator(QTreeWidget):
                         file_item.setText(0, os.path.basename(file_path))
                         file_item.setToolTip(0, file_path)
                         file_item.setData(0, Qt.UserRole, ("input", file_path))  # Store file type and path
-                        file_item.setIcon(0, self.style().standardIcon(self.style().SP_FileIcon))
+                        file_item.setIcon(0, self._get_file_icon(file_path))
 
                         # Add remove button in second column
                         remove_btn = QPushButton("×")
@@ -200,7 +238,7 @@ class ProjectNavigator(QTreeWidget):
                         file_item.setText(0, os.path.basename(file_path))
                         file_item.setToolTip(0, file_path)
                         file_item.setData(0, Qt.UserRole, ("results", file_path))  # Store file type and path
-                        file_item.setIcon(0, self.style().standardIcon(self.style().SP_FileIcon))
+                        file_item.setIcon(0, self._get_file_icon(file_path))
 
                         # Add remove button in second column
                         remove_btn = QPushButton("×")
