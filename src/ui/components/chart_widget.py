@@ -43,6 +43,31 @@ class ChartWidget(QWidget):
 
     def initialize_with_ui_widgets(self):
         """Initialize component with UI widgets assigned externally from .ui file"""
+        # Set icons for chart type buttons
+        from PyQt5.QtCore import QSize
+
+        self.simple_bar_btn.setIcon(QIcon('assets/icons/icon-bar_chart.png'))
+        self.simple_bar_btn.setIconSize(QSize(28, 28))
+        self.stacked_bar_btn.setIcon(QIcon('assets/icons/icon-stacked_bar.png'))
+        self.stacked_bar_btn.setIconSize(QSize(28, 28))
+        self.line_chart_btn.setIcon(QIcon('assets/icons/icon-line_chart.png'))
+        self.line_chart_btn.setIconSize(QSize(28, 28))
+        self.stacked_area_btn.setIcon(QIcon('assets/icons/icon-area_chart.png'))
+        self.stacked_area_btn.setIconSize(QSize(28, 28))
+
+        # Remove text and set tooltips
+        self.simple_bar_btn.setText('')
+        self.simple_bar_btn.setToolTip('Simple Bar Chart')
+
+        self.stacked_bar_btn.setText('')
+        self.stacked_bar_btn.setToolTip('Stacked Bar Chart')
+
+        self.line_chart_btn.setText('')
+        self.line_chart_btn.setToolTip('Line Chart')
+
+        self.stacked_area_btn.setText('')
+        self.stacked_area_btn.setToolTip('Stacked Area Chart')
+
         # Connect signals for existing widgets
         self.simple_bar_btn.clicked.connect(lambda: self._on_chart_type_changed('bar'))
         self.stacked_bar_btn.clicked.connect(lambda: self._on_chart_type_changed('stacked_bar'))
