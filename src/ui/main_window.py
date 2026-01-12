@@ -544,7 +544,7 @@ class MainWindow(QMainWindow):
 
         # Apply year clipping based on scenario options
         scenario = self._get_current_scenario(is_results)
-        if scenario and transformed_df is not None and not transformed_df.empty:
+        if scenario and transformed_df is not None and not transformed_df.empty and scenario.options.get('YearsLimitEnabled', True):
             min_year = scenario.options.get('MinYear', 2020)
             max_year = scenario.options.get('MaxYear', 2050)
 

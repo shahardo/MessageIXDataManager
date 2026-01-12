@@ -264,8 +264,20 @@ class ParameterTreeWidget(QTreeWidget):
         layout = QVBoxLayout(dialog)
 
         # Create form layout for options
-        from PyQt5.QtWidgets import QFormLayout, QLineEdit, QDialogButtonBox
-        form_layout = QFormLayout()
+        from PyQt5.QtWidgets import QFormLayout, QLineEdit, QDialogButtonBox, QGroupBox, QCheckBox
+
+        # Years Limit checkbox (master control)
+        years_limit_checkbox = QCheckBox("Years Limit")
+        years_limit_checkbox.setChecked(self.current_scenario.options.get('YearsLimitEnabled', True))
+        layout.addWidget(years_limit_checkbox)
+
+        # Group box for year limits
+        years_group = QGroupBox()
+        years_group.setEnabled(True)
+        layout.addWidget(years_group)
+
+        # Create form layout inside the group box
+        form_layout = QFormLayout(years_group)
 
         # MinYear field
         min_year_edit = QLineEdit(str(self.current_scenario.options.get('MinYear', 2020)))
@@ -275,20 +287,23 @@ class ParameterTreeWidget(QTreeWidget):
         max_year_edit = QLineEdit(str(self.current_scenario.options.get('MaxYear', 2050)))
         form_layout.addRow("Max Year:", max_year_edit)
 
-        layout.addLayout(form_layout)
+        # Connect checkbox to enable/disable the group
+        years_limit_checkbox.toggled.connect(years_group.setEnabled)
 
         # Add save and cancel buttons
         button_box = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
-        button_box.accepted.connect(lambda: self._save_options(dialog, min_year_edit, max_year_edit))
+        button_box.accepted.connect(lambda: self._save_options(dialog, min_year_edit, max_year_edit, years_limit_checkbox))
         button_box.rejected.connect(dialog.reject)
         layout.addWidget(button_box)
 
-        dialog.resize(300, 150)
+        dialog.resize(300, 180)
         dialog.exec_()
 
-    def _save_options(self, dialog, min_year_edit, max_year_edit):
+    def _save_options(self, dialog, min_year_edit, max_year_edit, years_limit_checkbox):
         """Save the options back to the scenario"""
         try:
+            # If years limit is unchecked, we could set some default values or handle differently
+            # For now, we'll still save the values but they might not be used if limit is disabled
             min_year = int(min_year_edit.text())
             max_year = int(max_year_edit.text())
 
@@ -299,6 +314,7 @@ class ParameterTreeWidget(QTreeWidget):
 
             self.current_scenario.options['MinYear'] = min_year
             self.current_scenario.options['MaxYear'] = max_year
+            self.current_scenario.options['YearsLimitEnabled'] = years_limit_checkbox.isChecked()
 
             # Emit signal to refresh chart
             self.options_changed.emit()

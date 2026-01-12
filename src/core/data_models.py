@@ -24,9 +24,10 @@ class ScenarioData:
         self.mappings: Dict[str, pd.DataFrame] = {} # optional mappings
         self.modified: set[str] = set()             # tracked changed parameters
         self.change_history: List[dict] = []        # undo/redo stack
-        self.options: Dict[str, int] = {            # scenario options
+        self.options: Dict[str, Any] = {            # scenario options
             'MinYear': 2020,
-            'MaxYear': 2050
+            'MaxYear': 2050,
+            'YearsLimitEnabled': True
         }
 
     def get_parameter_names(self) -> List[str]:
