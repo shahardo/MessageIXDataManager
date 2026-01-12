@@ -215,6 +215,23 @@ class LoggingManager:
         message = f"Results file load {'successful' if success else 'failed'}: {os.path.basename(file_path)}"
         self.log(level, 'RESULTS_LOAD', message, details)
 
+    # Convenience methods for different log levels
+    def log_debug(self, message: str, details: Optional[Dict[str, Any]] = None):
+        """Log a debug message"""
+        self.log('DEBUG', 'GENERAL', message, details)
+
+    def log_info(self, message: str, details: Optional[Dict[str, Any]] = None):
+        """Log an info message"""
+        self.log('INFO', 'GENERAL', message, details)
+
+    def log_warning(self, message: str, details: Optional[Dict[str, Any]] = None):
+        """Log a warning message"""
+        self.log('WARNING', 'GENERAL', message, details)
+
+    def log_error(self, message: str, details: Optional[Dict[str, Any]] = None):
+        """Log an error message"""
+        self.log('ERROR', 'GENERAL', message, details)
+
     def get_recent_logs(self, limit: int = 100, category: Optional[str] = None) -> list:
         """Get recent log entries from database"""
         try:

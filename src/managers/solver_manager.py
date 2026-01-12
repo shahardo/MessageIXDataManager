@@ -97,13 +97,19 @@ class SolverManager:
         Get list of available solvers.
 
         Detects which optimization solvers are installed and available for use.
-        Checks for common solvers like CPLEX, Gurobi, and GLPK.
+        Checks for MessageIX/GAMS integration and traditional solvers like CPLEX, Gurobi, and GLPK.
 
         Returns:
             List of available solver names (strings)
         """
-        # This is a simplified check - in reality would detect installed solvers
         solvers: List[str] = []
+
+        # Check for GAMS through MessageIX
+        try:
+            import gamsapi  # noqa: F401
+            solvers.append("gams")
+        except ImportError:
+            pass
 
         # Check for common solvers (simplified)
         try:
