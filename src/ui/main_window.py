@@ -478,6 +478,10 @@ class MainWindow(QMainWindow):
         scenario = self._get_current_scenario(True)
         if scenario:
             self.param_tree.update_results(scenario)
+        else:
+            # No results scenario available - clear tree and switch back to input view
+            self.param_tree.clear()
+            self._switch_to_input_view()
 
     def _clear_data_display(self):
         """Clear the data display and chart"""
