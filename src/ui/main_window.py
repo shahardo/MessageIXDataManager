@@ -7,9 +7,9 @@ MESSAGEix input files and results.
 """
 
 from PyQt5.QtWidgets import (
-    QMainWindow, QSplitter, QFileDialog, QMessageBox
+    QMainWindow, QSplitter, QFileDialog, QMessageBox, QApplication
 )
-from PyQt5.QtCore import Qt, QSettings
+from PyQt5.QtCore import Qt, QSettings, QPoint
 from PyQt5 import uic
 import os
 import pandas as pd
@@ -21,6 +21,7 @@ from .navigator import ProjectNavigator
 from .components import (
     DataDisplayWidget, ChartWidget, ParameterTreeWidget, FileNavigatorWidget
 )
+from .components.find_widget import FindWidget
 from managers.input_manager import InputManager
 from managers.solver_manager import SolverManager
 from managers.results_analyzer import ResultsAnalyzer
@@ -95,6 +96,14 @@ class MainWindow(QMainWindow):
         # Remember last selected parameters for each file type
         self.last_selected_input_parameter: Optional[str] = None
         self.last_selected_results_parameter: Optional[str] = None
+
+        # Initialize find widget
+        self.find_widget = FindWidget(self)
+        self.find_widget.hide()
+        self.current_search_mode = "parameter"  # "parameter" or "table"
+        self.last_parameter_search = ""  # Remember search text for parameters
+        self.last_table_search = ""      # Remember search text for tables
+        self._connect_find_widget_signals()
 
         # Auto-load last opened files
         self._auto_load_last_files()
@@ -227,6 +236,7 @@ class MainWindow(QMainWindow):
         self.actionRun_Solver.triggered.connect(self._run_solver)
         self.actionStop_Solver.triggered.connect(self._stop_solver)
         self.actionDashboard.triggered.connect(self._show_dashboard)
+        self.actionFind.triggered.connect(self._show_find_widget)
 
         # Connect save actions from UI
         self.actionSave.triggered.connect(self._save_file)
@@ -1215,3 +1225,284 @@ class MainWindow(QMainWindow):
         # Save current session state
         self._save_current_session_state()
         super().closeEvent(event)
+
+    def _connect_find_widget_signals(self):
+        """Connect find widget signals"""
+        self.find_widget.find_next_requested.connect(self._find_next)
+        self.find_widget.find_previous_requested.connect(self._find_previous)
+        self.find_widget.find_text_changed.connect(self._find_text_changed)
+        self.find_widget.closed.connect(self._hide_find_widget)
+
+    def _show_find_widget(self):
+        """Show the find widget based on current context"""
+        # Determine search context based on current focus
+        focus_widget = QApplication.focusWidget()
+
+        # Check if the current focus is on the parameter tree
+        if focus_widget and (focus_widget is self.param_tree or self.param_tree.isAncestorOf(focus_widget)):
+            search_mode = "parameter"
+        # Check if the current focus is on the data table or related widgets
+        elif focus_widget and (focus_widget is self.param_table or self.param_table.isAncestorOf(focus_widget) or
+                               focus_widget is self.tableContainer or self.tableContainer.isAncestorOf(focus_widget)):
+            search_mode = "table"
+        else:
+            # Default to parameter search if focus is unclear
+            search_mode = "parameter"
+
+        # Store the search mode for consistent behavior during the search session
+        self.current_search_mode = search_mode
+
+        # Calculate position based on search mode - ensure within main window bounds
+        main_rect = self.rect()
+        widget_width = 400  # Approximate width of find widget
+        widget_height = 40  # Approximate height of find widget
+
+        if search_mode == "parameter":
+            # Position in top-left area above parameter tree
+            widget_pos = QPoint(20, 30)  # Fixed position near top-left
+        else:
+            # Position above the data table area
+            table_container_rect = self.tableContainer.geometry()
+            # Position at the top-right of the table container
+            widget_pos = QPoint(
+                table_container_rect.right() - widget_width,
+                table_container_rect.top() - widget_height - 5  # 5px above the table
+            )
+
+        # Ensure position is within bounds
+        widget_pos.setX(max(10, min(widget_pos.x(), main_rect.width() - widget_width - 10)))
+        widget_pos.setY(max(10, min(widget_pos.y(), main_rect.height() - widget_height - 10)))
+
+        self.find_widget.show_at_position(widget_pos, search_mode)
+
+        # Restore last search text for this mode
+        if search_mode == "parameter":
+            self.find_widget.set_search_text(self.last_parameter_search)
+        elif search_mode == "table":
+            self.find_widget.set_search_text(self.last_table_search)
+
+        # Ensure the widget gets proper focus
+        QApplication.setActiveWindow(self.find_widget)
+        self.find_widget.search_input.setFocus()
+        self.find_widget.search_input.selectAll()
+
+        # Initialize search if there's existing data
+        if search_mode == "parameter":
+            self._initialize_parameter_search()
+        else:
+            self._initialize_table_search()
+
+    def _hide_find_widget(self):
+        """Hide the find widget"""
+        self.find_widget.hide()
+
+    def _find_next(self, search_text: str):
+        """Find next match"""
+        if self.find_widget.isVisible():
+            # Use stored search mode for consistent behavior
+            if self.current_search_mode == "parameter":
+                self._find_next_parameter(search_text)
+            else:
+                self._find_next_table_cell(search_text)
+
+    def _find_previous(self, search_text: str):
+        """Find previous match"""
+        if self.find_widget.isVisible():
+            # Use stored search mode for consistent behavior
+            if self.current_search_mode == "parameter":
+                self._find_previous_parameter(search_text)
+            else:
+                self._find_previous_table_cell(search_text)
+
+    def _find_text_changed(self, search_text: str):
+        """Handle search text changes - find first match"""
+        # Save the search text for this mode
+        if self.current_search_mode == "parameter":
+            self.last_parameter_search = search_text
+        else:
+            self.last_table_search = search_text
+
+        if self.find_widget.isVisible() and search_text.strip():
+            # Use stored search mode for consistent behavior
+            if self.current_search_mode == "parameter":
+                self._find_first_parameter(search_text)
+            else:
+                self._find_first_table_cell(search_text)
+
+    def _initialize_parameter_search(self):
+        """Initialize parameter search - collect all parameter names"""
+        scenario = self._get_current_scenario(self.current_view == "results")
+        if not scenario:
+            return
+
+        self.parameter_matches = []
+        self.current_param_match_index = -1
+
+        # Collect all parameter names from the tree
+        def collect_parameters(parent_item, path=[]):
+            for i in range(parent_item.childCount()):
+                child = parent_item.child(i)
+                item_name = child.text(0)
+
+                # Skip category headers (they contain counts)
+                if not item_name.startswith(("Parameters", "Results", "Economic", "Variables", "Sets")) and not item_name.endswith(")"):
+                    self.parameter_matches.append((item_name, child))
+
+                # Recursively collect from children
+                collect_parameters(child, path + [item_name])
+
+        root = self.param_tree.invisibleRootItem()
+        collect_parameters(root)
+
+    def _initialize_table_search(self):
+        """Initialize table search - scan all table cells"""
+        self.table_matches = []
+        self.current_table_match_index = -1
+
+        # Scan all cells in the current table view
+        for row in range(self.param_table.rowCount()):
+            for col in range(self.param_table.columnCount()):
+                item = self.param_table.item(row, col)
+                if item:
+                    cell_text = item.text().strip().lower()
+                    if cell_text:
+                        self.table_matches.append((row, col, cell_text))
+
+    def _find_first_parameter(self, search_text: str):
+        """Find first parameter match"""
+        search_lower = search_text.lower().strip()
+        if not search_lower:
+            self.find_widget.update_match_count(0, 0)
+            return
+
+        # Find first match
+        for i, (param_name, tree_item) in enumerate(self.parameter_matches):
+            if search_lower in param_name.lower():
+                self.current_param_match_index = i
+                self._select_parameter_match(i)
+                self.find_widget.update_match_count(i + 1, len([p for p, _ in self.parameter_matches if search_lower in p.lower()]))
+                return
+
+        # No matches found
+        self.find_widget.update_match_count(0, 0)
+
+    def _find_next_parameter(self, search_text: str):
+        """Find next parameter match"""
+        search_lower = search_text.lower().strip()
+        if not search_lower:
+            return
+
+        total_matches = len([p for p, _ in self.parameter_matches if search_lower in p.lower()])
+        if total_matches == 0:
+            return
+
+        # Find next match
+        start_index = (self.current_param_match_index + 1) % len(self.parameter_matches)
+        for i in range(len(self.parameter_matches)):
+            check_index = (start_index + i) % len(self.parameter_matches)
+            param_name, tree_item = self.parameter_matches[check_index]
+            if search_lower in param_name.lower():
+                self.current_param_match_index = check_index
+                self._select_parameter_match(check_index)
+                self.find_widget.update_match_count(check_index + 1, total_matches)
+                return
+
+    def _find_previous_parameter(self, search_text: str):
+        """Find previous parameter match"""
+        search_lower = search_text.lower().strip()
+        if not search_lower:
+            return
+
+        total_matches = len([p for p, _ in self.parameter_matches if search_lower in p.lower()])
+        if total_matches == 0:
+            return
+
+        # Find previous match
+        start_index = (self.current_param_match_index - 1) % len(self.parameter_matches)
+        for i in range(len(self.parameter_matches)):
+            check_index = (start_index - i) % len(self.parameter_matches)
+            param_name, tree_item = self.parameter_matches[check_index]
+            if search_lower in param_name.lower():
+                self.current_param_match_index = check_index
+                self._select_parameter_match(check_index)
+                self.find_widget.update_match_count(check_index + 1, total_matches)
+                return
+
+    def _select_parameter_match(self, match_index: int):
+        """Select the parameter match in the tree"""
+        if 0 <= match_index < len(self.parameter_matches):
+            param_name, tree_item = self.parameter_matches[match_index]
+            self.param_tree.setCurrentItem(tree_item)
+            self.param_tree.scrollToItem(tree_item)
+            # Expand parent categories to show the item
+            parent = tree_item.parent()
+            while parent:
+                parent.setExpanded(True)
+                parent = parent.parent()
+
+    def _find_first_table_cell(self, search_text: str):
+        """Find first table cell match"""
+        search_lower = search_text.lower().strip()
+        if not search_lower:
+            self.find_widget.update_match_count(0, 0)
+            return
+
+        # Find first match
+        for i, (row, col, cell_text) in enumerate(self.table_matches):
+            if search_lower in cell_text:
+                self.current_table_match_index = i
+                self._select_table_match(i)
+                self.find_widget.update_match_count(i + 1, len([c for _, _, c in self.table_matches if search_lower in c]))
+                return
+
+        # No matches found
+        self.find_widget.update_match_count(0, 0)
+
+    def _find_next_table_cell(self, search_text: str):
+        """Find next table cell match"""
+        search_lower = search_text.lower().strip()
+        if not search_lower:
+            return
+
+        total_matches = len([c for _, _, c in self.table_matches if search_lower in c])
+        if total_matches == 0:
+            return
+
+        # Find next match
+        start_index = (self.current_table_match_index + 1) % len(self.table_matches)
+        for i in range(len(self.table_matches)):
+            check_index = (start_index + i) % len(self.table_matches)
+            row, col, cell_text = self.table_matches[check_index]
+            if search_lower in cell_text:
+                self.current_table_match_index = check_index
+                self._select_table_match(check_index)
+                self.find_widget.update_match_count(check_index + 1, total_matches)
+                return
+
+    def _find_previous_table_cell(self, search_text: str):
+        """Find previous table cell match"""
+        search_lower = search_text.lower().strip()
+        if not search_lower:
+            return
+
+        total_matches = len([c for _, _, c in self.table_matches if search_lower in c])
+        if total_matches == 0:
+            return
+
+        # Find previous match
+        start_index = (self.current_table_match_index - 1) % len(self.table_matches)
+        for i in range(len(self.table_matches)):
+            check_index = (start_index - i) % len(self.table_matches)
+            row, col, cell_text = self.table_matches[check_index]
+            if search_lower in cell_text:
+                self.current_table_match_index = check_index
+                self._select_table_match(check_index)
+                self.find_widget.update_match_count(check_index + 1, total_matches)
+                return
+
+    def _select_table_match(self, match_index: int):
+        """Select the table cell match"""
+        if 0 <= match_index < len(self.table_matches):
+            row, col, cell_text = self.table_matches[match_index]
+            self.param_table.setCurrentCell(row, col)
+            self.param_table.scrollToItem(self.param_table.item(row, col))
