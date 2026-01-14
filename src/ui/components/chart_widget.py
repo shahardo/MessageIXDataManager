@@ -91,11 +91,24 @@ class ChartWidget(QWidget):
 
     def update_chart(self, df: pd.DataFrame, parameter_name: str, is_results: bool = False):
         """Update the chart with data from a DataFrame"""
-        # Ensure button states reflect current chart type
-        self._update_button_states()
+        try:
+            print(f"DEBUG: update_chart called with df shape: {df.shape}, parameter_name: {parameter_name}, is_results: {is_results}")
+            print(f"DEBUG: df columns: {list(df.columns)}")
+            print(f"DEBUG: df index: {list(df.index)}")
 
-        if df.empty or df.shape[1] == 0:
-            self._show_chart_placeholder("No data available for chart")
+            # Ensure button states reflect current chart type
+            self._update_button_states()
+
+            if df.empty or df.shape[1] == 0:
+                print("DEBUG: df is empty or has no columns, showing placeholder")
+                self._show_chart_placeholder("No data available for chart")
+                return
+
+            print(f"DEBUG: proceeding with chart creation, current_chart_type: {self.current_chart_type}")
+        except Exception as e:
+            print(f"ERROR in update_chart setup: {e}")
+            import traceback
+            traceback.print_exc()
             return
 
         # Create chart based on current chart type

@@ -8,7 +8,7 @@ from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QTableWidget, QTableWidgetItem,
     QLabel, QPushButton, QComboBox, QGroupBox, QCheckBox, QHeaderView
 )
-from PyQt5.QtCore import Qt, pyqtSignal
+from PyQt5.QtCore import Qt, pyqtSignal, QTimer
 import pandas as pd
 import numpy as np
 from typing import Optional, Dict, List, Union, Any, TYPE_CHECKING
@@ -35,6 +35,11 @@ class DataDisplayWidget(QWidget):
         self.property_selectors = {}
         self.hide_empty_checkbox = None
         self.tech_descriptions = tech_descriptions or {}
+
+        # Debouncing timer for filter changes
+        self._filter_change_timer = QTimer()
+        self._filter_change_timer.setSingleShot(True)
+        self._filter_change_timer.timeout.connect(self._emit_display_mode_changed)
 
         # Widgets will be assigned externally from .ui file
         self.param_title: QLabel
@@ -84,50 +89,66 @@ class DataDisplayWidget(QWidget):
             return
 
         # Handle view mode (raw vs advanced)
-        if is_results:
-            # For results data, always show transformed data (years as indices, year column hidden)
-            try:
-                display_df = self.transform_to_display_format(
-                    df,
-                    is_results=True,
-                    current_filters=None,
-                    hide_empty=self.hide_empty_columns,
-                    for_chart=True
-                )
-            except Exception as e:
-                print(f"Transformation failed for results: {e}")
-                display_df = df
-            self._setup_property_selectors(df)
-        else:
-            # For input data, use raw/advanced modes
-            if self.table_display_mode == "advanced":
+        display_df = df  # Default fallback
+        try:
+            if is_results:
+                # For results data, always show transformed data (years as indices, year column hidden)
                 try:
                     display_df = self.transform_to_display_format(
                         df,
-                        is_results=False,
-                        current_filters=None,
+                        is_results=True,
+                        current_filters=self._get_current_filters(),
                         hide_empty=self.hide_empty_columns,
                         for_chart=True
                     )
                 except Exception as e:
-                    print(f"Transformation failed for advanced: {e}")
+                    print(f"Transformation failed for results: {e}")
                     display_df = df
                 self._setup_property_selectors(df)
             else:
-                display_df = df
+                # For input data, use raw/advanced modes
+                if self.table_display_mode == "advanced":
+                    try:
+                        display_df = self.transform_to_display_format(
+                            df,
+                            is_results=False,
+                            current_filters=self._get_current_filters(),
+                            hide_empty=self.hide_empty_columns,
+                            for_chart=True
+                        )
+                    except Exception as e:
+                        print(f"Transformation failed for advanced: {e}")
+                        display_df = df
+                    self._setup_property_selectors(df)
+                else:
+                    display_df = df
+        except Exception as e:
+            print(f"Error in display_data_table view mode handling: {e}")
+            display_df = df
 
         # Show property selectors when data is transformed
         show_selectors = is_results or (not is_results and self.table_display_mode == "advanced")
         self.selector_container.setVisible(show_selectors)
 
-        # Set up table dimensions and headers
-        self._configure_table(display_df, is_results)
+        try:
+            # Set up table dimensions and headers
+            self._configure_table(display_df, is_results)
 
-        # Format and populate table data
-        self._populate_table(display_df, data)
+            # Format and populate table data
+            self._populate_table(display_df, data)
 
-        # Enable controls and update status
-        self._finalize_display(display_df, data, title_prefix, is_results)
+            # Enable controls and update status
+            self._finalize_display(display_df, data, title_prefix, is_results)
+        except Exception as e:
+            print(f"Error in table display setup: {e}")
+            # Try to show a basic table with the original data as fallback
+            try:
+                self._configure_table(df, is_results)
+                self._populate_table(df, data)
+                self._finalize_display(df, data, title_prefix, is_results)
+            except Exception as fallback_e:
+                print(f"Fallback table display also failed: {fallback_e}")
+                self._clear_table_display()
 
     def _clear_table_display(self):
         """Clear the table display when no data is available"""
@@ -318,7 +339,10 @@ class DataDisplayWidget(QWidget):
         # Add checkbox for hiding empty columns
         self.hide_empty_checkbox = QCheckBox("Hide Empty Columns")
         UIStyler.setup_checkbox(self.hide_empty_checkbox)
+        # Block signals while setting initial state to prevent unwanted emissions
+        self.hide_empty_checkbox.blockSignals(True)
         self.hide_empty_checkbox.setChecked(self.hide_empty_columns)
+        self.hide_empty_checkbox.blockSignals(False)
         self.hide_empty_checkbox.stateChanged.connect(self._on_hide_empty_changed)
         selector_layout.addWidget(self.hide_empty_checkbox)
 
@@ -347,7 +371,10 @@ class DataDisplayWidget(QWidget):
 
             # Restore previous selection if available
             if col in current_selections and current_selections[col] in [combo.itemText(i) for i in range(combo.count())]:
+                # Block signals while setting initial state to prevent unwanted emissions
+                combo.blockSignals(True)
                 combo.setCurrentText(current_selections[col])
+                combo.blockSignals(False)
 
             # Connect signal
             combo.currentTextChanged.connect(self._on_selector_changed)
@@ -359,9 +386,33 @@ class DataDisplayWidget(QWidget):
         selector_layout.addStretch()
 
     def _on_selector_changed(self):
-        """Handle selector value changes - refresh the table display"""
-        # Emit signal to refresh display (will be connected by parent)
-        self.display_mode_changed.emit()
+        """Handle selector value changes - refresh the table display with debouncing"""
+        try:
+            # Get the sender (the combo box that changed)
+            sender = self.sender()
+            if sender and sender.currentText() == "All":
+                # Selecting "All" should clear filters immediately without delay
+                # Stop any pending timer
+                if self._filter_change_timer.isActive():
+                    self._filter_change_timer.stop()
+                # Emit immediately
+                self.display_mode_changed.emit()
+            else:
+                # Other filter changes are debounced
+                self._filter_change_timer.start(100)
+        except Exception as e:
+            print(f"ERROR in _on_selector_changed: {e}")
+            import traceback
+            traceback.print_exc()
+
+    def _emit_display_mode_changed(self):
+        """Actually emit the display mode changed signal after debouncing"""
+        try:
+            self.display_mode_changed.emit()
+        except Exception as e:
+            print(f"ERROR in _emit_display_mode_changed: {e}")
+            import traceback
+            traceback.print_exc()
 
     def _on_hide_empty_changed(self):
         """Handle hide empty columns checkbox state change"""
@@ -376,11 +427,9 @@ class DataDisplayWidget(QWidget):
         # Get the new value from the cell
         item = self.param_table.item(row, col)
         if not item:
-            print("DEBUG: No item found")  # Debug print
             return
 
         new_value_str = item.text().strip()
-        print(f"DEBUG: Cell text: '{new_value_str}'")  # Debug print
 
         # Parse the value (handle empty strings as 0 or NaN)
         try:
@@ -408,8 +457,6 @@ class DataDisplayWidget(QWidget):
                 self.cell_value_changed.emit("raw", row, column_name, new_value)
 
         self.chart_update_needed.emit()
-
-        print("DEBUG: Cell change handling complete")  # Debug print
 
     def _sync_pivot_change_to_raw_data(self, row: int, col: int, new_value: float):
         """Sync a change made in pivot mode back to the raw data"""
@@ -455,25 +502,35 @@ class DataDisplayWidget(QWidget):
         Returns:
             Transformed DataFrame ready for display
         """
-        if df.empty:
+        try:
+            print(f"DEBUG: transform_to_display_format called - is_results={is_results}, for_chart={for_chart}")
+            print(f"DEBUG: input df shape: {df.shape}, columns: {list(df.columns)}")
+            print(f"DEBUG: current_filters: {current_filters}")
+
+            if df.empty:
+                return df
+
+            if hide_empty is None:
+                hide_empty = self.hide_empty_columns if not for_chart else False  # Charts typically don't hide empty columns
+
+            # Identify column types
+            column_info = self._identify_columns(df)
+
+            # Apply filters
+            filtered_df = self._apply_filters(df, current_filters, column_info)
+
+            # Transform data structure
+            transformed_df = self._transform_data_structure(filtered_df, column_info, is_results)
+
+            # Clean and finalize output
+            final_df = self._clean_output(transformed_df, hide_empty, is_results)
+
+            return final_df
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            # Return original df as fallback
             return df
-
-        if hide_empty is None:
-            hide_empty = self.hide_empty_columns if not for_chart else False  # Charts typically don't hide empty columns
-
-        # Identify column types
-        column_info = self._identify_columns(df)
-
-        # Apply filters
-        filtered_df = self._apply_filters(df, current_filters, column_info)
-
-        # Transform data structure
-        transformed_df = self._transform_data_structure(filtered_df, column_info, is_results)
-
-        # Clean and finalize output
-        final_df = self._clean_output(transformed_df, hide_empty, is_results)
-
-        return final_df
 
     def _transform_to_advanced_view(self, df: pd.DataFrame, current_filters: dict = None,
                                    is_results: bool = False, hide_empty: bool = None) -> pd.DataFrame:
@@ -515,12 +572,19 @@ class DataDisplayWidget(QWidget):
 
     def _apply_filters(self, df: pd.DataFrame, filters: Optional[Dict[str, str]], column_info: dict) -> pd.DataFrame:
         """Apply current filter selections to DataFrame"""
-        filtered_df = df.copy()
-        if filters:
-            for filter_col, filter_value in filters.items():
-                if filter_value and filter_value != "All" and filter_col in filtered_df.columns:
-                    filtered_df = filtered_df[filtered_df[filter_col] == filter_value]
-        return filtered_df
+        try:
+            filtered_df = df.copy()
+            if filters:
+                for filter_col, filter_value in filters.items():
+                    if filter_value and filter_value != "All" and filter_col in filtered_df.columns:
+                        filtered_df = filtered_df[filtered_df[filter_col] == filter_value]
+            return filtered_df
+        except Exception as e:
+            print(f"ERROR in _apply_filters: {e}")
+            import traceback
+            traceback.print_exc()
+            # Return original df as fallback
+            return df
 
     def _transform_data_structure(self, df: pd.DataFrame, column_info: dict, is_results: bool) -> pd.DataFrame:
         """Transform DataFrame structure based on data type"""
@@ -550,29 +614,38 @@ class DataDisplayWidget(QWidget):
 
     def _perform_pivot(self, df: pd.DataFrame, column_info: dict) -> pd.DataFrame:
         """Perform pivot operation on DataFrame"""
-        year_cols = column_info.get('year_cols', [])
-        pivot_cols = column_info.get('pivot_cols', [])
-        value_col = column_info.get('value_col')
+        try:
+            print(f"DEBUG: _perform_pivot called with df shape: {df.shape}")
+            year_cols = column_info.get('year_cols', [])
+            pivot_cols = column_info.get('pivot_cols', [])
+            value_col = column_info.get('value_col')
 
-        if not (year_cols and pivot_cols and value_col):
+            if not (year_cols and pivot_cols and value_col):
+                return df
+
+            # Try different combinations of year and pivot columns
+            for index_col in year_cols:
+                for columns_col in pivot_cols:
+                    try:
+                        pivoted = df.pivot_table(
+                            values=value_col,
+                            index=index_col,
+                            columns=columns_col,
+                            aggfunc=lambda x: x.iloc[0] if len(x) > 0 else 0
+                        ).fillna(0)
+                        return pivoted
+                    except Exception as e:
+                        print(f"DEBUG: Pivot attempt failed for index='{index_col}', columns='{columns_col}': {e}")
+                        continue
+
+            # Fallback to original data if all pivot attempts fail
             return df
-
-        # Try different combinations of year and pivot columns
-        for index_col in year_cols:
-            for columns_col in pivot_cols:
-                try:
-                    pivoted = df.pivot_table(
-                        values=value_col,
-                        index=index_col,
-                        columns=columns_col,
-                        aggfunc=lambda x: x.iloc[0] if len(x) > 0 else 0
-                    ).fillna(0)
-                    return pivoted
-                except Exception as e:
-                    continue
-
-        # Fallback to original data if all pivot attempts fail
-        return df
+        except Exception as e:
+            print(f"ERROR in _perform_pivot: {e}")
+            import traceback
+            traceback.print_exc()
+            # Return original df as fallback
+            return df
 
     def _prepare_2d_format(self, df: pd.DataFrame, column_info: dict) -> pd.DataFrame:
         """Prepare DataFrame in 2D format without pivoting"""

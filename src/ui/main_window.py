@@ -270,6 +270,7 @@ class MainWindow(QMainWindow):
 
     def _on_parameter_selected(self, parameter_name: str, is_results: bool):
         """Handle parameter/result selection in tree"""
+        print(f"DEBUG: _on_parameter_selected called with parameter_name={parameter_name}, is_results={is_results}")
         if parameter_name is None:
             # Category selected, clear display
             self._clear_data_display()
@@ -293,22 +294,35 @@ class MainWindow(QMainWindow):
         # Switch back to normal data display if dashboard was showing
         self._restore_normal_display()
 
-        # Get the parameter object and display it
-        scenario = self._get_current_scenario(is_results)
-        if scenario:
-            parameter = scenario.get_parameter(parameter_name)
-            if parameter:
-                # Display data using the data display component
-                self.data_display.display_parameter_data(parameter, is_results)
+        try:
+            # Get the parameter object and display it
+            scenario = self._get_current_scenario(is_results)
+            if scenario:
+                parameter = scenario.get_parameter(parameter_name)
+                if parameter:
+                    # Display data using the data display component
+                    self.data_display.display_parameter_data(parameter, is_results)
 
-                # Update chart with transformed data for display
-                chart_df = self._get_chart_data(parameter, is_results)
-                self.chart_widget.update_chart(chart_df, parameter.name, is_results)
+                    # Update chart with transformed data for display
+                    chart_df = self._get_chart_data(parameter, is_results)
+
+                    self.chart_widget.update_chart(chart_df, parameter.name, is_results)
+        except Exception as e:
+            print(f"ERROR in parameter selection: {e}")
+            import traceback
+            traceback.print_exc()
+            # Try to show a basic error message in the console
+            self._append_to_console(f"Error displaying parameter {parameter_name}: {str(e)}")
 
     def _on_display_mode_changed(self):
         """Handle display mode change (raw/advanced)"""
-        # Refresh current parameter display
-        self._refresh_current_display()
+        try:
+            # Refresh current parameter display
+            self._refresh_current_display()
+        except Exception as e:
+            print(f"ERROR in _on_display_mode_changed: {e}")
+            import traceback
+            traceback.print_exc()
 
     def _on_chart_type_changed(self, chart_type: str):
         """Handle chart type change"""
@@ -499,6 +513,7 @@ class MainWindow(QMainWindow):
         selected_items = self.param_tree.selectedItems()
         if selected_items:
             item_name = selected_items[0].text(0)
+            print(f"DEBUG: Refreshing display for parameter: {item_name}")
             if item_name and not item_name.startswith(("Parameters", "Results", "Economic", "Variables", "Sets")):
                 self._on_parameter_selected(item_name, self.current_view == "results")
 
@@ -551,7 +566,7 @@ class MainWindow(QMainWindow):
         transformed_df = self.data_display.transform_to_display_format(
             df,
             is_results=is_results,
-            current_filters=None,  # No filters for chart data
+            current_filters=self.data_display._get_current_filters(),  # Get current filters from data display widget
             hide_empty=True,       # Charts always hide empty columns
             for_chart=True         # Indicate this is for chart display
         )

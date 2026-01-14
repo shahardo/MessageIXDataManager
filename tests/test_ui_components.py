@@ -1138,6 +1138,190 @@ class TestFileNavigatorWidget:
         widget.add_recent_file('/path/to/test.xlsx', 'input')
 
 
+class TestFilteringFunctionality:
+    """Test filtering functionality in advanced display mode"""
+
+    @patch('PyQt5.QtWidgets.QApplication')
+    def test_filter_application_in_table_and_chart(self, mock_app, sample_parameter):
+        """Test that filters are applied to both table and chart data"""
+        from ui.components.data_display_widget import DataDisplayWidget
+        from PyQt5.QtWidgets import QLabel, QPushButton, QTableWidget, QWidget
+
+        # Create test data with multiple technologies and regions for filtering
+        data = [
+            ['tech1', 'region1', 2020, 100.0],
+            ['tech1', 'region1', 2025, 120.0],
+            ['tech2', 'region1', 2020, 80.0],
+            ['tech2', 'region1', 2025, 90.0],
+            ['tech1', 'region2', 2020, 50.0],
+            ['tech1', 'region2', 2025, 60.0],
+        ]
+        headers = ['technology', 'region', 'year', 'value']
+        df = pd.DataFrame(data, columns=headers)
+
+        metadata = {
+            'units': 'MW',
+            'dims': ['technology', 'region', 'year'],
+            'value_column': 'value',
+            'shape': df.shape
+        }
+        param = Parameter('test_param', df, metadata)
+
+        widget = DataDisplayWidget()
+
+        # Assign UI widgets (simulating what MainWindow does)
+        widget.param_title = QLabel()
+        widget.view_toggle_button = QPushButton()
+        widget.param_table = QTableWidget()
+        widget.selector_container = QWidget()
+
+        widget.initialize_with_ui_widgets()
+
+        # Switch to advanced mode
+        widget.table_display_mode = "advanced"
+
+        # Display parameter - this should set up property selectors
+        widget.display_parameter_data(param, is_results=False)
+
+        # Verify that property selectors were created (only 'region' is a filter column)
+        assert 'region' in widget.property_selectors
+
+        # Get initial unfiltered data for chart
+        initial_chart_data = widget.transform_to_display_format(
+            df, is_results=False, current_filters=None, hide_empty=False, for_chart=True
+        )
+
+        # Verify initial data has all technologies and regions
+        assert 'tech1' in initial_chart_data.columns.get_level_values(0)
+        assert 'tech2' in initial_chart_data.columns.get_level_values(0)
+
+        # Apply filter to show only region1
+        region_selector = widget.property_selectors['region']
+        region_selector.setCurrentText('region1')
+
+        # Get filtered data for chart (simulate what main_window._get_chart_data does)
+        filtered_chart_data = widget.transform_to_display_format(
+            df, is_results=False, current_filters=widget._get_current_filters(), hide_empty=False, for_chart=True
+        )
+
+        # Verify filtered data only contains data from region1
+        # The filtered dataframe should have fewer rows since region2 data is filtered out
+        assert len(filtered_chart_data) < len(initial_chart_data), "Filtered data should have fewer rows"
+
+        # Test that table display also reflects the filter
+        # Re-display with filters applied
+        widget.display_parameter_data(param, is_results=False)
+
+        # The table should now show only filtered data
+        # (This is harder to test directly due to Qt table widget complexity,
+        # but we can verify the transformation logic works)
+
+    @patch('PyQt5.QtWidgets.QApplication')
+    def test_filter_reset_to_all(self, mock_app, sample_parameter):
+        """Test that setting filter to 'All' shows all data"""
+        from ui.components.data_display_widget import DataDisplayWidget
+        from PyQt5.QtWidgets import QLabel, QPushButton, QTableWidget, QWidget
+
+        # Create test data
+        data = [
+            ['tech1', 'region1', 2020, 100.0],
+            ['tech1', 'region2', 2020, 80.0],
+        ]
+        headers = ['technology', 'region', 'year', 'value']
+        df = pd.DataFrame(data, columns=headers)
+
+        metadata = {'value_column': 'value', 'shape': df.shape}
+        param = Parameter('test_param', df, metadata)
+
+        widget = DataDisplayWidget()
+
+        # Set up widget
+        widget.param_title = QLabel()
+        widget.view_toggle_button = QPushButton()
+        widget.param_table = QTableWidget()
+        widget.selector_container = QWidget()
+        widget.initialize_with_ui_widgets()
+        widget.table_display_mode = "advanced"
+
+        # Display parameter
+        widget.display_parameter_data(param, is_results=False)
+
+        # Apply filter
+        region_selector = widget.property_selectors['region']
+        region_selector.setCurrentText('region1')
+
+        # Get filtered data
+        filtered_data = widget.transform_to_display_format(
+            df, is_results=False, current_filters=widget._get_current_filters(), hide_empty=False, for_chart=True
+        )
+
+        # Should only have region1 data
+        assert len(filtered_data) == 1, "Should only have one row for region1"
+
+        # Reset filter to 'All'
+        region_selector.setCurrentText('All')
+
+        # Get unfiltered data
+        unfiltered_data = widget.transform_to_display_format(
+            df, is_results=False, current_filters=widget._get_current_filters(), hide_empty=False, for_chart=True
+        )
+
+        # Should have both regions
+        assert len(unfiltered_data) == 2, "Should have two rows for both regions"
+
+    @patch('PyQt5.QtWidgets.QApplication')
+    def test_multiple_filters_applied_simultaneously(self, mock_app):
+        """Test that multiple filters are applied together"""
+        from ui.components.data_display_widget import DataDisplayWidget
+        from core.data_models import Parameter
+        import pandas as pd
+        from PyQt5.QtWidgets import QLabel, QPushButton, QTableWidget, QWidget
+
+        # Create test data with multiple dimensions
+        data = [
+            ['tech1', 'region1', 2020, 100.0],
+            ['tech1', 'region2', 2020, 150.0],
+            ['tech2', 'region1', 2020, 80.0],
+            ['tech2', 'region2', 2020, 120.0],
+        ]
+        headers = ['technology', 'region', 'year', 'value']
+        df = pd.DataFrame(data, columns=headers)
+
+        metadata = {'value_column': 'value', 'shape': df.shape}
+        param = Parameter('test_param', df, metadata)
+
+        widget = DataDisplayWidget()
+
+        # Set up widget
+        widget.param_title = QLabel()
+        widget.view_toggle_button = QPushButton()
+        widget.param_table = QTableWidget()
+        widget.selector_container = QWidget()
+        widget.initialize_with_ui_widgets()
+        widget.table_display_mode = "advanced"
+
+        # Display parameter
+        widget.display_parameter_data(param, is_results=False)
+
+        # Apply multiple filters
+        widget.property_selectors['technology'].setCurrentText('tech1')
+        widget.property_selectors['region'].setCurrentText('region1')
+
+        # Get filtered data
+        filtered_data = widget.transform_to_display_format(
+            df, is_results=False, current_filters=widget._get_current_filters(), hide_empty=False, for_chart=True
+        )
+
+        # Should only have tech1 in region1
+        assert filtered_data.shape[1] == 1, f"Expected 1 column, got {filtered_data.shape[1]}"
+        col_name = filtered_data.columns[0]
+        assert 'tech1' in str(col_name)
+        assert 'region1' in str(col_name)
+
+        # Verify the value is correct (100.0 for tech1, region1)
+        assert filtered_data.loc[2020, col_name] == 100.0
+
+
 class TestMainWindowDataEditingIntegration:
     """Test MainWindow integration for data editing operations"""
 
@@ -1329,10 +1513,10 @@ class TestMainWindowDataEditingIntegration:
         assert isinstance(window.data_display.property_selectors, dict)
 
         # Test changing a filter
-        if 'technology' in window.data_display.property_selectors:
-            tech_selector = window.data_display.property_selectors['technology']
-            # Change filter to 'tech1'
-            tech_selector.setCurrentText('tech1')
+        if 'region' in window.data_display.property_selectors:
+            region_selector = window.data_display.property_selectors['region']
+            # Change filter to 'region1'
+            region_selector.setCurrentText('region1')
 
             # Trigger filter change
             window.data_display._on_selector_changed()
