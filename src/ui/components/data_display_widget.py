@@ -257,9 +257,9 @@ class DataDisplayWidget(QWidget):
                 item = QTableWidgetItem()
 
                 # Handle different data types with proper formatting
-                if pd.isna(value) or (isinstance(value, (int, float)) and value == 0):
+                if pd.isna(value):
                     item.setText("")
-                    item.setToolTip("No data" if pd.isna(value) else "Zero value")
+                    item.setToolTip("No data")
                 elif isinstance(value, float):
                     # Use column-specific formatting for numerical columns
                     if col_idx in column_formats:
@@ -631,8 +631,8 @@ class DataDisplayWidget(QWidget):
                             values=value_col,
                             index=index_col,
                             columns=columns_col,
-                            aggfunc=lambda x: x.iloc[0] if len(x) > 0 else 0
-                        ).fillna(0)
+                            aggfunc=lambda x: x.iloc[0] if len(x) > 0 else np.nan
+                        )
                         return pivoted
                     except Exception as e:
                         print(f"DEBUG: Pivot attempt failed for index='{index_col}', columns='{columns_col}': {e}")

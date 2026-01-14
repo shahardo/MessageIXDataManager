@@ -34,11 +34,7 @@ def create_parameter_from_data(param_name: str, param_data: List, headers: List[
             if col_data.dtype in ['int64', 'int32'] and col_data.isna().any():
                 df[col] = col_data.astype('float64')
 
-        # Filter all-zero columns (treat as empty)
-        for col in df.columns:
-            col_data = df[col]
-            if col_data.dtype in ['int64', 'float64'] and (col_data.dropna() == 0).all():
-                df[col] = col_data.replace(0, np.nan)
+
 
         # Remove completely empty rows
         df = df.dropna(how='all')

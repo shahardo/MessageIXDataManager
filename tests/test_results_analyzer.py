@@ -101,8 +101,8 @@ class TestResultsAnalyzer:
         assert param is not None
         assert len(param.df) == 2
         assert list(param.df.columns) == ['region', 'year', 'value']
-        # Note: ResultsAnalyzer converts all-zero columns to NaN, so 0.0 becomes NaN
-        assert pd.isna(param.df.iloc[0]['value'])  # Should be NaN (converted from 0.0)
+        # Note: Zeros are preserved as zeros (not converted to NaN)
+        assert param.df.iloc[0]['value'] == 0.0  # Should remain 0.0
         assert param.df.iloc[1]['year'] == 2021
 
     def test_get_summary_stats(self, temp_results_file):

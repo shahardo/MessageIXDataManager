@@ -87,8 +87,8 @@ class TestCreateParameterFromData:
         assert result.df["level"].dtype == np.float64
         assert pd.isna(result.df.loc[2, "level"])
 
-    def test_create_parameter_all_zero_columns_filtered(self):
-        """Test that all-zero columns are treated as empty (converted to NaN)"""
+    def test_create_parameter_all_zero_columns_preserved(self):
+        """Test that all-zero columns are preserved (not converted to NaN)"""
         param_name = "zero_columns_param"
         param_data = [
             ["node1", 0, 100.0],
@@ -100,8 +100,9 @@ class TestCreateParameterFromData:
         result = create_parameter_from_data(param_name, param_data, headers)
 
         assert result is not None
-        # zero_col should be all NaN
-        assert result.df["zero_col"].isna().all()
+        # zero_col should remain as zeros
+        assert (result.df["zero_col"] == 0).all()
+        assert not result.df["zero_col"].isna().any()
 
     def test_create_parameter_remove_empty_rows(self):
         """Test that completely empty rows are removed"""
