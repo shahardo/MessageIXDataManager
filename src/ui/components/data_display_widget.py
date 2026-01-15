@@ -422,7 +422,6 @@ class DataDisplayWidget(QWidget):
 
     def _on_cell_changed(self, row: int, col: int):
         """Handle cell value changes in editable table"""
-        print(f"DEBUG: Cell changed at row={row}, col={col}")  # Debug print
 
         # Get the new value from the cell
         item = self.param_table.item(row, col)
@@ -438,12 +437,9 @@ class DataDisplayWidget(QWidget):
             else:
                 new_value = float(new_value_str)
         except ValueError:
-            print(f"DEBUG: Invalid value, reverting display")  # Debug print
             # Invalid input, revert to original value by refreshing display
             self.display_mode_changed.emit()
             return
-
-        print(f"DEBUG: Parsed value: {new_value}, syncing...")  # Debug print
 
         if self.table_display_mode == "advanced":
             # Handle advanced mode editing (pivot table)
@@ -503,10 +499,6 @@ class DataDisplayWidget(QWidget):
             Transformed DataFrame ready for display
         """
         try:
-            print(f"DEBUG: transform_to_display_format called - is_results={is_results}, for_chart={for_chart}")
-            print(f"DEBUG: input df shape: {df.shape}, columns: {list(df.columns)}")
-            print(f"DEBUG: current_filters: {current_filters}")
-
             if df.empty:
                 return df
 
@@ -615,7 +607,6 @@ class DataDisplayWidget(QWidget):
     def _perform_pivot(self, df: pd.DataFrame, column_info: dict) -> pd.DataFrame:
         """Perform pivot operation on DataFrame"""
         try:
-            print(f"DEBUG: _perform_pivot called with df shape: {df.shape}")
             year_cols = column_info.get('year_cols', [])
             pivot_cols = column_info.get('pivot_cols', [])
             value_col = column_info.get('value_col')

@@ -270,7 +270,6 @@ class MainWindow(QMainWindow):
 
     def _on_parameter_selected(self, parameter_name: str, is_results: bool):
         """Handle parameter/result selection in tree"""
-        print(f"DEBUG: _on_parameter_selected called with parameter_name={parameter_name}, is_results={is_results}")
         if parameter_name is None:
             # Category selected, clear display
             self._clear_data_display()
@@ -513,7 +512,6 @@ class MainWindow(QMainWindow):
         selected_items = self.param_tree.selectedItems()
         if selected_items:
             item_name = selected_items[0].text(0)
-            print(f"DEBUG: Refreshing display for parameter: {item_name}")
             if item_name and not item_name.startswith(("Parameters", "Results", "Economic", "Variables", "Sets")):
                 self._on_parameter_selected(item_name, self.current_view == "results")
 
