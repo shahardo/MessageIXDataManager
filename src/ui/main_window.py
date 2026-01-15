@@ -13,7 +13,7 @@ from PyQt5.QtCore import Qt, QSettings, QPoint
 from PyQt5 import uic
 import os
 import pandas as pd
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 
 from .dashboard import ResultsDashboard
 from .results_file_dashboard import ResultsFileDashboard
@@ -22,6 +22,7 @@ from .components import (
     DataDisplayWidget, ChartWidget, ParameterTreeWidget, FileNavigatorWidget
 )
 from .components.find_widget import FindWidget
+from .components.data_display_widget import UndoManager
 from managers.input_manager import InputManager
 from managers.solver_manager import SolverManager
 from managers.results_analyzer import ResultsAnalyzer
@@ -78,6 +79,9 @@ class MainWindow(QMainWindow):
         # Initialize dashboard
         self.dashboard: ResultsDashboard = ResultsDashboard(self.results_analyzer)
         self.results_file_dashboard: ResultsFileDashboard = ResultsFileDashboard(self.results_analyzer)
+
+        # Initialize undo manager
+        self.undo_manager = UndoManager()
 
         # Add dashboard widget to the data container layout
         self._setup_data_area_widgets()
@@ -238,6 +242,13 @@ class MainWindow(QMainWindow):
         self.actionDashboard.triggered.connect(self._show_dashboard)
         self.actionFind.triggered.connect(self._show_find_widget)
 
+        # Edit menu actions
+        self.actionUndo.triggered.connect(self._undo)
+        self.actionRedo.triggered.connect(self._redo)
+        self.actionCut.triggered.connect(self._cut)
+        self.actionCopy.triggered.connect(self._copy)
+        self.actionPaste.triggered.connect(self._paste)
+
         # Connect save actions from UI
         self.actionSave.triggered.connect(self._save_file)
         self.actionSave_As.triggered.connect(self._save_file_as)
@@ -353,6 +364,8 @@ class MainWindow(QMainWindow):
         if not parameter:
             return
 
+        # Store the original data before making changes (for undo)
+        original_df = parameter.df.copy()
         df = parameter.df.copy()
 
         if mode == "raw":
@@ -413,25 +426,6 @@ class MainWindow(QMainWindow):
             df.loc[mask, value_col] = new_value
             log_message = f"Updated {param_name}: {technology} in {year} = {new_value} (matched {len(matching_rows)} rows)"
 
-            # Update the parameter with the modified DataFrame
-            parameter.df = df
-
-            # Mark the parameter as modified
-            scenario.mark_modified(param_name)
-
-            # Update status bar
-            self.statusbar.showMessage(f"Modified {param_name} - unsaved changes")
-
-            # Update chart immediately with the new data
-            chart_df = self._get_chart_data(parameter, self.current_view == "results")
-            self.chart_widget.update_chart(chart_df, parameter.name, self.current_view == "results")
-
-            # Refresh the display to show the updated pivoted data
-            self._refresh_current_display()
-
-            # Log the change
-            self._append_to_console(log_message)
-
         else:
             self._append_to_console(f"Warning: Unknown editing mode: {mode}")
             return
@@ -442,12 +436,28 @@ class MainWindow(QMainWindow):
         # Mark the parameter as modified
         scenario.mark_modified(param_name)
 
+        # Record the operation for undo/redo
+        self.undo_manager.record_operation(
+            operation_type='cell_edit',
+            parameter_name=param_name,
+            old_data=original_df,
+            new_data=df,
+            description=f"Cell edit in {param_name}"
+        )
+
+        # Update UI elements
+        self._update_undo_redo_ui()
+
         # Update status bar
         self.statusbar.showMessage(f"Modified {param_name} - unsaved changes")
 
         # Update chart immediately with the new data
         chart_df = self._get_chart_data(parameter, self.current_view == "results")
         self.chart_widget.update_chart(chart_df, parameter.name, self.current_view == "results")
+
+        # Refresh the display to show the updated pivoted data (for advanced mode)
+        if mode == "advanced":
+            self._refresh_current_display()
 
         # Log the change
         self._append_to_console(log_message)
@@ -1523,3 +1533,152 @@ class MainWindow(QMainWindow):
             row, col, cell_text = self.table_matches[match_index]
             self.param_table.setCurrentCell(row, col)
             self.param_table.scrollToItem(self.param_table.item(row, col))
+
+    # Edit menu action handlers
+
+    def _undo(self):
+        """Handle undo action"""
+        # Get the current operation to undo
+        operation = self.undo_manager.undo()
+
+        if operation:
+            # Apply the undo operation
+            success = self._apply_undo_operation(operation)
+            if success:
+                # Update UI
+                self._update_undo_redo_ui()
+                self._refresh_current_display()
+                self._append_to_console(f"Undid: {operation['description']}")
+            else:
+                QMessageBox.warning(self, "Undo Failed", f"Failed to undo operation: {operation['description']}")
+                # Restore the operation to the undo stack
+                self.undo_manager.undo_stack.append(operation)
+        else:
+            QMessageBox.information(self, "Undo", "No operations to undo.")
+
+    def _redo(self):
+        """Handle redo action"""
+        # Get the current operation to redo
+        operation = self.undo_manager.redo()
+
+        if operation:
+            # Apply the redo operation
+            success = self._apply_redo_operation(operation)
+            if success:
+                # Update UI
+                self._update_undo_redo_ui()
+                self._refresh_current_display()
+                self._append_to_console(f"Redid: {operation['description']}")
+            else:
+                QMessageBox.warning(self, "Redo Failed", f"Failed to redo operation: {operation['description']}")
+                # Restore the operation to the redo stack
+                self.undo_manager.redo_stack.append(operation)
+        else:
+            QMessageBox.information(self, "Redo", "No operations to redo.")
+
+    def _cut(self):
+        """Handle cut action - cut currently selected column data"""
+        # For now, try to cut from the currently selected column in the table
+        if hasattr(self.data_display, 'param_table'):
+            current_column = self.data_display.param_table.currentColumn()
+            if current_column >= 0:
+                self.data_display.cut_column_data(current_column)
+            else:
+                QMessageBox.information(self, "Cut", "Please select a column header first by right-clicking on it.")
+
+    def _copy(self):
+        """Handle copy action - copy currently selected column data"""
+        # For now, try to copy from the currently selected column in the table
+        if hasattr(self.data_display, 'param_table'):
+            current_column = self.data_display.param_table.currentColumn()
+            if current_column >= 0:
+                self.data_display.copy_column_data(current_column)
+            else:
+                QMessageBox.information(self, "Copy", "Please select a column header first by right-clicking on it.")
+
+    def _paste(self):
+        """Handle paste action - paste to currently selected column"""
+        # For now, try to paste to the currently selected column in the table
+        if hasattr(self.data_display, 'param_table'):
+            current_column = self.data_display.param_table.currentColumn()
+            if current_column >= 0:
+                self.data_display.paste_column_data(current_column)
+            else:
+                QMessageBox.information(self, "Paste", "Please select a column header first by right-clicking on it.")
+
+    def _apply_undo_operation(self, operation: Dict[str, Any]) -> bool:
+        """Apply an undo operation by restoring the old data"""
+        try:
+            parameter_name = operation['parameter_name']
+            old_data = operation['old_data']
+
+            # Get the current scenario
+            scenario = self._get_current_scenario(self.current_view == "results")
+            if not scenario:
+                return False
+
+            # Get the parameter
+            parameter = scenario.get_parameter(parameter_name)
+            if not parameter:
+                return False
+
+            # Restore the old data
+            parameter.df = old_data.copy()
+
+            # Mark the parameter as modified
+            scenario.mark_modified(parameter_name)
+
+            return True
+        except Exception as e:
+            print(f"Error applying undo operation: {e}")
+            return False
+
+    def _apply_redo_operation(self, operation: Dict[str, Any]) -> bool:
+        """Apply a redo operation by restoring the new data"""
+        try:
+            parameter_name = operation['parameter_name']
+            new_data = operation['new_data']
+
+            # Get the current scenario
+            scenario = self._get_current_scenario(self.current_view == "results")
+            if not scenario:
+                return False
+
+            # Get the parameter
+            parameter = scenario.get_parameter(parameter_name)
+            if not parameter:
+                return False
+
+            # Restore the new data
+            parameter.df = new_data.copy()
+
+            # Mark the parameter as modified
+            scenario.mark_modified(parameter_name)
+
+            return True
+        except Exception as e:
+            print(f"Error applying redo operation: {e}")
+            return False
+
+    def _update_undo_redo_ui(self):
+        """Update the UI to reflect current undo/redo state"""
+        try:
+            # Update menu item enabled state
+            if hasattr(self, 'actionUndo'):
+                self.actionUndo.setEnabled(self.undo_manager.can_undo())
+            if hasattr(self, 'actionRedo'):
+                self.actionRedo.setEnabled(self.undo_manager.can_redo())
+
+            # Update status bar with current operation descriptions
+            undo_desc = self.undo_manager.get_undo_description()
+            redo_desc = self.undo_manager.get_redo_description()
+
+            if undo_desc:
+                self.statusbar.showMessage(f"Ready - Undo: {undo_desc}")
+            elif redo_desc:
+                self.statusbar.showMessage(f"Ready - Redo: {redo_desc}")
+            else:
+                self.statusbar.showMessage("Ready")
+
+        except Exception as e:
+            print(f"Error updating undo/redo UI: {e}")

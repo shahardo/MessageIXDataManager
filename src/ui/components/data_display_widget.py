@@ -6,18 +6,291 @@ Extracted from MainWindow to provide focused data display functionality.
 
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QTableWidget, QTableWidgetItem,
-    QLabel, QPushButton, QComboBox, QGroupBox, QCheckBox, QHeaderView
+    QLabel, QPushButton, QComboBox, QGroupBox, QCheckBox, QHeaderView,
+    QMenu, QAction, QApplication, QMessageBox, QInputDialog
 )
 from PyQt5.QtCore import Qt, pyqtSignal, QTimer
+from PyQt5.QtGui import QKeySequence
 import pandas as pd
 import numpy as np
 from typing import Optional, Dict, List, Union, Any, TYPE_CHECKING
+import datetime
+import copy
 
 if TYPE_CHECKING:
     pass  # No additional imports needed since we assume UI widgets exist
 
 from core.data_models import Parameter
 from ..ui_styler import UIStyler
+
+
+class UndoManager:
+    """Manages undo/redo operations for data modifications"""
+
+    def __init__(self, max_history: int = 50):
+        self.max_history = max_history
+        self.undo_stack: List[Dict[str, Any]] = []
+        self.redo_stack: List[Dict[str, Any]] = []
+
+    def can_undo(self) -> bool:
+        """Check if undo is available"""
+        return len(self.undo_stack) > 0
+
+    def can_redo(self) -> bool:
+        """Check if redo is available"""
+        return len(self.redo_stack) > 0
+
+    def record_operation(self, operation_type: str, parameter_name: str,
+                        old_data: pd.DataFrame, new_data: pd.DataFrame,
+                        description: str = ""):
+        """
+        Record an operation for undo/redo
+
+        Args:
+            operation_type: Type of operation (e.g., 'cell_edit', 'column_paste', 'column_delete')
+            parameter_name: Name of the parameter being modified
+            old_data: DataFrame before the operation
+            new_data: DataFrame after the operation
+            description: Human-readable description of the operation
+        """
+        operation = {
+            'type': operation_type,
+            'parameter_name': parameter_name,
+            'old_data': old_data.copy(),
+            'new_data': new_data.copy(),
+            'description': description,
+            'timestamp': datetime.datetime.now()
+        }
+
+        # Add to undo stack
+        self.undo_stack.append(operation)
+
+        # Clear redo stack when new operation is performed
+        self.redo_stack.clear()
+
+        # Limit stack size
+        if len(self.undo_stack) > self.max_history:
+            self.undo_stack.pop(0)
+
+    def undo(self) -> Optional[Dict[str, Any]]:
+        """
+        Undo the last operation
+
+        Returns:
+            Operation info if undo was performed, None if no operations to undo
+        """
+        if not self.can_undo():
+            return None
+
+        # Get the last operation
+        operation = self.undo_stack.pop()
+
+        # Add to redo stack
+        self.redo_stack.append(operation)
+
+        return operation
+
+    def redo(self) -> Optional[Dict[str, Any]]:
+        """
+        Redo the last undone operation
+
+        Returns:
+            Operation info if redo was performed, None if no operations to redo
+        """
+        if not self.can_redo():
+            return None
+
+        # Get the last undone operation
+        operation = self.redo_stack.pop()
+
+        # Add back to undo stack
+        self.undo_stack.append(operation)
+
+        return operation
+
+    def clear_history(self):
+        """Clear all undo/redo history"""
+        self.undo_stack.clear()
+        self.redo_stack.clear()
+
+    def get_undo_description(self) -> str:
+        """Get description of the operation that can be undone"""
+        if self.can_undo():
+            return self.undo_stack[-1]['description']
+        return ""
+
+    def get_redo_description(self) -> str:
+        """Get description of the operation that can be redone"""
+        if self.can_redo():
+            return self.redo_stack[-1]['description']
+        return ""
+
+
+class ColumnHeaderView(QHeaderView):
+    """Custom header view that supports right-click context menu for column operations"""
+
+    def __init__(self, orientation, parent=None):
+        super().__init__(orientation, parent)
+        self.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.customContextMenuRequested.connect(self._show_context_menu)
+        self.data_display_widget = None  # Will be set by parent
+
+    def mousePressEvent(self, event):
+        """Handle mouse press to select the entire column"""
+        if event.button() == Qt.LeftButton:
+            # Get the column index
+            column = self.logicalIndexAt(event.pos())
+            if column >= 0:
+                # Select the entire column
+                table = self.parent()
+                if table and hasattr(table, 'selectColumn'):
+                    table.selectColumn(column)
+        super().mousePressEvent(event)
+
+    def _show_context_menu(self, pos):
+        """Show context menu for column header"""
+        # Get the column index from the position
+        column = self.logicalIndexAt(pos)
+        if column < 0:
+            return
+
+        # Create the context menu
+        menu = QMenu(self)
+
+        # Cut action
+        cut_action = QAction("&Cut", self)
+        cut_action.setShortcut(QKeySequence.Cut)
+        cut_action.setStatusTip("Cut column data to clipboard")
+        cut_action.triggered.connect(lambda: self._cut_column(column))
+        menu.addAction(cut_action)
+
+        # Copy action
+        copy_action = QAction("C&opy", self)
+        copy_action.setShortcut(QKeySequence.Copy)
+        copy_action.setStatusTip("Copy column data to clipboard")
+        copy_action.triggered.connect(lambda: self._copy_column(column))
+        menu.addAction(copy_action)
+
+        # Paste action
+        paste_action = QAction("&Paste", self)
+        paste_action.setShortcut(QKeySequence.Paste)
+        paste_action.setStatusTip("Paste data from clipboard to column")
+        paste_action.triggered.connect(lambda: self._paste_column(column))
+        menu.addAction(paste_action)
+
+        menu.addSeparator()
+
+        # Insert column action
+        insert_action = QAction("&Insert Column", self)
+        insert_action.setStatusTip("Insert a new column")
+        insert_action.triggered.connect(lambda: self._insert_column(column))
+        menu.addAction(insert_action)
+
+        # Delete column action
+        delete_action = QAction("&Delete Column", self)
+        delete_action.setStatusTip("Delete this column")
+        delete_action.triggered.connect(lambda: self._delete_column(column))
+        menu.addAction(delete_action)
+
+        menu.addSeparator()
+
+        # Delimiter submenu
+        delimiter_menu = menu.addMenu("&Delimiter")
+        delimiter_menu.setStatusTip("Set delimiter for clipboard operations")
+
+        # Tab delimiter
+        tab_action = QAction("&Tab", self)
+        tab_action.setCheckable(True)
+        tab_action.setChecked(True)  # Default
+        tab_action.triggered.connect(lambda: self._set_delimiter('\t'))
+        delimiter_menu.addAction(tab_action)
+
+        # Comma delimiter
+        comma_action = QAction("&Comma", self)
+        comma_action.setCheckable(True)
+        comma_action.triggered.connect(lambda: self._set_delimiter(','))
+        delimiter_menu.addAction(comma_action)
+
+        # Semicolon delimiter
+        semicolon_action = QAction("&Semicolon", self)
+        semicolon_action.setCheckable(True)
+        semicolon_action.triggered.connect(lambda: self._set_delimiter(';'))
+        delimiter_menu.addAction(semicolon_action)
+
+        # Space delimiter
+        space_action = QAction("&Space", self)
+        space_action.setCheckable(True)
+        space_action.triggered.connect(lambda: self._set_delimiter(' '))
+        delimiter_menu.addAction(space_action)
+
+        # Show the menu at the cursor position
+        menu.exec_(self.mapToGlobal(pos))
+
+    def _cut_column(self, column):
+        """Cut column data to clipboard"""
+        self._copy_column(column)
+        self._clear_column(column)
+
+    def _clear_column(self, column):
+        """Clear all data in the specified column"""
+        print(f"DEBUG: _clear_column called with column={column}")
+        # Get the table widget
+        table = self.parent()
+        if not table or not hasattr(table, 'rowCount') or not hasattr(table, 'columnCount'):
+            print("DEBUG: Could not find table widget")
+            return
+
+        # Clear all items in the column
+        for row in range(table.rowCount()):
+            item = table.item(row, column)
+            if item:
+                item.setText("")
+        print(f"DEBUG: Cleared column {column}")
+
+    def _copy_column(self, column):
+        """Copy column data to clipboard"""
+        print(f"DEBUG: _copy_column called with column={column}")
+        if self.data_display_widget and hasattr(self.data_display_widget, 'copy_column_data'):
+            print(f"DEBUG: Calling copy_column_data on DataDisplayWidget")
+            self.data_display_widget.copy_column_data(column)
+        else:
+            print("DEBUG: No DataDisplayWidget reference or no copy_column_data method")
+
+    def _paste_column(self, column):
+        """Paste data from clipboard to column"""
+        print(f"DEBUG: _paste_column called with column={column}")
+        if self.data_display_widget and hasattr(self.data_display_widget, 'paste_column_data'):
+            print(f"DEBUG: Calling paste_column_data on DataDisplayWidget")
+            self.data_display_widget.paste_column_data(column)
+        else:
+            print("DEBUG: No DataDisplayWidget reference or no paste_column_data method")
+
+    def _insert_column(self, column):
+        """Insert a new column"""
+        print(f"DEBUG: _insert_column called with column={column}")
+        if self.data_display_widget and hasattr(self.data_display_widget, 'insert_column'):
+            print(f"DEBUG: Calling insert_column on DataDisplayWidget")
+            self.data_display_widget.insert_column(column)
+        else:
+            print("DEBUG: No DataDisplayWidget reference or no insert_column method")
+
+    def _delete_column(self, column):
+        """Delete a column"""
+        print(f"DEBUG: _delete_column called with column={column}")
+        if self.data_display_widget and hasattr(self.data_display_widget, 'delete_column'):
+            print(f"DEBUG: Calling delete_column on DataDisplayWidget")
+            self.data_display_widget.delete_column(column)
+        else:
+            print("DEBUG: No DataDisplayWidget reference or no delete_column method")
+
+    def _set_delimiter(self, delimiter):
+        """Set the delimiter for clipboard operations"""
+        print(f"DEBUG: _set_delimiter called with delimiter='{delimiter}'")
+        if self.data_display_widget and hasattr(self.data_display_widget, 'set_clipboard_delimiter'):
+            print(f"DEBUG: Calling set_clipboard_delimiter on DataDisplayWidget")
+            self.data_display_widget.set_clipboard_delimiter(delimiter)
+        else:
+            print("DEBUG: No DataDisplayWidget reference or no set_clipboard_delimiter method")
 
 
 class DataDisplayWidget(QWidget):
@@ -36,6 +309,12 @@ class DataDisplayWidget(QWidget):
         self.hide_empty_checkbox = None
         self.tech_descriptions = tech_descriptions or {}
 
+        # Clipboard operations
+        self.clipboard_delimiter = '\t'  # Default delimiter for clipboard operations
+
+        # Undo/Redo system
+        self.undo_manager = UndoManager()
+
         # Debouncing timer for filter changes
         self._filter_change_timer = QTimer()
         self._filter_change_timer.setSingleShot(True)
@@ -52,6 +331,11 @@ class DataDisplayWidget(QWidget):
         # Connect signals for existing widgets
         self.view_toggle_button.clicked.connect(self._toggle_display_mode)
         self.param_table.cellChanged.connect(self._on_cell_changed)
+
+        # Set custom header view for right-click context menu
+        custom_header = ColumnHeaderView(Qt.Horizontal, self.param_table)
+        custom_header.data_display_widget = self  # Store reference to this widget
+        self.param_table.setHorizontalHeader(custom_header)
 
         # Initialize state
         self.table_display_mode = "raw"
@@ -670,3 +954,241 @@ class DataDisplayWidget(QWidget):
                     columns_to_keep.append(col)
 
         return df[columns_to_keep] if columns_to_keep else df
+
+    # Column operations methods (called by the custom header view)
+
+    def copy_column_data(self, column: int):
+        """Copy column data to clipboard as a single column (one value per line)"""
+        print(f"DEBUG: copy_column_data called with column={column}")
+        try:
+            if column < 0 or column >= self.param_table.columnCount():
+                print(f"DEBUG: Invalid column {column}, table has {self.param_table.columnCount()} columns")
+                return
+
+            # Get column name
+            header_item = self.param_table.horizontalHeaderItem(column)
+            if not header_item:
+                print(f"DEBUG: No header item for column {column}")
+                return
+            column_name = header_item.text()
+            print(f"DEBUG: Column name is '{column_name}'")
+
+            # Collect data from the column as a single column (one value per line)
+            data_lines = []
+            print(f"DEBUG: Starting data collection, table has {self.param_table.rowCount()} rows")
+
+            for row in range(self.param_table.rowCount()):
+                item = self.param_table.item(row, column)
+                if item:
+                    cell_text = item.text()
+                    data_lines.append(cell_text)
+                    print(f"DEBUG: Row {row}: '{cell_text}'")
+                else:
+                    data_lines.append("")
+                    print(f"DEBUG: Row {row}: (empty)")
+
+            # Join with newlines to create a single column format
+            clipboard_text = '\n'.join(data_lines)
+            print(f"DEBUG: Clipboard text (single column format): {repr(clipboard_text)}")
+            clipboard = QApplication.clipboard()
+            clipboard.setText(clipboard_text)
+            print(f"DEBUG: Set clipboard text successfully")
+
+        except Exception as e:
+            print(f"DEBUG: Error copying column data: {e}")
+            import traceback
+            traceback.print_exc()
+            QMessageBox.warning(self, "Copy Error", f"Failed to copy column data: {str(e)}")
+
+    def paste_column_data(self, column: int):
+        """Paste data from clipboard to column"""
+        print(f"DEBUG: paste_column_data called with column={column}")
+        try:
+            if column < 0 or column >= self.param_table.columnCount():
+                print(f"DEBUG: Invalid column {column}")
+                return
+
+            # Get clipboard text
+            clipboard = QApplication.clipboard()
+            clipboard_text = clipboard.text().strip()
+            if not clipboard_text:
+                print("DEBUG: Clipboard is empty")
+                return
+
+            print(f"DEBUG: Clipboard text: {repr(clipboard_text)}")
+
+            # Try to detect format: single column (one value per line) vs delimited format
+            lines = clipboard_text.split('\n')
+            print(f"DEBUG: Split into {len(lines)} lines")
+
+            # Check if this looks like single-column data (no tabs/commas in most lines)
+            is_single_column = True
+            for line in lines:
+                if self.clipboard_delimiter in line and line.strip():
+                    is_single_column = False
+                    break
+
+            print(f"DEBUG: Detected format: {'single column' if is_single_column else 'delimited'}")
+
+            if is_single_column:
+                # Single column format: just paste the values directly
+                data_lines = [line.strip() for line in lines if line.strip()]
+                print(f"DEBUG: Single column data has {len(data_lines)} values")
+
+                if not data_lines:
+                    QMessageBox.warning(self, "Paste Error", "No data found in clipboard.")
+                    return
+
+                # Paste data starting from row 0
+                for row, data in enumerate(data_lines):
+                    if row >= self.param_table.rowCount():
+                        break
+
+                    item = self.param_table.item(row, column)
+                    if item:
+                        # Try to convert to appropriate type
+                        try:
+                            if not data:  # Empty string
+                                item.setText("")
+                            elif '.' in data or 'e' in data.lower():
+                                numeric_value = float(data)
+                                item.setText(f"{numeric_value:g}")
+                            else:
+                                # Try integer first, then fall back to string
+                                try:
+                                    int_value = int(float(data))
+                                    item.setText(str(int_value))
+                                except ValueError:
+                                    item.setText(data)
+                        except ValueError:
+                            # Keep as string if parsing fails
+                            item.setText(data)
+
+            else:
+                # Delimited format: expect header + data
+                data_lines = clipboard_text.split(self.clipboard_delimiter)
+                print(f"DEBUG: Delimited data split into {len(data_lines)} parts")
+
+                if len(data_lines) < 2:  # Need at least header + one data row
+                    QMessageBox.warning(self, "Paste Error", "Clipboard data must contain at least a header and one data row.")
+                    return
+
+                # Skip header (first line) and paste data
+                for row, data in enumerate(data_lines[1:], 0):
+                    if row >= self.param_table.rowCount():
+                        break
+
+                    item = self.param_table.item(row, column)
+                    if item:
+                        data = data.strip()
+                        # Try to convert to appropriate type
+                        try:
+                            if not data:  # Empty string
+                                item.setText("")
+                            elif '.' in data or 'e' in data.lower():
+                                numeric_value = float(data)
+                                item.setText(f"{numeric_value:g}")
+                            else:
+                                # Try integer first, then fall back to string
+                                try:
+                                    int_value = int(float(data))
+                                    item.setText(str(int_value))
+                                except ValueError:
+                                    item.setText(data)
+                        except ValueError:
+                            # Keep as string if parsing fails
+                            item.setText(data)
+
+            # Emit signal to notify of changes
+            self.chart_update_needed.emit()
+            print("DEBUG: Paste operation completed successfully")
+
+        except Exception as e:
+            print(f"DEBUG: Error pasting column data: {e}")
+            import traceback
+            traceback.print_exc()
+            QMessageBox.warning(self, "Paste Error", f"Failed to paste column data: {str(e)}")
+
+    def insert_column(self, column: int):
+        """Insert a new column at the specified position"""
+        try:
+            # Prompt for column name
+            column_name, ok = QInputDialog.getText(
+                self, "Insert Column", "Enter column name:",
+                text=f"NewColumn{column}"
+            )
+
+            if not ok or not column_name.strip():
+                return
+
+            column_name = column_name.strip()
+
+            # Get the current parameter data
+            # This needs to be implemented - for now just show a placeholder
+            QMessageBox.information(
+                self, "Insert Column",
+                f"Insert column '{column_name}' at position {column} would be implemented here.\n"
+                "This requires integration with the scenario data management."
+            )
+
+        except Exception as e:
+            print(f"Error inserting column: {e}")
+            QMessageBox.warning(self, "Insert Error", f"Failed to insert column: {str(e)}")
+
+    def delete_column(self, column: int):
+        """Delete the specified column"""
+        try:
+            if column < 0 or column >= self.param_table.columnCount():
+                return
+
+            # Get column name
+            header_item = self.param_table.horizontalHeaderItem(column)
+            if not header_item:
+                return
+            column_name = header_item.text()
+
+            # Confirm deletion
+            reply = QMessageBox.question(
+                self, "Delete Column",
+                f"Are you sure you want to delete column '{column_name}'?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No
+            )
+
+            if reply != QMessageBox.Yes:
+                return
+
+            # Get the current parameter data
+            # This needs to be implemented - for now just show a placeholder
+            QMessageBox.information(
+                self, "Delete Column",
+                f"Delete column '{column_name}' would be implemented here.\n"
+                "This requires integration with the scenario data management."
+            )
+
+        except Exception as e:
+            print(f"Error deleting column: {e}")
+            QMessageBox.warning(self, "Delete Error", f"Failed to delete column: {str(e)}")
+
+    def cut_column_data(self, column: int):
+        """Cut column data to clipboard (copy then clear)"""
+        # Copy the data first
+        self.copy_column_data(column)
+
+        # Then clear the column
+        self._clear_column_data(column)
+
+    def _clear_column_data(self, column: int):
+        """Clear all data in the specified column"""
+        if column < 0 or column >= self.param_table.columnCount():
+            return
+
+        # Clear all items in the column
+        for row in range(self.param_table.rowCount()):
+            item = self.param_table.item(row, column)
+            if item:
+                item.setText("")
+
+    def set_clipboard_delimiter(self, delimiter: str):
+        """Set the delimiter for clipboard operations"""
+        self.clipboard_delimiter = delimiter
