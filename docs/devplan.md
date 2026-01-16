@@ -127,15 +127,15 @@ This document outlines the implementation plan for adding right-click context me
 **Objective**: Implement functionality to add and remove parameters in input files, extending the application's parameter management capabilities.
 
 **Implementation Steps**:
-1. [ ] Create command objects for parameter operations: `AddParameterCommand` and `RemoveParameterCommand`
-   - `AddParameterCommand`: Holds parameter name, data type, default values, and file reference; do() adds parameter to file and updates UI; undo() removes it
-   - `RemoveParameterCommand`: Holds parameter data and file reference; do() removes parameter; undo() restores it
-2. [ ] Create new `ParameterManager` to handle file-level parameter operations
-3. [ ] Update InputManager to use ParameterManager when loading files
-3. [ ] Add UI elements: Buttons and menu options in input file views to add/remove parameters
-4. [ ] Integrate with undo/redo system: All parameter additions/removals go through command execution
-5. [ ] Validate parameter operations: Check for dependencies, data integrity, and file format compliance
-6. [ ] Refresh data displays and dependent components after parameter changes
+1. [ ] **Schema Definition**: Create `src/core/message_ix_schema.py` containing the dictionary of valid MessageIX parameters, dimensions, and types (as listed below).
+2. [ ] **Command Implementation**: Implement `AddParameterCommand` and `RemoveParameterCommand` in `src/commands/parameter_commands.py` inheriting from the base `Command` class.
+   - `AddParameterCommand`: Stores parameter metadata; `do()` creates empty DataFrame and adds to `ScenarioData`; `undo()` removes it.
+   - `RemoveParameterCommand`: Stores full `Parameter` object; `do()` removes it; `undo()` restores it.
+3. [ ] **Manager Integration**: Update `InputManager` to include `add_parameter()` and `remove_parameter()` methods that utilize the `UndoManager`.
+4. [ ] **UI - Add Parameter Dialog**: Create `AddParameterDialog` (`src/ui/dialogs/add_parameter_dialog.py`) allowing users to select from the schema or define custom parameters.
+5. [ ] **UI - Tree View Integration**: Update the parameter tree widget to support context menus for "Add Parameter" (on group) and "Remove Parameter" (on item).
+6. [ ] **Validation & Dependencies**: Implement checks to ensure required sets exist when adding parameters with specific dimensions.
+7. [ ] **Testing**: Add unit tests for the new commands and integration tests for the UI workflow.
 
 **Key Technical Details**:
 - Support multiple input file formats (e.g., CSV, Excel)
@@ -150,53 +150,183 @@ This document outlines the implementation plan for adding right-click context me
 - Edge case handling (invalid parameter names, dependency conflicts, unsupported file formats, large files)
 
 **Valid MessageIX Parameters**:
-New parameters should be taken from a list of valid MessageIX parameters, with proper column names and types. Below is an extracted list from the MessageIX documentation:
+New parameters should be taken from the canonical MESSAGEix scheme. Below is the structured list of valid parameters, grouped logically.
 
-#### 1. Techno-Economic Parameters
-These parameters define how technologies convert commodities, their efficiencies, and their operational lifetimes.
+**Conventions**:
+* All parameters are **numeric (float)** unless explicitly noted.
+* `year_vtg` = vintage year, `year_act` = activity year
+* `node_loc` = location of activity, `node_origin/dest` = trade origin/destination
+* `mode` = mode of operation
+* `time` = subannual time slice
+* `level` = energy/material level (primary, final, useful, etc.)
 
-| Parameter | Index Dimensions | Description | Type |
-|-----------|------------------|-------------|------|
-| input | node_loc, technology, year_vtg, year_act, mode, node_origin, commodity, level, time, time_origin | Input consumption per unit of activity (Efficiency inverse). | Numeric |
-| output | node_loc, technology, year_vtg, year_act, mode, node_dest, commodity, level, time, time_dest | Output yield per unit of activity. | Numeric |
-| capacity_factor | node_loc, technology, year_vtg, year_act, time | Maximum utilization rate of a technology in a specific time slice. | Numeric |
-| technical_lifetime | node_loc, technology, year_vtg | The duration (years) a technology remains operational after investment. | Numeric |
-| duration_period | year | Length of a model period in years. | Numeric |
-| duration_time | time | Duration of a sub-annual time slice (fraction of a year). | Numeric |
-| construction_time | node_loc, technology, year_vtg | Time required to build a technology before it becomes active. | Numeric |
+#### 1. Core Technology Input–Output Parameters
 
-#### 2. Cost & Economic Parameters
-These parameters define the financial drivers of the model, including capital expenditures, operational costs, and discount rates.
+| Parameter | Index Dimensions | Description |
+|-----------|------------------|-------------|
+| `input` | node_loc, tec, year_vtg, year_act, mode, node_origin, commodity, level, time, time_origin | Quantity of input commodity required per unit of technology activity |
+| `output` | node_loc, tec, year_vtg, year_act, mode, node_dest, commodity, level, time, time_dest | Quantity of output commodity produced per unit of activity |
+| `input_cap` | node_loc, tec, year_vtg, year_act, node_origin, commodity, level, time_origin | Input flow per unit of installed capacity |
+| `output_cap` | node_loc, tec, year_vtg, year_act, node_dest, commodity, level, time_dest | Output flow per unit of installed capacity |
+| `input_cap_new` | node_loc, tec, year_vtg, node_origin, commodity, level, time_origin | Input per unit of **newly built** capacity |
+| `output_cap_new` | node_loc, tec, year_vtg, node_dest, commodity, level, time_dest | Output per unit of **newly built** capacity |
+| `input_cap_ret` | node_loc, tec, year_vtg, node_origin, commodity, level, time_origin | Input associated with retired capacity |
+| `output_cap_ret` | node_loc, tec, year_vtg, node_dest, commodity, level, time_dest | Output associated with retired capacity |
 
-| Parameter | Index Dimensions | Description | Type |
-|-----------|------------------|-------------|------|
-| inv_cost | node_loc, technology, year_vtg | Investment cost per unit of new capacity. | Currency |
-| fix_cost | node_loc, technology, year_vtg, year_act | Fixed operation and maintenance costs (per unit capacity). | Currency |
-| var_cost | node_loc, technology, year_vtg, year_act, mode, time | Variable operation and maintenance costs (per unit activity). | Currency |
-| interest_rate | year | Annual interest rate used for discounting. | Percentage |
-| tax_emission | node_loc, emission, type_emission, year | Tax applied per unit of emission. | Currency |
-| tax_var_cost | node_loc, technology, year_vtg, year_act, mode, time | Specific tax applied to the variable operation of a technology. | Currency |
+#### 2. Technical Performance Parameters
 
-#### 3. Demand and Resource Parameters
-These parameters represent the exogenous drivers of the model, such as energy demand and the availability of primary resources.
+| Parameter | Index Dimensions | Description |
+|-----------|------------------|-------------|
+| `capacity_factor` | node_loc, tec, year_vtg, year_act, time | Maximum utilization rate of capacity in a given time slice |
+| `operation_factor` | node_loc, tec, year_vtg, year_act | Fraction of the year the technology can operate |
+| `min_utilization_factor` | node_loc, tec, year_vtg, year_act | Minimum utilization requirement for installed capacity |
+| `technical_lifetime` | node_loc, tec, year_vtg | Lifetime of a technology before retirement |
+| `construction_time` | node_loc, tec, year_vtg | Time delay between investment and availability |
+| `rating_bin` | node, tec, year_act, commodity, level, time, rating | Share of output assigned to a reliability rating bin |
+| `reliability_factor` | node, tec, year_act, commodity, level, time, rating | Contribution of a rating bin to firm capacity |
+| `flexibility_factor` | node_loc, tec, year_vtg, year_act, mode, commodity, level, time, rating | Contribution of a technology to system flexibility |
+| `addon_conversion` | node, tec, year_vtg, year_act, mode, time, type_addon | Conversion factor for add-on technologies |
+| `storage_initial` | node, tec, level, commodity, year_act, time | Initial storage level |
+| `storage_self_discharge` | node, tec, level, commodity, year_act, time | Fraction of stored energy lost per time slice |
+| `time_order` | lvl_temporal, time | Ordering of subannual time slices |
 
-| Parameter | Index Dimensions | Description | Type |
-|-----------|------------------|-------------|------|
-| demand | node, commodity, level, year, time | Exogenous demand for a specific commodity. | Energy |
-| resource_volume | node, commodity, grade | Total available volume of a primary resource. | Energy |
-| resource_cost | node, commodity, grade, year | Extraction cost of a primary resource. | Currency |
-| bound_total_capacity_up | node_loc, technology, year_act | Upper limit on the total installed capacity. | Capacity |
-| bound_activity_up | node_loc, technology, year_act, mode, time | Upper limit on the activity of a technology. | Activity |
-| bound_new_capacity_up | node_loc, technology, year_vtg | Upper limit on the new capacity built in a period. | Capacity |
+#### 3. Cost and Economic Parameters
 
-#### 4. Environmental and Emission Parameters
-These are used to track and constrain pollutants or greenhouse gases.
+| Parameter | Index Dimensions | Description |
+|-----------|------------------|-------------|
+| `inv_cost` | node_loc, tec, year_vtg | Investment cost per unit of new capacity |
+| `fix_cost` | node_loc, tec, year_vtg, year_act | Fixed O&M cost per unit of capacity |
+| `var_cost` | node_loc, tec, year_vtg, year_act, mode, time | Variable cost per unit of activity |
+| `levelized_cost` | node_loc, tec, year_vtg, time | Exogenously specified levelized cost |
+| `construction_time_factor` | node, tec, year | Capital cost weighting during construction |
+| `remaining_capacity` | node, tec, year | Fraction of capacity remaining from earlier vintages |
+| `remaining_capacity_extended` | node, tec, year | Extended formulation of remaining capacity |
+| `end_of_horizon_factor` | node, tec, year | Salvage value factor at model horizon |
+| `beyond_horizon_lifetime` | node, tec, year | Remaining lifetime beyond model horizon |
+| `beyond_horizon_factor` | node, tec, year | Discount factor for post-horizon capacity |
 
-| Parameter | Index Dimensions | Description | Type |
-|-----------|------------------|-------------|------|
-| emission_factor | node_loc, technology, year_vtg, year_act, mode, emission | Emissions produced per unit of activity. | Mass/Energy |
-| bound_emission | node_loc, emission, type_emission, year | Upper bound on cumulative or annual emissions. | Mass |
-| emission_scaling | type_emission, emission | Scaling factor to aggregate specific emissions into types (e.g., CO2e). | Numeric |
+#### 4. Capacity and Activity Bounds (Hard)
+
+| Parameter | Index Dimensions | Description |
+|-----------|------------------|-------------|
+| `bound_new_capacity_up` | node_loc, tec, year_vtg | Upper bound on new capacity additions |
+| `bound_new_capacity_lo` | node_loc, tec, year_vtg | Lower bound on new capacity additions |
+| `bound_total_capacity_up` | node_loc, tec, year_act | Upper bound on total installed capacity |
+| `bound_total_capacity_lo` | node_loc, tec, year_act | Lower bound on total installed capacity |
+| `bound_activity_up` | node_loc, tec, year_act, mode, time | Upper bound on activity |
+| `bound_activity_lo` | node_loc, tec, year_act, mode, time | Lower bound on activity |
+
+#### 5. Dynamic Growth Constraints
+
+| Parameter | Index Dimensions | Description |
+|-----------|------------------|-------------|
+| `initial_new_capacity_up` | node_loc, tec, year_vtg | Initial upper bound on new capacity |
+| `growth_new_capacity_up` | node_loc, tec, year_vtg | Growth rate limit for new capacity (up) |
+| `initial_new_capacity_lo` | node_loc, tec, year_vtg | Initial lower bound on new capacity |
+| `growth_new_capacity_lo` | node_loc, tec, year_vtg | Growth rate limit for new capacity (down) |
+| `initial_activity_up` | node_loc, tec, year_act, time | Initial activity upper bound |
+| `growth_activity_up` | node_loc, tec, year_act, time | Activity growth limit (up) |
+| `initial_activity_lo` | node_loc, tec, year_act, time | Initial activity lower bound |
+| `growth_activity_lo` | node_loc, tec, year_act, time | Activity growth limit (down) |
+
+#### 6. Soft Constraints (Penalty-Based)
+
+| Parameter | Index Dimensions | Description |
+|-----------|------------------|-------------|
+| `soft_new_capacity_up` | node_loc, tec, year_vtg | Soft upper bound on new capacity |
+| `soft_new_capacity_lo` | node_loc, tec, year_vtg | Soft lower bound on new capacity |
+| `soft_activity_up` | node_loc, tec, year_act, time | Soft upper bound on activity |
+| `soft_activity_lo` | node_loc, tec, year_act, time | Soft lower bound on activity |
+| `abs_cost_new_capacity_soft_up` | node_loc, tec, year_vtg | Absolute penalty for violating new-capacity upper bound |
+| `level_cost_new_capacity_soft_up` | node_loc, tec, year_vtg | Marginal penalty for new-capacity upper bound |
+| `abs_cost_activity_soft_up` | node_loc, tec, year_act, time | Absolute penalty for activity upper bound |
+| `level_cost_activity_soft_up` | node_loc, tec, year_act, time | Marginal penalty for activity upper bound |
+
+#### 7. Emissions (Technology Level)
+
+| Parameter | Index Dimensions | Description |
+|-----------|------------------|-------------|
+| `emission_factor` | node_loc, tec, year_vtg, year_act, mode, emission | Emissions per unit of activity |
+
+#### 8. Emissions Accounting & Policy
+
+| Parameter | Index Dimensions | Description |
+|-----------|------------------|-------------|
+| `historical_emission` | node, emission, type_tec, year | Exogenous historical emissions |
+| `emission_scaling` | type_emission, emission | Scaling factor for emissions aggregation |
+| `bound_emission` | node, type_emission, type_tec, type_year | Emissions cap |
+| `tax_emission` | node, type_emission, type_tec, type_year | Emissions tax |
+
+#### 9. Resources & Extraction
+
+| Parameter | Index Dimensions | Description |
+|-----------|------------------|-------------|
+| `resource_volume` | node, commodity, grade | Total available resource |
+| `resource_cost` | node, commodity, grade, year | Extraction cost |
+| `resource_remaining` | node, commodity, grade, year | Remaining resource stock |
+| `bound_extraction_up` | node, commodity, level, year | Upper bound on extraction |
+| `commodity_stock` | node, commodity, level, year | Stock of commodity |
+| `historical_extraction` | node, commodity, grade, year | Historical extraction levels |
+
+#### 10. Demand & Load Representation
+
+| Parameter | Index Dimensions | Description |
+|-----------|------------------|-------------|
+| `demand` (`demand_fixed`) | node, commodity, level, year, time | Exogenous final demand |
+| `peak_load_factor` | node, commodity, year | Ratio of peak to average load |
+
+#### 11. Land-Use & Bioenergy Emulator
+
+| Parameter | Index Dimensions | Description |
+|-----------|------------------|-------------|
+| `historical_land` | node, land_scenario, year | Historical land allocation |
+| `land_cost` | node, land_scenario, year | Cost of land use |
+| `land_input` | node, land_scenario, year, commodity, level, time | Inputs to land system |
+| `land_output` | node, land_scenario, year, commodity, level, time | Outputs from land system |
+| `land_use` | node, land_scenario, year, land_type | Land allocation by type |
+| `land_emission` | node, land_scenario, year, emission | Emissions from land use |
+| `initial_land_up / lo` | node, year, land_type | Initial land bounds |
+| `growth_land_up / lo` | node, year, land_type | Land growth limits |
+
+#### 12. Share Constraints
+
+| Parameter | Index Dimensions | Description |
+|-----------|------------------|-------------|
+| `share_commodity_up` | shares, node_share, year_act, time | Upper bound on commodity share |
+| `share_commodity_lo` | shares, node, year_act, time | Lower bound on commodity share |
+| `share_mode_up` | shares, node_loc, tec, mode, year_act, time | Upper bound on mode share |
+| `share_mode_lo` | shares, node_loc, tec, mode, year_act, time | Lower bound on mode share |
+
+#### 13. Generic Relations
+
+| Parameter | Index Dimensions | Description |
+|-----------|------------------|-------------|
+| `relation_upper` | relation, node_rel, year_rel | Upper bound on relation |
+| `relation_lower` | relation, node_rel, year_rel | Lower bound on relation |
+| `relation_cost` | relation, node_rel, year_rel | Cost of relation slack |
+| `relation_new_capacity` | relation, node_rel, year_rel, tec | Capacity term in relation |
+| `relation_total_capacity` | relation, node_rel, year_rel, tec | Total capacity term |
+| `relation_activity` | relation, node_rel, year_rel, node_loc, tec, year_act, mode | Activity term |
+
+#### 14. Fixed Variables (Exogenous Decisions)
+
+| Parameter | Index Dimensions | Description |
+|-----------|------------------|-------------|
+| `fixed_extraction` | node, commodity, grade, year | Fixed extraction level |
+| `fixed_stock` | node, commodity, level, year | Fixed stock level |
+| `fixed_new_capacity` | node, tec, year_vtg | Fixed new capacity |
+| `fixed_capacity` | node, tec, year_vtg, year_act | Fixed installed capacity |
+| `fixed_activity` | node, tec, year_vtg, year_act, mode, time | Fixed activity |
+| `fixed_land` | node, land_scenario, year | Fixed land allocation |
+
+#### 15. Reporting / Auxiliary Outputs
+
+| Parameter | Index Dimensions | Description |
+|-----------|------------------|-------------|
+| `total_cost` | node, year | Total system cost |
+| `trade_cost` | node, year | Net trade cost |
+| `import_cost` | node, commodity, year | Import expenditure |
+| `export_cost` | node, commodity, year | Export revenue |
 
 ## Potential Challenges and Solutions
 
