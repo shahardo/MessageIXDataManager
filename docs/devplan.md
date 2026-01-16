@@ -78,14 +78,14 @@ This document outlines the implementation plan for adding right-click context me
 - Stack-based storage: Commands are pushed onto an undo stack after execution; undo pops and reverses the command, pushing to redo stack
 
 **Implementation Steps**:
-1. [x] Design and implement `Command` base class and specific command subclasses (e.g., `EditCellCommand`, `InsertColumnCommand`, `DeleteColumnCommand`, `PasteColumnCommand`)
-2. [x] Create `UndoManager` class to manage stacks:
+1. [ ] Design and implement `Command` base class and specific command subclasses (e.g., `EditCellCommand`, `InsertColumnCommand`, `DeleteColumnCommand`, `PasteColumnCommand`)
+2. [ ] Update `UndoManager` class to manage Command objects in stacks:
    - `undo_stack`: List of executed commands
    - `redo_stack`: List of undone commands
    - Methods: `execute(command)`, `undo()`, `redo()`, `clear()`
-3. [x] Integrate with existing operations: Each data-modifying action creates and executes a command via `UndoManager`
+3. [ ] Integrate with existing operations: Each data-modifying action creates and executes a command via `UndoManager`
 4. [x] Add keyboard shortcuts (Ctrl+Z for undo, Ctrl+Y for redo)
-5. [x] Ensure commands hold all state: No reliance on external snapshots; each command is self-contained
+5. [ ] Ensure commands hold all state: No reliance on external snapshots; each command is self-contained
 
 **Key Technical Details**:
 - Commands store pre-operation state for undo (e.g., original cell value, column data)
@@ -130,8 +130,9 @@ This document outlines the implementation plan for adding right-click context me
 1. [ ] Create command objects for parameter operations: `AddParameterCommand` and `RemoveParameterCommand`
    - `AddParameterCommand`: Holds parameter name, data type, default values, and file reference; do() adds parameter to file and updates UI; undo() removes it
    - `RemoveParameterCommand`: Holds parameter data and file reference; do() removes parameter; undo() restores it
-2. [ ] Update `InputManager` or create new `ParameterManager` to handle file-level parameter operations
-3. [ ] Add UI elements: Buttons or menu options in input file views to add/remove parameters
+2. [ ] Create new `ParameterManager` to handle file-level parameter operations
+3. [ ] Update InputManager to use ParameterManager when loading files
+3. [ ] Add UI elements: Buttons and menu options in input file views to add/remove parameters
 4. [ ] Integrate with undo/redo system: All parameter additions/removals go through command execution
 5. [ ] Validate parameter operations: Check for dependencies, data integrity, and file format compliance
 6. [ ] Refresh data displays and dependent components after parameter changes
@@ -141,6 +142,61 @@ This document outlines the implementation plan for adding right-click context me
 - Maintain parameter metadata consistency across files
 - Handle cascading effects on related parameters and calculations
 - Ensure operations are reversible via undo/redo
+
+**Testing Requirements**:
+- Unit tests for `AddParameterCommand` and `RemoveParameterCommand` execution and undo operations
+- Integration tests for parameter operations with undo/redo functionality
+- UI tests for add/remove parameter buttons and menu options
+- Edge case handling (invalid parameter names, dependency conflicts, unsupported file formats, large files)
+
+**Valid MessageIX Parameters**:
+New parameters should be taken from a list of valid MessageIX parameters, with proper column names and types. Below is an extracted list from the MessageIX documentation:
+
+#### 1. Techno-Economic Parameters
+These parameters define how technologies convert commodities, their efficiencies, and their operational lifetimes.
+
+| Parameter | Index Dimensions | Description | Type |
+|-----------|------------------|-------------|------|
+| input | node_loc, technology, year_vtg, year_act, mode, node_origin, commodity, level, time, time_origin | Input consumption per unit of activity (Efficiency inverse). | Numeric |
+| output | node_loc, technology, year_vtg, year_act, mode, node_dest, commodity, level, time, time_dest | Output yield per unit of activity. | Numeric |
+| capacity_factor | node_loc, technology, year_vtg, year_act, time | Maximum utilization rate of a technology in a specific time slice. | Numeric |
+| technical_lifetime | node_loc, technology, year_vtg | The duration (years) a technology remains operational after investment. | Numeric |
+| duration_period | year | Length of a model period in years. | Numeric |
+| duration_time | time | Duration of a sub-annual time slice (fraction of a year). | Numeric |
+| construction_time | node_loc, technology, year_vtg | Time required to build a technology before it becomes active. | Numeric |
+
+#### 2. Cost & Economic Parameters
+These parameters define the financial drivers of the model, including capital expenditures, operational costs, and discount rates.
+
+| Parameter | Index Dimensions | Description | Type |
+|-----------|------------------|-------------|------|
+| inv_cost | node_loc, technology, year_vtg | Investment cost per unit of new capacity. | Currency |
+| fix_cost | node_loc, technology, year_vtg, year_act | Fixed operation and maintenance costs (per unit capacity). | Currency |
+| var_cost | node_loc, technology, year_vtg, year_act, mode, time | Variable operation and maintenance costs (per unit activity). | Currency |
+| interest_rate | year | Annual interest rate used for discounting. | Percentage |
+| tax_emission | node_loc, emission, type_emission, year | Tax applied per unit of emission. | Currency |
+| tax_var_cost | node_loc, technology, year_vtg, year_act, mode, time | Specific tax applied to the variable operation of a technology. | Currency |
+
+#### 3. Demand and Resource Parameters
+These parameters represent the exogenous drivers of the model, such as energy demand and the availability of primary resources.
+
+| Parameter | Index Dimensions | Description | Type |
+|-----------|------------------|-------------|------|
+| demand | node, commodity, level, year, time | Exogenous demand for a specific commodity. | Energy |
+| resource_volume | node, commodity, grade | Total available volume of a primary resource. | Energy |
+| resource_cost | node, commodity, grade, year | Extraction cost of a primary resource. | Currency |
+| bound_total_capacity_up | node_loc, technology, year_act | Upper limit on the total installed capacity. | Capacity |
+| bound_activity_up | node_loc, technology, year_act, mode, time | Upper limit on the activity of a technology. | Activity |
+| bound_new_capacity_up | node_loc, technology, year_vtg | Upper limit on the new capacity built in a period. | Capacity |
+
+#### 4. Environmental and Emission Parameters
+These are used to track and constrain pollutants or greenhouse gases.
+
+| Parameter | Index Dimensions | Description | Type |
+|-----------|------------------|-------------|------|
+| emission_factor | node_loc, technology, year_vtg, year_act, mode, emission | Emissions produced per unit of activity. | Mass/Energy |
+| bound_emission | node_loc, emission, type_emission, year | Upper bound on cumulative or annual emissions. | Mass |
+| emission_scaling | type_emission, emission | Scaling factor to aggregate specific emissions into types (e.g., CO2e). | Numeric |
 
 ## Potential Challenges and Solutions
 

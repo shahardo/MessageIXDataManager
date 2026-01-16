@@ -22,15 +22,16 @@ if TYPE_CHECKING:
 
 from core.data_models import Parameter
 from ..ui_styler import UIStyler
+from managers.parameter_manager import Command
 
 
 class UndoManager:
-    """Manages undo/redo operations for data modifications"""
+    """Manages undo/redo operations for data modifications using command objects"""
 
     def __init__(self, max_history: int = 50):
         self.max_history = max_history
-        self.undo_stack: List[Dict[str, Any]] = []
-        self.redo_stack: List[Dict[str, Any]] = []
+        self.undo_stack: List['Command'] = []
+        self.redo_stack: List['Command'] = []
 
     def can_undo(self) -> bool:
         """Check if undo is available"""
@@ -40,73 +41,91 @@ class UndoManager:
         """Check if redo is available"""
         return len(self.redo_stack) > 0
 
-    def record_operation(self, operation_type: str, parameter_name: str,
-                        old_data: pd.DataFrame, new_data: pd.DataFrame,
-                        description: str = ""):
+    def execute(self, command: 'Command') -> bool:
         """
-        Record an operation for undo/redo
+        Execute a command and add it to the undo stack if successful
 
         Args:
-            operation_type: Type of operation (e.g., 'cell_edit', 'column_paste', 'column_delete')
-            parameter_name: Name of the parameter being modified
-            old_data: DataFrame before the operation
-            new_data: DataFrame after the operation
-            description: Human-readable description of the operation
+            command: Command object to execute
+
+        Returns:
+            True if command executed successfully
         """
-        operation = {
-            'type': operation_type,
-            'parameter_name': parameter_name,
-            'old_data': old_data.copy(),
-            'new_data': new_data.copy(),
-            'description': description,
-            'timestamp': datetime.datetime.now()
-        }
+        try:
+            success = command.do()
+            if success:
+                # Add to undo stack
+                self.undo_stack.append(command)
 
-        # Add to undo stack
-        self.undo_stack.append(operation)
+                # Clear redo stack when new operation is performed
+                self.redo_stack.clear()
 
-        # Clear redo stack when new operation is performed
-        self.redo_stack.clear()
+                # Limit stack size
+                if len(self.undo_stack) > self.max_history:
+                    self.undo_stack.pop(0)
 
-        # Limit stack size
-        if len(self.undo_stack) > self.max_history:
-            self.undo_stack.pop(0)
+            return success
+        except Exception as e:
+            print(f"Error executing command: {e}")
+            return False
 
-    def undo(self) -> Optional[Dict[str, Any]]:
+    def undo(self) -> bool:
         """
         Undo the last operation
 
         Returns:
-            Operation info if undo was performed, None if no operations to undo
+            True if undo was performed successfully
         """
         if not self.can_undo():
-            return None
+            return False
 
-        # Get the last operation
-        operation = self.undo_stack.pop()
+        # Get the last command
+        command = self.undo_stack.pop()
 
-        # Add to redo stack
-        self.redo_stack.append(operation)
+        try:
+            # Undo the command
+            success = command.undo()
+            if success:
+                # Add to redo stack
+                self.redo_stack.append(command)
+            else:
+                # Put command back on undo stack if undo failed
+                self.undo_stack.append(command)
+            return success
+        except Exception as e:
+            print(f"Error undoing command: {e}")
+            # Put command back on undo stack
+            self.undo_stack.append(command)
+            return False
 
-        return operation
-
-    def redo(self) -> Optional[Dict[str, Any]]:
+    def redo(self) -> bool:
         """
         Redo the last undone operation
 
         Returns:
-            Operation info if redo was performed, None if no operations to redo
+            True if redo was performed successfully
         """
         if not self.can_redo():
-            return None
+            return False
 
-        # Get the last undone operation
-        operation = self.redo_stack.pop()
+        # Get the last undone command
+        command = self.redo_stack.pop()
 
-        # Add back to undo stack
-        self.undo_stack.append(operation)
-
-        return operation
+        try:
+            # Redo the command
+            success = command.do()
+            if success:
+                # Add back to undo stack
+                self.undo_stack.append(command)
+            else:
+                # Put command back on redo stack if redo failed
+                self.redo_stack.append(command)
+            return success
+        except Exception as e:
+            print(f"Error redoing command: {e}")
+            # Put command back on redo stack
+            self.redo_stack.append(command)
+            return False
 
     def clear_history(self):
         """Clear all undo/redo history"""
@@ -116,13 +135,13 @@ class UndoManager:
     def get_undo_description(self) -> str:
         """Get description of the operation that can be undone"""
         if self.can_undo():
-            return self.undo_stack[-1]['description']
+            return self.undo_stack[-1].description
         return ""
 
     def get_redo_description(self) -> str:
         """Get description of the operation that can be redone"""
         if self.can_redo():
-            return self.redo_stack[-1]['description']
+            return self.redo_stack[-1].description
         return ""
 
 
@@ -137,7 +156,7 @@ class ColumnHeaderView(QHeaderView):
 
     def mousePressEvent(self, event):
         """Handle mouse press to select the entire column"""
-        if event.button() == Qt.LeftButton:
+        if event.button() in (Qt.LeftButton, Qt.RightButton):
             # Get the column index
             column = self.logicalIndexAt(event.pos())
             if column >= 0:
@@ -159,21 +178,18 @@ class ColumnHeaderView(QHeaderView):
 
         # Cut action
         cut_action = QAction("&Cut", self)
-        cut_action.setShortcut(QKeySequence.Cut)
         cut_action.setStatusTip("Cut column data to clipboard")
         cut_action.triggered.connect(lambda: self._cut_column(column))
         menu.addAction(cut_action)
 
         # Copy action
         copy_action = QAction("C&opy", self)
-        copy_action.setShortcut(QKeySequence.Copy)
         copy_action.setStatusTip("Copy column data to clipboard")
         copy_action.triggered.connect(lambda: self._copy_column(column))
         menu.addAction(copy_action)
 
         # Paste action
         paste_action = QAction("&Paste", self)
-        paste_action.setShortcut(QKeySequence.Paste)
         paste_action.setStatusTip("Paste data from clipboard to column")
         paste_action.triggered.connect(lambda: self._paste_column(column))
         menu.addAction(paste_action)
@@ -299,6 +315,7 @@ class DataDisplayWidget(QWidget):
     # Define PyQt signals
     display_mode_changed = pyqtSignal()
     cell_value_changed = pyqtSignal(str, object, object, object)  # mode, row_or_year, col_or_tech, new_value
+    column_paste_requested = pyqtSignal(str, str, dict)  # column_name, paste_data_format, row_changes_dict
     chart_update_needed = pyqtSignal()  # Signal to update chart without refreshing table
 
     def __init__(self, parent=None, tech_descriptions=None):
@@ -1008,6 +1025,14 @@ class DataDisplayWidget(QWidget):
                 print(f"DEBUG: Invalid column {column}")
                 return
 
+            # Get column name
+            header_item = self.param_table.horizontalHeaderItem(column)
+            if not header_item:
+                print(f"DEBUG: No header item for column {column}")
+                return
+            column_name = header_item.text()
+            print(f"DEBUG: Column name is '{column_name}'")
+
             # Get clipboard text
             clipboard = QApplication.clipboard()
             clipboard_text = clipboard.text().strip()
@@ -1030,6 +1055,8 @@ class DataDisplayWidget(QWidget):
 
             print(f"DEBUG: Detected format: {'single column' if is_single_column else 'delimited'}")
 
+            # Prepare data for paste operation
+            paste_data = []
             if is_single_column:
                 # Single column format: just paste the values directly
                 data_lines = [line.strip() for line in lines if line.strip()]
@@ -1039,31 +1066,7 @@ class DataDisplayWidget(QWidget):
                     QMessageBox.warning(self, "Paste Error", "No data found in clipboard.")
                     return
 
-                # Paste data starting from row 0
-                for row, data in enumerate(data_lines):
-                    if row >= self.param_table.rowCount():
-                        break
-
-                    item = self.param_table.item(row, column)
-                    if item:
-                        # Try to convert to appropriate type
-                        try:
-                            if not data:  # Empty string
-                                item.setText("")
-                            elif '.' in data or 'e' in data.lower():
-                                numeric_value = float(data)
-                                item.setText(f"{numeric_value:g}")
-                            else:
-                                # Try integer first, then fall back to string
-                                try:
-                                    int_value = int(float(data))
-                                    item.setText(str(int_value))
-                                except ValueError:
-                                    item.setText(data)
-                        except ValueError:
-                            # Keep as string if parsing fails
-                            item.setText(data)
-
+                paste_data = data_lines
             else:
                 # Delimited format: expect header + data
                 data_lines = clipboard_text.split(self.clipboard_delimiter)
@@ -1074,37 +1077,27 @@ class DataDisplayWidget(QWidget):
                     return
 
                 # Skip header (first line) and paste data
-                for row, data in enumerate(data_lines[1:], 0):
-                    if row >= self.param_table.rowCount():
-                        break
+                paste_data = [data.strip() for data in data_lines[1:] if data.strip()]
 
-                    item = self.param_table.item(row, column)
-                    if item:
-                        data = data.strip()
-                        # Try to convert to appropriate type
-                        try:
-                            if not data:  # Empty string
-                                item.setText("")
-                            elif '.' in data or 'e' in data.lower():
-                                numeric_value = float(data)
-                                item.setText(f"{numeric_value:g}")
-                            else:
-                                # Try integer first, then fall back to string
-                                try:
-                                    int_value = int(float(data))
-                                    item.setText(str(int_value))
-                                except ValueError:
-                                    item.setText(data)
-                        except ValueError:
-                            # Keep as string if parsing fails
-                            item.setText(data)
+            # Collect current values for undo (only for rows that will be changed)
+            row_changes = {}
+            for row in range(min(len(paste_data), self.param_table.rowCount())):
+                item = self.param_table.item(row, column)
+                if item:
+                    current_text = item.text()
+                    # Store the original display-formatted value for consistent undo formatting
+                    # This preserves the same formatting that was shown before the paste
+                    old_value = current_text if current_text else ""
 
-            # Emit signal to notify of changes
-            self.chart_update_needed.emit()
-            print("DEBUG: Paste operation completed successfully")
+                    row_changes[row] = (old_value, paste_data[row])
+
+            # Emit signal to MainWindow to handle the paste operation with undo support
+            paste_format = "single_column" if is_single_column else "delimited"
+            self.column_paste_requested.emit(column_name, paste_format, row_changes)
+            print("DEBUG: Paste operation requested successfully")
 
         except Exception as e:
-            print(f"DEBUG: Error pasting column data: {e}")
+            print(f"DEBUG: Error requesting paste column data: {e}")
             import traceback
             traceback.print_exc()
             QMessageBox.warning(self, "Paste Error", f"Failed to paste column data: {str(e)}")

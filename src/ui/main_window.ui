@@ -363,9 +363,6 @@
    <property name="text">
     <string>Stop Solver</string>
    </property>
-   <property name="shortcut">
-    <string>Ctrl+C</string>
-   </property>
   </action>
   <action name="actionDashboard">
    <property name="text">
