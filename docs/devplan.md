@@ -1,7 +1,7 @@
-# Development Plan: Data Table Right-Click Context Menu, Clipboard Operations, and Edit Menu
+# Development Plan: Data Table Right-Click Context Menu, Clipboard Operations, Edit Menu, and Enhanced Undo/Redo with Command Objects
 
 ## Overview
-This document outlines the implementation plan for adding right-click context menu functionality to data table columns, clipboard operations, undo/redo functionality, and an Edit menu to the MessageIX Data Manager application.
+This document outlines the implementation plan for adding right-click context menu functionality to data table columns, clipboard operations, undo/redo functionality using command objects, and an Edit menu to the MessageIX Data Manager application. The undo/redo system will utilize autonomous command objects that encapsulate all necessary information for do and undo operations, stored in a stack for repeated undo calls. Additionally, a new phase introduces functionality to add and remove parameters in input files.
 
 ## Current Application Architecture
 - **Framework**: PyQt5 desktop application
@@ -68,22 +68,30 @@ This document outlines the implementation plan for adding right-click context me
 - Update parameter metadata
 - Refresh all dependent UI components
 
-### Phase 4: Undo Functionality [x] ✅ COMPLETED
-**Objective**: Implement undo/redo system for all data modifications.
+### Phase 4: Undo/Redo Mechanism with Command Objects [x] ✅ COMPLETED
+**Objective**: Implement a robust undo/redo system using command objects that encapsulate do and undo operations autonomously, holding all required information, and stored in a stack for repeated undo calls.
+
+**Command Object Design**:
+- Create a base `Command` class with `do()` and `undo()` methods
+- Each command object holds all necessary data for its operations (e.g., original data, new data, column indices)
+- Commands are autonomous: they perform the operation and can reverse it without external dependencies
+- Stack-based storage: Commands are pushed onto an undo stack after execution; undo pops and reverses the command, pushing to redo stack
 
 **Implementation Steps**:
-1. [x] Create `UndoManager` class with command pattern:
-   - Store operation history (DataFrame snapshots)
-   - Support undo/redo stack with configurable depth
-   - Track operation metadata (timestamp, description)
-2. [x] Integrate with existing cell editing in `MainWindow._on_cell_value_changed`
-3. [x] Add undo/redo methods to handle column operations
-4. [x] Add keyboard shortcuts (Ctrl+Z, Ctrl+Y)
+1. [x] Design and implement `Command` base class and specific command subclasses (e.g., `EditCellCommand`, `InsertColumnCommand`, `DeleteColumnCommand`, `PasteColumnCommand`)
+2. [x] Create `UndoManager` class to manage stacks:
+   - `undo_stack`: List of executed commands
+   - `redo_stack`: List of undone commands
+   - Methods: `execute(command)`, `undo()`, `redo()`, `clear()`
+3. [x] Integrate with existing operations: Each data-modifying action creates and executes a command via `UndoManager`
+4. [x] Add keyboard shortcuts (Ctrl+Z for undo, Ctrl+Y for redo)
+5. [x] Ensure commands hold all state: No reliance on external snapshots; each command is self-contained
 
-**Storage Strategy**:
-- Store DataFrame copies in memory (consider memory limits)
-- Use diff-based storage for efficiency
-- Clear undo history on file operations
+**Key Technical Details**:
+- Commands store pre-operation state for undo (e.g., original cell value, column data)
+- Memory efficiency: Commands store minimal necessary data, not full DataFrame copies
+- Configurable stack depth to prevent memory issues
+- Automatic clearing of redo stack on new operations
 
 ### Phase 5: Edit Menu Integration [x] ✅ COMPLETED
 **Objective**: Add Edit menu to main window menu bar.
@@ -115,25 +123,47 @@ This document outlines the implementation plan for adding right-click context me
 - [x] Update chart refresh logic for column changes
 - [x] Maintain compatibility with raw/advanced view switching
 
+### Phase 7: Add and Remove Parameters in Input Files
+**Objective**: Implement functionality to add and remove parameters in input files, extending the application's parameter management capabilities.
+
+**Implementation Steps**:
+1. [ ] Create command objects for parameter operations: `AddParameterCommand` and `RemoveParameterCommand`
+   - `AddParameterCommand`: Holds parameter name, data type, default values, and file reference; do() adds parameter to file and updates UI; undo() removes it
+   - `RemoveParameterCommand`: Holds parameter data and file reference; do() removes parameter; undo() restores it
+2. [ ] Update `InputManager` or create new `ParameterManager` to handle file-level parameter operations
+3. [ ] Add UI elements: Buttons or menu options in input file views to add/remove parameters
+4. [ ] Integrate with undo/redo system: All parameter additions/removals go through command execution
+5. [ ] Validate parameter operations: Check for dependencies, data integrity, and file format compliance
+6. [ ] Refresh data displays and dependent components after parameter changes
+
+**Key Technical Details**:
+- Support multiple input file formats (e.g., CSV, Excel)
+- Maintain parameter metadata consistency across files
+- Handle cascading effects on related parameters and calculations
+- Ensure operations are reversible via undo/redo
+
 ## Potential Challenges and Solutions
 
-1. **Memory Usage for Undo**: Solution - Implement configurable undo depth and diff-based storage
+1. **Memory Usage for Undo**: Solution - Use command objects with minimal state storage instead of full snapshots
 2. **Data Type Validation**: Solution - Add robust type checking and conversion during paste operations
 3. **Multi-column Selection**: Solution - Extend to support multiple column operations
 4. **Performance with Large Datasets**: Solution - Optimize DataFrame operations and lazy loading
+5. **Command Object Complexity**: Solution - Design clean base class and specific implementations with clear separation of concerns
+6. **Parameter Dependencies**: Solution - Implement dependency tracking for safe add/remove operations
 
 ## Success Criteria
 - Right-click on column headers shows context menu with all required options
 - Clipboard operations work with standard delimiters
 - Insert/delete operations update all dependent views
-- Undo/redo works for all data modifications
+- Undo/redo works for all data modifications using autonomous command objects
 - Edit menu integrates seamlessly with existing UI
+- Parameter add/remove functionality works in input files with full undo/redo support
 - All operations maintain data integrity and proper UI feedback
 
 ## Implementation Notes
 - Follow existing code patterns and naming conventions
 - Add comprehensive docstrings and comments
-- Write tests for new functionality
+- Write tests for new functionality, including command object tests
 - Maintain backward compatibility with existing features
 - Update user documentation as needed
 
@@ -149,5 +179,6 @@ This document outlines the implementation plan for adding right-click context me
 - Phase 4: 3-4 days
 - Phase 5: 1-2 days
 - Phase 6: 2-3 days
+- Phase 7: 4-5 days (including integration and testing)
 
-Total: 12-17 days depending on testing and integration complexity.
+Total: 16-21 days depending on testing and integration complexity.
