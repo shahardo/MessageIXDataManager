@@ -183,3 +183,78 @@ class PasteColumnCommand(Command):
             return True
         except Exception:
             return False
+
+class AddParameterCommand(Command):
+    """Command to add a parameter to the scenario."""
+
+    def __init__(self, scenario, parameter_name: str, parameter_data: pd.DataFrame, metadata: dict):
+        super().__init__(f"Add parameter '{parameter_name}'")
+        self.scenario = scenario
+        self.parameter_name = parameter_name
+        self.parameter_data = parameter_data.copy()
+        self.metadata = metadata.copy()
+
+    def do(self) -> bool:
+        """Add the parameter to the scenario."""
+        try:
+            from src.core.data_models import Parameter
+
+            # Create the parameter object
+            parameter = Parameter(self.parameter_name, self.parameter_data, self.metadata)
+
+            # Add it to the scenario
+            self.scenario.add_parameter(parameter)
+            self.scenario.mark_modified(self.parameter_name)
+
+            return True
+        except Exception as e:
+            print(f"Error adding parameter: {e}")
+            return False
+
+    def undo(self) -> bool:
+        """Remove the added parameter."""
+        try:
+            # Remove the parameter from the scenario
+            self.scenario.remove_parameter(self.parameter_name)
+            return True
+        except Exception as e:
+            print(f"Error undoing add parameter: {e}")
+            return False
+
+class RemoveParameterCommand(Command):
+    """Command to remove a parameter from the scenario."""
+
+    def __init__(self, scenario, parameter_name: str):
+        super().__init__(f"Remove parameter '{parameter_name}'")
+        self.scenario = scenario
+        self.parameter_name = parameter_name
+        self.backup_parameter = None  # Will store the removed parameter
+
+    def do(self) -> bool:
+        """Remove the parameter from the scenario."""
+        try:
+            # Remove the parameter and store it for potential undo
+            self.backup_parameter = self.scenario.remove_parameter(self.parameter_name)
+
+            if self.backup_parameter is None:
+                return False  # Parameter didn't exist
+
+            return True
+        except Exception as e:
+            print(f"Error removing parameter: {e}")
+            return False
+
+    def undo(self) -> bool:
+        """Restore the removed parameter."""
+        try:
+            if self.backup_parameter is None:
+                return False
+
+            # Add the parameter back to the scenario
+            self.scenario.add_parameter(self.backup_parameter)
+            self.scenario.mark_modified(self.parameter_name)
+
+            return True
+        except Exception as e:
+            print(f"Error undoing remove parameter: {e}")
+            return False

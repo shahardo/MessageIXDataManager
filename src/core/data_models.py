@@ -42,6 +42,19 @@ class ScenarioData:
         """Add a parameter to the scenario"""
         self.parameters[parameter.name] = parameter
 
+    def remove_parameter(self, name: str) -> Optional[Parameter]:
+        """Remove a parameter from the scenario and return it"""
+        if name in self.parameters:
+            parameter = self.parameters.pop(name)
+            self.modified.add(name)
+            self.change_history.append({
+                'action': 'remove',
+                'parameter': name,
+                'timestamp': pd.Timestamp.now()
+            })
+            return parameter
+        return None
+
     def mark_modified(self, param_name: str):
         """Mark a parameter as modified"""
         self.modified.add(param_name)

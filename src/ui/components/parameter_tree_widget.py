@@ -4,7 +4,7 @@ Parameter Tree Widget - Handles parameter/result tree navigation
 Extracted from MainWindow to provide focused tree navigation functionality.
 """
 
-from PyQt5.QtWidgets import QTreeWidget, QTreeWidgetItem, QWidget, QHBoxLayout, QLabel, QPushButton, QDialog, QListWidget, QListWidgetItem, QVBoxLayout, QHeaderView
+from PyQt5.QtWidgets import QTreeWidget, QTreeWidgetItem, QWidget, QHBoxLayout, QLabel, QPushButton, QDialog, QListWidget, QListWidgetItem, QVBoxLayout, QHeaderView, QMenu, QAction, QMessageBox
 from PyQt5.QtCore import pyqtSignal, Qt
 from PyQt5.QtGui import QFont
 from typing import Optional, List, Dict
@@ -23,7 +23,10 @@ class ParameterTreeWidget(QTreeWidget):
         super().__init__(parent)
         self.current_view = "input"  # "input" or "results"
         self.current_scenario = None
+        self.parameter_manager = None
         self.setup_ui()
+        self.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.customContextMenuRequested.connect(self._show_context_menu)
 
     def setup_ui(self):
         """Set up the tree widget"""
@@ -323,3 +326,123 @@ class ParameterTreeWidget(QTreeWidget):
         except ValueError:
             from PyQt5.QtWidgets import QMessageBox
             QMessageBox.warning(self, "Invalid Input", "Please enter valid integer values for years.")
+
+    def _show_context_menu(self, position):
+        """Show context menu for add/remove parameter operations."""
+        if not self.current_scenario or self.current_view != "input":
+            return
+
+        selected_items = self.selectedItems()
+        menu = QMenu(self)
+
+        # Add "Add Parameter..." action to category items
+        if selected_items and selected_items[0].parent() is None:
+            add_action = QAction("Add Parameter...", self)
+            add_action.triggered.connect(self._add_parameter)
+            menu.addAction(add_action)
+
+        # Add "Remove Parameter" action to parameter items
+        elif selected_items and selected_items[0].parent() is not None:
+            remove_action = QAction("Remove Parameter", self)
+            remove_action.triggered.connect(self._remove_parameter)
+            menu.addAction(remove_action)
+
+        # Show the menu
+        menu.exec_(self.viewport().mapToGlobal(position))
+
+    def _add_parameter(self):
+        """Handle adding a new parameter."""
+        if not self.current_scenario or not self.parameter_manager:
+            return
+
+        # Get existing parameter names
+        existing_params = self.current_scenario.get_parameter_names()
+
+        # Show the add parameter dialog
+        from src.ui.components.add_parameter_dialog import AddParameterDialog
+        dialog = AddParameterDialog(self.parameter_manager, existing_params, self)
+
+        if dialog.exec_() == QDialog.Accepted:
+            selected_param = dialog.get_selected_parameter()
+            if selected_param:
+                # Create the parameter command and execute it
+                self._execute_add_parameter_command(selected_param)
+
+    def _execute_add_parameter_command(self, parameter_name: str):
+        """Execute the add parameter command."""
+        if not self.current_scenario or not self.parameter_manager:
+            return
+
+        # Create empty DataFrame for the parameter
+        empty_df = self.parameter_manager.create_empty_parameter_dataframe(parameter_name)
+        param_info = self.parameter_manager.get_parameter_info(parameter_name)
+
+        # Create metadata dictionary from parameter info
+        metadata = {
+            'description': param_info.get('description', '') if param_info else '',
+            'dimensions': param_info.get('dims', []) if param_info else [],
+            'type': param_info.get('type', 'float') if param_info else 'float'
+        }
+
+        # Create and execute the command
+        from src.managers.commands import AddParameterCommand
+        command = AddParameterCommand(self.current_scenario, parameter_name, empty_df, metadata)
+
+        if command.do():
+            # Refresh the tree
+            self.update_parameters(self.current_scenario, self.current_view == "results")
+
+            # Emit signal to update the display
+            self.parameter_selected.emit(parameter_name, self.current_view == "results")
+
+            # Mark scenario as modified
+            self.current_scenario.mark_modified(parameter_name)
+
+    def _remove_parameter(self):
+        """Handle removing a parameter."""
+        if not self.current_scenario:
+            return
+
+        selected_items = self.selectedItems()
+        if not selected_items or len(selected_items) == 0:
+            return
+
+        selected_item = selected_items[0]
+        if not selected_item.parent():  # It's a category, not a parameter
+            return
+
+        parameter_name = selected_item.text(0)
+
+        # Confirm with user
+        reply = QMessageBox.question(
+            self,
+            "Confirm Remove Parameter",
+            f"Are you sure you want to remove parameter '{parameter_name}'?",
+            QMessageBox.Yes | QMessageBox.No
+        )
+
+        if reply == QMessageBox.Yes:
+            self._execute_remove_parameter_command(parameter_name)
+
+    def _execute_remove_parameter_command(self, parameter_name: str):
+        """Execute the remove parameter command."""
+        if not self.current_scenario:
+            return
+
+        # Create and execute the command
+        from src.managers.commands import RemoveParameterCommand
+        command = RemoveParameterCommand(self.current_scenario, parameter_name)
+
+        if command.do():
+            # Refresh the tree
+            self.update_parameters(self.current_scenario, self.current_view == "results")
+
+            # Clear selection
+            self.clear_selection_silently()
+
+            # Mark scenario as modified
+            self.current_scenario.mark_modified(parameter_name)
+
+    def set_parameter_manager(self, parameter_manager):
+        """Set the parameter manager for this tree widget."""
+        self.parameter_manager = parameter_manager

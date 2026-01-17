@@ -22,7 +22,7 @@ if TYPE_CHECKING:
 
 from core.data_models import Parameter
 from ..ui_styler import UIStyler
-from managers.parameter_manager import Command
+from managers.commands import Command
 
 
 class UndoManager:

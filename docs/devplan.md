@@ -123,33 +123,63 @@ This document outlines the implementation plan for adding right-click context me
 - [x] Update chart refresh logic for column changes
 - [x] Maintain compatibility with raw/advanced view switching
 
-### Phase 7: Add and Remove Parameters in Input Files
-**Objective**: Implement functionality to add and remove parameters in input files, extending the application's parameter management capabilities.
+### Phase 7: Add and Remove Parameters
 
-**Implementation Steps**:
-1. [ ] **Schema Definition**: Create `src/core/message_ix_schema.py` containing the dictionary of valid MessageIX parameters, dimensions, and types (as listed below).
-2. [ ] **Command Implementation**: Implement `AddParameterCommand` and `RemoveParameterCommand` in `src/commands/parameter_commands.py` inheriting from the base `Command` class.
-   - `AddParameterCommand`: Stores parameter metadata; `do()` creates empty DataFrame and adds to `ScenarioData`; `undo()` removes it.
-   - `RemoveParameterCommand`: Stores full `Parameter` object; `do()` removes it; `undo()` restores it.
-3. [ ] **Manager Integration**: Update `InputManager` to include `add_parameter()` and `remove_parameter()` methods that utilize the `UndoManager`.
-4. [ ] **UI - Add Parameter Dialog**: Create `AddParameterDialog` (`src/ui/dialogs/add_parameter_dialog.py`) allowing users to select from the schema or define custom parameters.
-5. [ ] **UI - Tree View Integration**: Update the parameter tree widget to support context menus for "Add Parameter" (on group) and "Remove Parameter" (on item).
-6. [ ] **Validation & Dependencies**: Implement checks to ensure required sets exist when adding parameters with specific dimensions.
-7. [ ] **Testing**: Add unit tests for the new commands and integration tests for the UI workflow.
+## Overview
+We will implement the ability to add and remove parameters in the active scenario. This will be done by operating on the in-memory `ScenarioData` structure, allowing for Undo/Redo support via the existing `UndoManager`. The changes will only be persisted to disk when the user explicitly saves the file.
 
-**Key Technical Details**:
-- Support multiple input file formats (e.g., CSV, Excel)
-- Maintain parameter metadata consistency across files
-- Handle cascading effects on related parameters and calculations
-- Ensure operations are reversible via undo/redo
+## Key Changes
 
-**Testing Requirements**:
-- Unit tests for `AddParameterCommand` and `RemoveParameterCommand` execution and undo operations
-- Integration tests for parameter operations with undo/redo functionality
-- UI tests for add/remove parameter buttons and menu options
-- Edge case handling (invalid parameter names, dependency conflicts, unsupported file formats, large files)
+### 1. Core Data Models (`src/core/data_models.py`)
+*  [ ] **`ScenarioData`**: Add a `remove_parameter(name)` method to complement the existing `add_parameter`.
 
-**Valid MessageIX Parameters**:
+### 2. Parameter Manager (`src/managers/parameter_manager.py`)
+*  [ ] **Refactor**: Remove the file-based Command classes (`AddParameterCommand`, `RemoveParameterCommand`) which incorrectly modify files directly.
+*  [ ] **Enhance**: Focus this class on providing parameter definitions (dimensions, types) and factory methods for creating new, empty parameter DataFrames.
+*  [ ] **Validation**: Keep and improve validation logic to ensure added parameters follow MESSAGEix standards.
+
+### 3. Commands (`src/managers/commands.py`)
+*  [ ] **New Commands**: Implement memory-based `AddParameterCommand` and `RemoveParameterCommand`.
+    * [ ]  `AddParameterCommand`: Adds a `Parameter` object to `ScenarioData`. Undo removes it.
+    * [ ]  `RemoveParameterCommand`: Removes a parameter from `ScenarioData`, storing the deleted object. Undo restores it.
+
+### 4. UI Components (`src/ui/components/`)
+*  [ ] **`ParameterTreeWidget` (`src/ui/components/parameter_tree_widget.py`)**:
+    *  [ ] Add a context menu with "Add Parameter..." and "Remove Parameter".
+    *  [ ] Add an "Add Parameter" button (optional, or reuse the "Options" area).
+*  [ ] **`AddParameterDialog` (new file)**:
+    *  [ ] A dialog allowing the user to select from a list of valid MESSAGEix parameters that are not yet in the scenario.
+    *  [ ] Shows description and required dimensions for the selected parameter.
+
+### 5. Main Window (`src/ui/main_window.py`)
+*  [ ] **Integration**: Connect the `ParameterTreeWidget` signals to the `UndoManager` to execute the new commands.
+*  [ ] **Updates**: Ensure the tree view refreshes correctly after adding/removing parameters.
+
+## Implementation Steps
+
+1. [ ] **Update `ScenarioData`**: Add `remove_parameter` method to `src/core/data_models.py`.
+2. [ ] **Refactor `ParameterManager`**: Clean up `src/managers/parameter_manager.py`, removing file I/O commands and ensuring it serves as a definition provider.
+3. [ ] **Implement Commands**: Add `AddParameterCommand` and `RemoveParameterCommand` to `src/managers/commands.py`.
+4. [ ] **Create UI Dialog**: Create `src/ui/components/add_parameter_dialog.py`.
+5. [ ] **Update Tree Widget**: Modify `src/ui/components/parameter_tree_widget.py` to include the context menu and handling for add/remove actions.
+6. [ ] **Integrate in MainWindow**: Wire everything together in `src/ui/main_window.py`.
+7. [ ] **Testing**: Verify adding/removing parameters, undo/redo functionality, and ensuring data is preserved/restored correctly.
+
+## Technical Considerations
+*   **Memory Management**: `RemoveParameterCommand` will hold a reference to the removed `Parameter` object (including its DataFrame). This is acceptable as it's consistent with how `UndoManager` works, but we should be mindful of very large parameters.
+*   **State Consistency**: Adding/removing parameters counts as a modification, so the "Save" button should become enabled.
+*   **Validation**: When adding a parameter, we create an empty DataFrame with the correct columns (indices + value).
+
+## Success Criteria
+*   User can right-click the parameter tree to add or remove parameters.
+*   "Add Parameter" shows a list of valid, missing MESSAGEix parameters.
+*   Adding a parameter creates it in the tree and table view with correct columns.
+*   Removing a parameter removes it from the view.
+*   Undo/Redo correctly reverses these operations.
+*   Changes are not written to disk until "Save" is clicked.
+
+## Valid MessageIX Parameters
+
 New parameters should be taken from the canonical MESSAGEix scheme. Below is the structured list of valid parameters, grouped logically.
 
 **Conventions**:

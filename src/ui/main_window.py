@@ -29,6 +29,7 @@ from managers.results_analyzer import ResultsAnalyzer
 from managers.data_export_manager import DataExportManager
 from managers.logging_manager import logging_manager
 from managers.commands import EditCellCommand, EditPivotCommand, PasteColumnCommand
+from managers.parameter_manager import ParameterManager
 from core.data_models import ScenarioData
 from utils.error_handler import ErrorHandler, SafeOperation
 
@@ -73,6 +74,7 @@ class MainWindow(QMainWindow):
         self.solver_manager: SolverManager = SolverManager()
         self.results_analyzer: ResultsAnalyzer = ResultsAnalyzer()
         self.data_export_manager: DataExportManager = DataExportManager()
+        self.parameter_manager: ParameterManager = ParameterManager()
 
         # Load technology descriptions from CSV
         self.tech_descriptions = self._load_tech_descriptions()
@@ -212,6 +214,9 @@ class MainWindow(QMainWindow):
         # Initialize component internal state
         self.data_display.initialize_with_ui_widgets()
         self.chart_widget.initialize_with_ui_widgets()
+
+        # Set parameter manager for the tree widget
+        self.param_tree.set_parameter_manager(self.parameter_manager)
 
     def _connect_component_signals(self):
         """Connect component signals to main window handlers"""
