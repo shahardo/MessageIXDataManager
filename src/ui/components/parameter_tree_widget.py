@@ -33,6 +33,25 @@ class ParameterTreeWidget(QTreeWidget):
         self.setHeaderLabel("Parameters")
         self.itemSelectionChanged.connect(self._on_item_selected)
 
+        # Add add parameter button to the header
+        self.add_button = QPushButton("+", self)
+        self.add_button.setToolTip("Add Parameter")
+        self.add_button.setFixedSize(32, 24)
+        self.add_button.setStyleSheet("""
+            QPushButton {
+                font-size: 16px;
+                font-weight: bold;
+                padding: 0px;
+                margin: 0px;
+                border: none;
+                background: transparent;
+            }
+            QPushButton:hover {
+                background: rgba(0, 0, 0, 0.1);
+            }
+        """)
+        self.add_button.clicked.connect(self._add_parameter)
+
         # Add options button to the header
         self.options_button = QPushButton("⚙", self)
         self.options_button.setToolTip("Options")
@@ -50,7 +69,7 @@ class ParameterTreeWidget(QTreeWidget):
             }
         """)
         self.options_button.clicked.connect(self._show_options_dialog)
-        self._position_button()
+        self._position_buttons()
 
     def update_parameters(self, scenario: ScenarioData, is_results: bool = False):
         """Update the tree with parameters from a scenario"""
@@ -253,15 +272,17 @@ class ParameterTreeWidget(QTreeWidget):
         self.blockSignals(False)
 
     def resizeEvent(self, e):
-        """Handle resize to reposition the button"""
+        """Handle resize to reposition the buttons"""
         super().resizeEvent(e)
-        self._position_button()
+        self._position_buttons()
 
-    def _position_button(self):
-        """Position the options button on the header"""
-        if hasattr(self, 'options_button') and self.header():
+    def _position_buttons(self):
+        """Position the buttons on the header"""
+        if hasattr(self, 'add_button') and hasattr(self, 'options_button') and self.header():
             header_height = self.header().height()
             header_width = self.header().width()
+            # Position both buttons on the right, with add button next to options button
+            self.add_button.move(header_width - 65, (header_height - 24) // 2)
             self.options_button.move(header_width - 30, (header_height - 24) // 2)
 
     def _show_options_dialog(self):
