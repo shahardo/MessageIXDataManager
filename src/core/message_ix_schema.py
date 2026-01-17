@@ -52,6 +52,16 @@ MESSAGE_IX_PARAMETERS = {
         "description": "Maximum utilization rate of capacity in a given time slice",
         "type": "float"
     },
+    "renewable_capacity_factor": {
+        "dims": ["node_loc", "commodity", "grade", "level", "year"],
+        "description": "Quality of renewable potential by grade",
+        "type": "float"
+    },
+    "renewable_potential": {
+        "dims": ["node", "commodity", "grade", "level", "year"],
+        "description": "Size of renewable potential per grade",
+        "type": "float"
+    },
     "operation_factor": {
         "dims": ["node_loc", "tec", "year_vtg", "year_act"],
         "description": "Fraction of the year the technology can operate",
@@ -90,6 +100,16 @@ MESSAGE_IX_PARAMETERS = {
     "addon_conversion": {
         "dims": ["node", "tec", "year_vtg", "year_act", "mode", "time", "type_addon"],
         "description": "Conversion factor for add-on technologies",
+        "type": "float"
+    },
+    "addon_up": {
+        "dims": ["node", "tec", "year_act", "mode", "time", "type_addon"],
+        "description": "Upper bound on add-on technology relative to parent",
+        "type": "float"
+    },
+    "addon_lo": {
+        "dims": ["node", "tec", "year_act", "mode", "time", "type_addon"],
+        "description": "Lower bound on add-on technology relative to parent",
         "type": "float"
     },
     "storage_initial": {
@@ -178,6 +198,10 @@ MESSAGE_IX_PARAMETERS = {
     "initial_activity_lo": {"dims": ["node_loc", "tec", "year_act", "time"], "description": "Initial activity lower bound", "type": "float"},
     "growth_activity_lo": {"dims": ["node_loc", "tec", "year_act", "time"], "description": "Activity growth limit (down)", "type": "float"},
 
+    # 5b. Historical Data
+    "historical_new_capacity": {"dims": ["node_loc", "tec", "year_vtg"], "description": "Historical new capacity additions", "type": "float"},
+    "historical_activity": {"dims": ["node_loc", "tec", "year_act", "mode", "time"], "description": "Historical activity levels", "type": "float"},
+
     # 6. Soft Constraints (Penalty-Based)
     "soft_new_capacity_up": {"dims": ["node_loc", "tec", "year_vtg"], "description": "Soft upper bound on new capacity", "type": "float"},
     "soft_new_capacity_lo": {"dims": ["node_loc", "tec", "year_vtg"], "description": "Soft lower bound on new capacity", "type": "float"},
@@ -187,6 +211,10 @@ MESSAGE_IX_PARAMETERS = {
     "level_cost_new_capacity_soft_up": {"dims": ["node_loc", "tec", "year_vtg"], "description": "Marginal penalty for new-capacity upper bound", "type": "float"},
     "abs_cost_activity_soft_up": {"dims": ["node_loc", "tec", "year_act", "time"], "description": "Absolute penalty for activity upper bound", "type": "float"},
     "level_cost_activity_soft_up": {"dims": ["node_loc", "tec", "year_act", "time"], "description": "Marginal penalty for activity upper bound", "type": "float"},
+    "abs_cost_new_capacity_soft_lo": {"dims": ["node_loc", "tec", "year_vtg"], "description": "Absolute cost for relaxing lower bound on new capacity", "type": "float"},
+    "level_cost_new_capacity_soft_lo": {"dims": ["node_loc", "tec", "year_vtg"], "description": "Levelized cost for relaxing lower bound on new capacity", "type": "float"},
+    "abs_cost_activity_soft_lo": {"dims": ["node_loc", "tec", "year_act", "time"], "description": "Absolute cost for relaxing lower bound on activity", "type": "float"},
+    "level_cost_activity_soft_lo": {"dims": ["node_loc", "tec", "year_act", "time"], "description": "Levelized cost for relaxing lower bound on activity", "type": "float"},
 
     # 7. Emissions (Technology Level)
     "emission_factor": {"dims": ["node_loc", "tec", "year_vtg", "year_act", "mode", "emission"], "description": "Emissions per unit of activity", "type": "float"},
@@ -242,15 +270,21 @@ MESSAGE_IX_PARAMETERS = {
     "fixed_capacity": {"dims": ["node", "tec", "year_vtg", "year_act"], "description": "Fixed installed capacity", "type": "float"},
     "fixed_activity": {"dims": ["node", "tec", "year_vtg", "year_act", "mode", "time"], "description": "Fixed activity", "type": "float"},
     "fixed_land": {"dims": ["node", "land_scenario", "year"], "description": "Fixed land allocation", "type": "float"},
+
+    # 15. Reporting Parameters
+    "total_cost": {"dims": ["node", "year"], "description": "Total system cost including trade and emission taxes", "type": "float"},
+    "trade_cost": {"dims": ["node", "year"], "description": "Net cost from trade (exports minus imports)", "type": "float"},
+    "import_cost": {"dims": ["node", "commodity", "year"], "description": "Cost from importing commodities", "type": "float"},
+    "export_cost": {"dims": ["node", "commodity", "year"], "description": "Revenue from exporting commodities", "type": "float"},
 }
 
 PARAMETER_CATEGORIES = {
     "Core Technology Input–Output": ["input", "output", "input_cap", "output_cap", "input_cap_new", "output_cap_new", "input_cap_ret", "output_cap_ret"],
-    "Technical Performance": ["capacity_factor", "operation_factor", "min_utilization_factor", "technical_lifetime", "construction_time", "rating_bin", "reliability_factor", "flexibility_factor", "addon_conversion", "storage_initial", "storage_self_discharge", "time_order"],
+    "Technical Performance": ["capacity_factor", "operation_factor", "min_utilization_factor", "technical_lifetime", "construction_time", "rating_bin", "reliability_factor", "flexibility_factor", "addon_conversion", "addon_up", "addon_lo", "storage_initial", "storage_self_discharge", "time_order", "renewable_capacity_factor", "renewable_potential"],
     "Cost and Economic": ["inv_cost", "fix_cost", "var_cost", "levelized_cost", "construction_time_factor", "remaining_capacity", "remaining_capacity_extended", "end_of_horizon_factor", "beyond_horizon_lifetime", "beyond_horizon_factor"],
     "Capacity and Activity Bounds": ["bound_new_capacity_up", "bound_new_capacity_lo", "bound_total_capacity_up", "bound_total_capacity_lo", "bound_activity_up", "bound_activity_lo"],
     "Dynamic Growth Constraints": ["initial_new_capacity_up", "growth_new_capacity_up", "initial_new_capacity_lo", "growth_new_capacity_lo", "initial_activity_up", "growth_activity_up", "initial_activity_lo", "growth_activity_lo"],
-    "Soft Constraints": ["soft_new_capacity_up", "soft_new_capacity_lo", "soft_activity_up", "soft_activity_lo", "abs_cost_new_capacity_soft_up", "level_cost_new_capacity_soft_up", "abs_cost_activity_soft_up", "level_cost_activity_soft_up"],
+    "Soft Constraints": ["soft_new_capacity_up", "soft_new_capacity_lo", "soft_activity_up", "soft_activity_lo", "abs_cost_new_capacity_soft_up", "level_cost_new_capacity_soft_up", "abs_cost_activity_soft_up", "level_cost_activity_soft_up", "abs_cost_new_capacity_soft_lo", "level_cost_new_capacity_soft_lo", "abs_cost_activity_soft_lo", "level_cost_activity_soft_lo"],
     "Emissions": ["emission_factor"],
     "Emissions Policy": ["historical_emission", "emission_scaling", "bound_emission", "tax_emission"],
     "Resources & Extraction": ["resource_volume", "resource_cost", "resource_remaining", "bound_extraction_up", "commodity_stock", "historical_extraction"],
@@ -259,5 +293,6 @@ PARAMETER_CATEGORIES = {
     "Share Constraints": ["share_commodity_up", "share_commodity_lo", "share_mode_up", "share_mode_lo"],
     "Generic Relations": ["relation_upper", "relation_lower", "relation_cost", "relation_new_capacity", "relation_total_capacity", "relation_activity"],
     "Fixed Variables": ["fixed_extraction", "fixed_stock", "fixed_new_capacity", "fixed_capacity", "fixed_activity", "fixed_land"],
+    "Historical Data": ["historical_new_capacity", "historical_activity"],
     "Reporting": ["total_cost", "trade_cost", "import_cost", "export_cost"]
 }
