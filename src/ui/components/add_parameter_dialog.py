@@ -28,6 +28,35 @@ class AddParameterDialog(QDialog):
         'grade', 'type_emiss'
     }
 
+    # Mapping from dimension names to set names
+    DIMENSION_TO_SET_MAPPING = {
+        'tec': 'technology',
+        'commodity': 'commodity',
+        'node': 'node',
+        'node_loc': 'node',
+        'node_dest': 'node',
+        'node_origin': 'node',
+        'level': 'level',
+        'mode': 'mode',
+        'time': 'time',
+        'time_origin': 'time',
+        'time_dest': 'time',
+        'emission': 'emission',
+        'land_scenario': 'land_scenario',
+        'land_type': 'land_type',
+        'rating': 'rating',
+        'type_addon': 'type_addon',
+        'type_emission': 'type_emission',
+        'type_tec': 'type_tec',
+        'type_year': 'type_year',
+        'shares': 'shares',
+        'relation': 'relation',
+        'node_rel': 'node',
+        'node_share': 'node',
+        'grade': 'grade',
+        'type_emiss': 'type_emiss'
+    }
+
     YEAR_DIMENSIONS = {
         'year', 'year_act', 'year_vtg', 'year_rel'
     }
@@ -193,11 +222,14 @@ class AddParameterDialog(QDialog):
         """Count how many times each element appears in existing parameters for a given dimension."""
         usage_counts = {}
 
+        # Get the actual set name for this dimension
+        set_name = self.DIMENSION_TO_SET_MAPPING.get(dimension, dimension)
+
         # Check if the set exists in scenario
-        if dimension not in self.scenario.sets:
+        if set_name not in self.scenario.sets:
             return usage_counts
 
-        available_elements = self.scenario.sets[dimension]
+        available_elements = self.scenario.sets[set_name]
 
         # Count occurrences in all existing parameters
         for param_name, parameter in self.scenario.parameters.items():
@@ -317,7 +349,10 @@ class AddParameterDialog(QDialog):
 
     def _create_element_selection_widget(self, dimension: str):
         """Create a checkbox list for selecting elements of a dimension."""
-        if dimension not in self.scenario.sets:
+        # Get the actual set name for this dimension
+        set_name = self.DIMENSION_TO_SET_MAPPING.get(dimension, dimension)
+
+        if set_name not in self.scenario.sets:
             return  # Skip if no set available
 
         group = QGroupBox(f"{dimension.title()} Elements")
@@ -325,7 +360,7 @@ class AddParameterDialog(QDialog):
 
         # Get elements sorted by usage frequency
         usage_counts = self._count_element_usage(dimension)
-        elements = list(self.scenario.sets[dimension].values)
+        elements = list(self.scenario.sets[set_name].values)
 
         # Sort by usage (most used first), then alphabetically
         elements.sort(key=lambda x: (-usage_counts.get(x, 0), x))
