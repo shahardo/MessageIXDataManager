@@ -17,6 +17,7 @@ from typing import Optional, List, Dict, Any
 
 from .dashboard import ResultsDashboard
 from .results_file_dashboard import ResultsFileDashboard
+from .input_file_dashboard import InputFileDashboard
 from .navigator import ProjectNavigator
 from .components import (
     DataDisplayWidget, ChartWidget, ParameterTreeWidget, FileNavigatorWidget
@@ -82,6 +83,7 @@ class MainWindow(QMainWindow):
         # Initialize dashboard
         self.dashboard: ResultsDashboard = ResultsDashboard(self.results_analyzer)
         self.results_file_dashboard: ResultsFileDashboard = ResultsFileDashboard(self.results_analyzer)
+        self.input_file_dashboard: InputFileDashboard = InputFileDashboard(self.input_manager)
 
         # Initialize undo manager
         self.undo_manager = UndoManager()
@@ -140,14 +142,16 @@ class MainWindow(QMainWindow):
             layout = QVBoxLayout(self.dataContainer)
             self.dataContainer.setLayout(layout)
 
-        # Add both widgets to the layout
+        # Add widgets to the layout
         layout = self.dataContainer.layout()
         layout.addWidget(self.dataSplitter)
         layout.addWidget(self.results_file_dashboard)
+        layout.addWidget(self.input_file_dashboard)
 
-        # Initially show data splitter and hide dashboard
+        # Initially show data splitter and hide dashboards
         self.dataSplitter.show()
         self.results_file_dashboard.hide()
+        self.input_file_dashboard.hide()
 
     def _setup_ui_components(self):
         """Set up the UI components using composition"""
@@ -275,6 +279,9 @@ class MainWindow(QMainWindow):
             # Auto-select the last selected parameter if it exists in this file
             if self.last_selected_input_parameter:
                 self._auto_select_parameter_if_exists(self.last_selected_input_parameter, False)
+            # If no parameter is selected, auto-select dashboard
+            elif not self.param_tree.selectedItems():
+                self._auto_select_parameter_if_exists("Dashboard", False)
         elif file_type == "results":
             self.selected_results_file = file_path
             self._switch_to_results_view()
@@ -300,6 +307,14 @@ class MainWindow(QMainWindow):
 
             # Show the results file dashboard
             self._show_results_file_dashboard()
+            return
+
+        elif parameter_name == "Dashboard" and not is_results:
+            # Remember this parameter for future file switches
+            self.last_selected_input_parameter = parameter_name
+
+            # Show the input file dashboard
+            self._show_input_file_dashboard()
             return
 
         # Remember this parameter for future file switches
@@ -587,6 +602,9 @@ class MainWindow(QMainWindow):
         if self.current_view == "results" and self.selected_results_file:
             # Show dashboard for results files when no parameter is selected
             self._show_results_file_dashboard()
+        elif self.current_view == "input" and self.input_manager.get_current_scenario():
+            # Show input file dashboard for input files when no parameter is selected
+            self._show_input_file_dashboard()
         else:
             self.data_display.display_parameter_data(None, False)  # This will show placeholder
             self.chart_widget.show_placeholder()
@@ -603,6 +621,17 @@ class MainWindow(QMainWindow):
 
     def _auto_select_parameter_if_exists(self, parameter_name: str, is_results: bool):
         """Auto-select a parameter in the tree if it exists in the current scenario"""
+        if parameter_name == "Dashboard":
+            # Special handling for Dashboard - it's at root level
+            root = self.param_tree.invisibleRootItem()
+            for i in range(root.childCount()):
+                child = root.child(i)
+                if child.text(0) == "Dashboard":
+                    self.param_tree.setCurrentItem(child)
+                    self.param_tree.scrollToItem(child)
+                    return True
+            return False
+
         scenario = self._get_current_scenario(is_results)
         if not scenario or not scenario.get_parameter(parameter_name):
             return  # Parameter doesn't exist in this scenario
@@ -914,8 +943,9 @@ class MainWindow(QMainWindow):
     def _restore_normal_display(self):
         """Restore the normal data display (table and chart)"""
         try:
-            # Hide dashboard and show data splitter
+            # Hide dashboards and show data splitter
             self.results_file_dashboard.hide()
+            self.input_file_dashboard.hide()
             self.dataSplitter.show()
 
         except Exception as e:
@@ -936,6 +966,22 @@ class MainWindow(QMainWindow):
             self._append_to_console(f"Error showing results file dashboard: {str(e)}")
             QMessageBox.critical(self, "Dashboard Error",
                                f"Failed to show results file dashboard: {str(e)}")
+
+    def _show_input_file_dashboard(self):
+        """Show the input file dashboard in the main content area"""
+        try:
+            # Get the current input scenario
+            scenario = self._get_current_scenario(False)  # False for input
+
+            # Hide data splitter and show dashboard
+            self.dataSplitter.hide()
+            self.input_file_dashboard.update_dashboard(scenario)
+            self.input_file_dashboard.show()
+
+        except Exception as e:
+            self._append_to_console(f"Error showing input file dashboard: {str(e)}")
+            QMessageBox.critical(self, "Dashboard Error",
+                               f"Failed to show input file dashboard: {str(e)}")
 
     def _show_dashboard(self):
         """Show results dashboard"""
@@ -1153,6 +1199,9 @@ class MainWindow(QMainWindow):
                 self.file_navigator.add_recent_file(file_path, "input")
             # Update parameter tree
             self._switch_to_input_view()
+
+            # Auto-select Dashboard for input files
+            self._auto_select_parameter_if_exists("Dashboard", False)
 
         # Load all results files
         loaded_results_files = []

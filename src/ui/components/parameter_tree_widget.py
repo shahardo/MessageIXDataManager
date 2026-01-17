@@ -60,6 +60,11 @@ class ParameterTreeWidget(QTreeWidget):
         if not scenario:
             return
 
+        # Add dashboard item at the top for input view
+        dashboard_item = QTreeWidgetItem(self)
+        dashboard_item.setText(0, "Dashboard")
+        dashboard_item.setToolTip(0, "Display dashboard with comprehensive input file overview")
+
         # Group parameters by category with enhanced logic
         categories = {}
 
@@ -218,16 +223,20 @@ class ParameterTreeWidget(QTreeWidget):
             return
 
         selected_item = selected_items[0]
+        item_name = selected_item.text(0)
 
-        # Check if it's a parameter/result item (not a category)
+        # Special handling for Dashboard
+        if item_name == "Dashboard":
+            self.parameter_selected.emit("Dashboard", self.current_view == "results")
+            return
+
+        # Check if it's a category (no parent, and not Dashboard)
         if selected_item.parent() is None:
             # It's a category, emit None to clear displays
             self.parameter_selected.emit(None, self.current_view == "results")
             return
 
         # Get parameter/result name
-        item_name = selected_item.text(0)
-
         # For now, emit the name - the parent will need to look up the actual parameter
         # This could be improved by storing the parameter object in the item data
         self.parameter_selected.emit(item_name, self.current_view == "results")
