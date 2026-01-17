@@ -29,7 +29,22 @@ class DataObserver(Protocol):
 
 
 class BaseDataManager(ABC):
-    """Base class for data managers handling Excel file loading and scenario management with Observer pattern"""
+    """
+    Base class for data managers handling Excel file loading and scenario management.
+
+    This class provides a unified foundation for loading and managing MESSAGEix data files,
+    implementing the Observer pattern for change notifications, comprehensive error handling
+    with SafeOperation context managers, and standardized parameter creation through
+    the parameter factory system.
+
+    Subclasses must implement _parse_workbook() to handle specific file formats
+    (input vs results data).
+
+    Attributes:
+        scenarios: List of loaded ScenarioData objects
+        loaded_file_paths: Corresponding file paths for loaded scenarios
+        _observers: List of DataObserver objects for change notifications
+    """
 
     def __init__(self):
         self.scenarios: List[ScenarioData] = []

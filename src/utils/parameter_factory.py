@@ -1,10 +1,16 @@
 """
 Parameter Factory - Factory pattern for creating different types of parameters
+
+This module implements the Factory pattern for parameter creation, providing
+a unified interface for creating MESSAGEix input and result parameters.
+The factory delegates to create_parameter_from_data() in parameter_utils.py
+for consistent data cleaning and validation across all parameter types.
 """
 
 from abc import ABC, abstractmethod
 from typing import List, Dict, Any, Optional
 from core.data_models import Parameter
+from utils.parameter_utils import create_parameter_from_data
 
 
 class ParameterFactory(ABC):
@@ -27,57 +33,10 @@ class StandardParameterFactory(ParameterFactory):
 
     def _create_from_data(self, param_name: str, param_data: List, headers: List[str],
                          metadata_overrides: Optional[Dict[str, Any]] = None) -> Optional[Parameter]:
-        """Core parameter creation logic"""
-        import pandas as pd
-        import numpy as np
-
-        try:
-            # Input validation
-            if not param_data or not headers:
-                return None
-
-            # Create DataFrame with proper type handling
-            df = pd.DataFrame(param_data, columns=headers)
-
-            # Convert None to NaN
-            df = df.replace({None: np.nan})
-
-            # Handle integer columns with NaN
-            for col in df.columns:
-                col_data = df[col]
-                if col_data.dtype in ['int64', 'int32'] and col_data.isna().any():
-                    df[col] = col_data.astype('float64')
-
-
-
-            # Remove completely empty rows
-            df = df.dropna(how='all')
-
-            if df.empty:
-                return None
-
-            # Determine dimensions and value column
-            dims = headers[:-1] if len(headers) > 1 else []
-            value_col = headers[-1] if len(headers) > 0 else 'value'
-
-            # Create metadata
-            metadata = {
-                'units': 'N/A',
-                'desc': f'Parameter {param_name}',
-                'dims': dims,
-                'value_column': value_col,
-                'shape': df.shape
-            }
-
-            # Apply overrides
-            if metadata_overrides:
-                metadata.update(metadata_overrides)
-
-            return Parameter(param_name, df, metadata)
-
-        except Exception as e:
-            print(f"Warning: Could not create parameter {param_name}: {str(e)}")
-            return None
+        """Core parameter creation logic using unified parameter utils"""
+        # Create base parameter using standardized function
+        parameter = create_parameter_from_data(param_name, param_data, headers, metadata_overrides)
+        return parameter
 
 
 class InputParameterFactory(StandardParameterFactory):
