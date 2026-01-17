@@ -31,6 +31,7 @@ from managers.data_export_manager import DataExportManager
 from managers.logging_manager import logging_manager
 from managers.commands import EditCellCommand, EditPivotCommand, PasteColumnCommand
 from managers.parameter_manager import ParameterManager
+from managers.session_manager import SessionManager
 from core.data_models import ScenarioData
 from utils.error_handler import ErrorHandler, SafeOperation
 
@@ -76,6 +77,7 @@ class MainWindow(QMainWindow):
         self.results_analyzer: ResultsAnalyzer = ResultsAnalyzer()
         self.data_export_manager: DataExportManager = DataExportManager()
         self.parameter_manager: ParameterManager = ParameterManager()
+        self.session_manager: SessionManager = SessionManager()
 
         # Load technology descriptions from CSV
         self.tech_descriptions = self._load_tech_descriptions()
@@ -1106,68 +1108,33 @@ class MainWindow(QMainWindow):
     # Settings methods
     def _save_last_opened_files(self, file_path, file_type):
         """Save the last opened file path to settings"""
-        settings = QSettings("MessageIXDataManager", "MainWindow")
-        if file_type == "input":
-            input_files = settings.value("last_input_files", [])
-            if isinstance(input_files, str):
-                input_files = [input_files]
-            if file_path not in input_files:
-                input_files.append(file_path)
-                input_files = input_files[-5:]  # Keep only the last 5 files
-            settings.setValue("last_input_files", input_files)
-        elif file_type == "results":
-            results_files = settings.value("last_results_files", [])
-            if isinstance(results_files, str):
-                results_files = [results_files]
-            if file_path not in results_files:
-                results_files.append(file_path)
-                results_files = results_files[-5:]  # Keep only the last 5 files
-            settings.setValue("last_results_files", results_files)
+        self.session_manager.add_recent_file(file_path, file_type)
 
     def _save_current_session_state(self):
         """Save the current session state including selected files and view mode"""
-        settings = QSettings("MessageIXDataManager", "MainWindow")
-        settings.setValue("current_view", self.current_view)
-        settings.setValue("selected_input_file", self.selected_input_file)
-        settings.setValue("selected_results_file", self.selected_results_file)
+        state = {
+            'current_view': self.current_view,
+            'selected_input_file': self.selected_input_file,
+            'selected_results_file': self.selected_results_file,
+            'last_selected_input_parameter': self.last_selected_input_parameter,
+            'last_selected_results_parameter': self.last_selected_results_parameter,
+        }
+        self.session_manager.save_session_state(state)
 
     def _remove_last_opened_file(self, file_path, file_type):
         """Remove a file from the last opened files settings"""
-        settings = QSettings("MessageIXDataManager", "MainWindow")
-        if file_type == "input":
-            input_files = settings.value("last_input_files", [])
-            if isinstance(input_files, str):
-                input_files = [input_files]
-            if file_path in input_files:
-                input_files.remove(file_path)
-            settings.setValue("last_input_files", input_files)
-        elif file_type == "results":
-            results_files = settings.value("last_results_files", [])
-            if isinstance(results_files, str):
-                results_files = [results_files]
-            if file_path in results_files:
-                results_files.remove(file_path)
-            settings.setValue("last_results_files", results_files)
+        self.session_manager.remove_recent_file(file_path, file_type)
 
     def _get_last_opened_files(self):
         """Get the last opened file paths from settings"""
-        settings = QSettings("MessageIXDataManager", "MainWindow")
-        input_files = settings.value("last_input_files", [])
-        results_files = settings.value("last_results_files", [])
-        # Ensure they are lists
-        if isinstance(input_files, str):
-            input_files = [input_files]
-        if isinstance(results_files, str):
-            results_files = [results_files]
+        input_files = self.session_manager.get_last_opened_files("input")
+        results_files = self.session_manager.get_last_opened_files("results")
         return input_files, results_files
 
     def _get_last_session_state(self):
         """Get the last session state from settings"""
-        settings = QSettings("MessageIXDataManager", "MainWindow")
-        current_view = settings.value("current_view", "input")
-        selected_input_file = settings.value("selected_input_file", None)
-        selected_results_file = settings.value("selected_results_file", None)
-        return current_view, selected_input_file, selected_results_file
+        state = self.session_manager.load_session_state()
+        return state['current_view'], state['selected_input_file'], state['selected_results_file']
 
     def _restore_session_state(self, loaded_input_files, loaded_results_files):
         """Restore the session state after auto-loading files"""
