@@ -369,21 +369,26 @@ class ParameterTreeWidget(QTreeWidget):
 
         # Show the add parameter dialog
         from src.ui.components.add_parameter_dialog import AddParameterDialog
-        dialog = AddParameterDialog(self.parameter_manager, existing_params, self)
+        dialog = AddParameterDialog(self.parameter_manager, existing_params, self.current_scenario, self)
 
         if dialog.exec_() == QDialog.Accepted:
             selected_param = dialog.get_selected_parameter()
-            if selected_param:
-                # Create the parameter command and execute it
-                self._execute_add_parameter_command(selected_param)
+            selected_data = dialog.get_selected_data()
+            if selected_param and selected_data is not None:
+                # Create the parameter command and execute it with populated data
+                self._execute_add_parameter_command(selected_param, selected_data)
 
-    def _execute_add_parameter_command(self, parameter_name: str):
+    def _execute_add_parameter_command(self, parameter_name: str, parameter_data=None):
         """Execute the add parameter command."""
         if not self.current_scenario or not self.parameter_manager:
             return
 
-        # Create empty DataFrame for the parameter
-        empty_df = self.parameter_manager.create_empty_parameter_dataframe(parameter_name)
+        # Use provided data or create empty DataFrame for the parameter
+        if parameter_data is not None:
+            df = parameter_data
+        else:
+            df = self.parameter_manager.create_empty_parameter_dataframe(parameter_name)
+
         param_info = self.parameter_manager.get_parameter_info(parameter_name)
 
         # Create metadata dictionary from parameter info
@@ -395,7 +400,7 @@ class ParameterTreeWidget(QTreeWidget):
 
         # Create and execute the command
         from src.managers.commands import AddParameterCommand
-        command = AddParameterCommand(self.current_scenario, parameter_name, empty_df, metadata)
+        command = AddParameterCommand(self.current_scenario, parameter_name, df, metadata)
 
         if command.do():
             # Refresh the tree
