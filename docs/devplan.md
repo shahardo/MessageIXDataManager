@@ -78,14 +78,14 @@ This document outlines the implementation plan for adding right-click context me
 - Stack-based storage: Commands are pushed onto an undo stack after execution; undo pops and reverses the command, pushing to redo stack
 
 **Implementation Steps**:
-1. [ ] Design and implement `Command` base class and specific command subclasses (e.g., `EditCellCommand`, `InsertColumnCommand`, `DeleteColumnCommand`, `PasteColumnCommand`)
-2. [ ] Update `UndoManager` class to manage Command objects in stacks:
+1. [x] Design and implement `Command` base class and specific command subclasses (e.g., `EditCellCommand`, `InsertColumnCommand`, `DeleteColumnCommand`, `PasteColumnCommand`, `AddParameterCommand`, `RemoveParameterCommand`)
+2. [x] Update `UndoManager` class to manage Command objects in stacks:
    - `undo_stack`: List of executed commands
    - `redo_stack`: List of undone commands
    - Methods: `execute(command)`, `undo()`, `redo()`, `clear()`
-3. [ ] Integrate with existing operations: Each data-modifying action creates and executes a command via `UndoManager`
+3. [x] Integrate with existing operations: Each data-modifying action creates and executes a command via `UndoManager`
 4. [x] Add keyboard shortcuts (Ctrl+Z for undo, Ctrl+Y for redo)
-5. [ ] Ensure commands hold all state: No reliance on external snapshots; each command is self-contained
+5. [x] Ensure commands hold all state: No reliance on external snapshots; each command is self-contained
 
 **Key Technical Details**:
 - Commands store pre-operation state for undo (e.g., original cell value, column data)
@@ -131,39 +131,39 @@ We will implement the ability to add and remove parameters in the active scenari
 ## Key Changes
 
 ### 1. Core Data Models (`src/core/data_models.py`)
-*  [ ] **`ScenarioData`**: Add a `remove_parameter(name)` method to complement the existing `add_parameter`.
+*  [x] **`ScenarioData`**: Add a `remove_parameter(name)` method to complement the existing `add_parameter`.
 
 ### 2. Parameter Manager (`src/managers/parameter_manager.py`)
-*  [ ] **Refactor**: Remove the file-based Command classes (`AddParameterCommand`, `RemoveParameterCommand`) which incorrectly modify files directly.
-*  [ ] **Enhance**: Focus this class on providing parameter definitions (dimensions, types) and factory methods for creating new, empty parameter DataFrames.
-*  [ ] **Validation**: Keep and improve validation logic to ensure added parameters follow MESSAGEix standards.
+*  [x] **Refactor**: Remove the file-based Command classes (`AddParameterCommand`, `RemoveParameterCommand`) which incorrectly modify files directly.
+*  [x] **Enhance**: Focus this class on providing parameter definitions (dimensions, types) and factory methods for creating new, empty parameter DataFrames.
+*  [x] **Validation**: Keep and improve validation logic to ensure added parameters follow MESSAGEix standards.
 
 ### 3. Commands (`src/managers/commands.py`)
-*  [ ] **New Commands**: Implement memory-based `AddParameterCommand` and `RemoveParameterCommand`.
-    * [ ]  `AddParameterCommand`: Adds a `Parameter` object to `ScenarioData`. Undo removes it.
-    * [ ]  `RemoveParameterCommand`: Removes a parameter from `ScenarioData`, storing the deleted object. Undo restores it.
+*  [x] **New Commands**: Implement memory-based `AddParameterCommand` and `RemoveParameterCommand`.
+    * [x]  `AddParameterCommand`: Adds a `Parameter` object to `ScenarioData`. Undo removes it.
+    * [x]  `RemoveParameterCommand`: Removes a parameter from `ScenarioData`, storing the deleted object. Undo restores it.
 
 ### 4. UI Components (`src/ui/components/`)
-*  [ ] **`ParameterTreeWidget` (`src/ui/components/parameter_tree_widget.py`)**:
-    *  [ ] Add a context menu with "Add Parameter..." and "Remove Parameter".
-    *  [ ] Add an "Add Parameter" button (optional, or reuse the "Options" area).
-*  [ ] **`AddParameterDialog` (new file)**:
-    *  [ ] A dialog allowing the user to select from a list of valid MESSAGEix parameters that are not yet in the scenario.
-    *  [ ] Shows description and required dimensions for the selected parameter.
+*  [x] **`ParameterTreeWidget` (`src/ui/components/parameter_tree_widget.py`)**:
+    * [x] Add a context menu with "Add Parameter..." and "Remove Parameter".
+    * [x] Add an "Add Parameter" button (optional, or reuse the "Options" area).
+*  [x] **`AddParameterDialog` (new file)**:
+    * [x] A dialog allowing the user to select from a list of valid MESSAGEix parameters that are not yet in the scenario.
+    * [x] Shows description and required dimensions for the selected parameter.
 
 ### 5. Main Window (`src/ui/main_window.py`)
-*  [ ] **Integration**: Connect the `ParameterTreeWidget` signals to the `UndoManager` to execute the new commands.
-*  [ ] **Updates**: Ensure the tree view refreshes correctly after adding/removing parameters.
+*  [x] **Integration**: Connect the `ParameterTreeWidget` signals to the `UndoManager` to execute the new commands.
+*  [x] **Updates**: Ensure the tree view refreshes correctly after adding/removing parameters.
 
 ## Implementation Steps
 
-1. [ ] **Update `ScenarioData`**: Add `remove_parameter` method to `src/core/data_models.py`.
-2. [ ] **Refactor `ParameterManager`**: Clean up `src/managers/parameter_manager.py`, removing file I/O commands and ensuring it serves as a definition provider.
-3. [ ] **Implement Commands**: Add `AddParameterCommand` and `RemoveParameterCommand` to `src/managers/commands.py`.
-4. [ ] **Create UI Dialog**: Create `src/ui/components/add_parameter_dialog.py`.
-5. [ ] **Update Tree Widget**: Modify `src/ui/components/parameter_tree_widget.py` to include the context menu and handling for add/remove actions.
-6. [ ] **Integrate in MainWindow**: Wire everything together in `src/ui/main_window.py`.
-7. [ ] **Testing**: Verify adding/removing parameters, undo/redo functionality, and ensuring data is preserved/restored correctly.
+1. [x] **Update `ScenarioData`**: Add `remove_parameter` method to `src/core/data_models.py`.
+2. [x] **Refactor `ParameterManager`**: Clean up `src/managers/parameter_manager.py`, removing file I/O commands and ensuring it serves as a definition provider.
+3. [x] **Implement Commands**: Add `AddParameterCommand` and `RemoveParameterCommand` to `src/managers/commands.py`.
+4. [x] **Create UI Dialog**: Create `src/ui/components/add_parameter_dialog.py`.
+5. [x] **Update Tree Widget**: Modify `src/ui/components/parameter_tree_widget.py` to include the context menu and handling for add/remove actions.
+6. [x] **Integrate in MainWindow**: Wire everything together in `src/ui/main_window.py`.
+7. [x] **Testing**: Verify adding/removing parameters, undo/redo functionality, and ensuring data is preserved/restored correctly.
 
 ## Technical Considerations
 *   **Memory Management**: `RemoveParameterCommand` will hold a reference to the removed `Parameter` object (including its DataFrame). This is acceptable as it's consistent with how `UndoManager` works, but we should be mindful of very large parameters.
