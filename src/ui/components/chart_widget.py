@@ -27,6 +27,39 @@ from ..ui_styler import UIStyler
 class ChartWidget(QWidget):
     """Handles chart rendering and management"""
 
+    # Mapping from dimension names to display names for better readability (same as DataDisplayWidget)
+    DIMENSION_DISPLAY_NAMES = {
+        'tec': 'technology',
+        'node_loc': 'location',
+        'node_dest': 'destination',
+        'node_origin': 'origin',
+        'node_rel': 'relation node',
+        'node_share': 'share node',
+        'year_vtg': 'vintage year',
+        'year_act': 'active year',
+        'year_rel': 'relation year',
+        'type_tec': 'technology type',
+        'type_emiss': 'emission type',
+        'type_addon': 'addon type',
+        'type_year': 'year type',
+        'type_emission': 'emission type',
+        'type_rel': 'relation type',
+        'commodity': 'commodity',
+        'level': 'level',
+        'mode': 'mode',
+        'time': 'time',
+        'time_origin': 'origin time',
+        'time_dest': 'destination time',
+        'emission': 'emission',
+        'land_scenario': 'land scenario',
+        'land_type': 'land type',
+        'rating': 'rating',
+        'grade': 'grade',
+        'shares': 'shares',
+        'relation': 'relation',
+        'value': 'value'
+    }
+
     # Define PyQt signals
     chart_type_changed = pyqtSignal(str)
 
@@ -122,13 +155,16 @@ class ChartWidget(QWidget):
                 col_data = col_data.iloc[:, 0]
             values = col_data.fillna(0).tolist()
 
+            # Use display name for the trace name
+            display_name = self.DIMENSION_DISPLAY_NAMES.get(str(col_name), str(col_name))
+
             if self.current_chart_type == 'line':
                 fig.add_trace(go.Scatter(
                     x=years,
                     y=values,
                     mode='lines+markers',
-                    name=str(col_name),
-                    hovertemplate=f'{col_name}<br>Year: %{{x}}<br>Value: %{{y:.2f}}<extra></extra>'
+                    name=display_name,
+                    hovertemplate=f'{display_name}<br>Year: %{{x}}<br>Value: %{{y:.2f}}<extra></extra>'
                 ))
             elif self.current_chart_type == 'stacked_area':
                 fig.add_trace(go.Scatter(
@@ -136,15 +172,15 @@ class ChartWidget(QWidget):
                     y=values,
                     mode='lines',
                     stackgroup='one',  # This enables stacking
-                    name=str(col_name),
-                    hovertemplate=f'{col_name}<br>Year: %{{x}}<br>Value: %{{y:.2f}}<extra></extra>'
+                    name=display_name,
+                    hovertemplate=f'{display_name}<br>Year: %{{x}}<br>Value: %{{y:.2f}}<extra></extra>'
                 ))
             else:  # bar or stacked_bar
                 fig.add_trace(go.Bar(
                     x=years,
                     y=values,
-                    name=str(col_name),
-                    hovertemplate=f'{col_name}<br>Year: %{{x}}<br>Value: %{{y:.2f}}<extra></extra>'
+                    name=display_name,
+                    hovertemplate=f'{display_name}<br>Year: %{{x}}<br>Value: %{{y:.2f}}<extra></extra>'
                 ))
 
         # Update layout based on chart type

@@ -312,6 +312,39 @@ class ColumnHeaderView(QHeaderView):
 class DataDisplayWidget(QWidget):
     """Handles data table display, raw/advanced views, and formatting"""
 
+    # Mapping from dimension names to display names for better readability
+    DIMENSION_DISPLAY_NAMES = {
+        'tec': 'technology',
+        'node_loc': 'location',
+        'node_dest': 'destination',
+        'node_origin': 'origin',
+        'node_rel': 'relation node',
+        'node_share': 'share node',
+        'year_vtg': 'vintage year',
+        'year_act': 'active year',
+        'year_rel': 'relation year',
+        'type_tec': 'technology type',
+        'type_emiss': 'emission type',
+        'type_addon': 'addon type',
+        'type_year': 'year type',
+        'type_emission': 'emission type',
+        'type_rel': 'relation type',
+        'commodity': 'commodity',
+        'level': 'level',
+        'mode': 'mode',
+        'time': 'time',
+        'time_origin': 'origin time',
+        'time_dest': 'destination time',
+        'emission': 'emission',
+        'land_scenario': 'land scenario',
+        'land_type': 'land type',
+        'rating': 'rating',
+        'grade': 'grade',
+        'shares': 'shares',
+        'relation': 'relation',
+        'value': 'value'
+    }
+
     # Define PyQt signals
     display_mode_changed = pyqtSignal()
     cell_value_changed = pyqtSignal(str, object, object, object)  # mode, row_or_year, col_or_tech, new_value
@@ -513,7 +546,9 @@ class DataDisplayWidget(QWidget):
 
         # Set headers with tooltips
         for i, col in enumerate(df.columns):
-            header_item = QTableWidgetItem(str(col))
+            # Use display name if available, otherwise use the original column name
+            display_name = self.DIMENSION_DISPLAY_NAMES.get(str(col), str(col))
+            header_item = QTableWidgetItem(display_name)
             desc = self.tech_descriptions.get(str(col), {}).get('description', '')
             if desc and type(desc) is str: # since desc could be np.nan when reading empty CSV cells
                 header_item.setToolTip(desc)
@@ -847,7 +882,7 @@ class DataDisplayWidget(QWidget):
             elif col_lower in ['time', 'unit', 'units']:
                 # Ignore these columns completely
                 ignored_cols.append(col)
-            elif col_lower in ['commodity', 'technology', 'type']:
+            elif col_lower in ['commodity', 'technology', 'type', 'tec']:
                 # These become pivot table column headers
                 pivot_cols.append(col)
             elif col_lower in ['region', 'node', 'node_loc', 'node_rel', 'node_dest', 'node_origin',
@@ -912,7 +947,10 @@ class DataDisplayWidget(QWidget):
             pivot_cols = column_info.get('pivot_cols', [])
             value_col = column_info.get('value_col')
 
+            print(f"DEBUG: _perform_pivot called with year_cols={year_cols}, pivot_cols={pivot_cols}, value_col={value_col}")
+
             if not (year_cols and pivot_cols and value_col):
+                print("DEBUG: Missing required columns for pivot, returning original df")
                 return df
 
             # Try different combinations of year and pivot columns

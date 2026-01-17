@@ -106,6 +106,9 @@ class MainWindow(QMainWindow):
         self.last_selected_input_parameter: Optional[str] = None
         self.last_selected_results_parameter: Optional[str] = None
 
+        # Store currently displayed parameter for cell editing (independent of tree selection)
+        self.current_displayed_parameter: Optional[str] = None
+
         # Initialize find widget
         self.find_widget = FindWidget(self)
         self.find_widget.hide()
@@ -297,6 +300,7 @@ class MainWindow(QMainWindow):
         """Handle parameter/result selection in tree"""
         if parameter_name is None:
             # Category selected, clear display
+            self.current_displayed_parameter = None
             self._clear_data_display()
             return
 
@@ -304,6 +308,7 @@ class MainWindow(QMainWindow):
         if parameter_name == "Dashboard" and is_results:
             # Remember this parameter for future file switches
             self.last_selected_results_parameter = parameter_name
+            self.current_displayed_parameter = None
 
             # Show the results file dashboard
             self._show_results_file_dashboard()
@@ -312,16 +317,20 @@ class MainWindow(QMainWindow):
         elif parameter_name == "Dashboard" and not is_results:
             # Remember this parameter for future file switches
             self.last_selected_input_parameter = parameter_name
+            self.current_displayed_parameter = None
 
             # Show the input file dashboard
             self._show_input_file_dashboard()
             return
 
-        # Remember this parameter for future file switches
+        # Remember this parameter for future file switches and current display
         if is_results:
             self.last_selected_results_parameter = parameter_name
         else:
             self.last_selected_input_parameter = parameter_name
+
+        # Store the currently displayed parameter (independent of tree selection)
+        self.current_displayed_parameter = parameter_name
 
         # Switch back to normal data display if dashboard was showing
         self._restore_normal_display()
@@ -374,12 +383,20 @@ class MainWindow(QMainWindow):
             return
 
         # Get the currently selected parameter
-        selected_items = self.param_tree.selectedItems()
-        if not selected_items:
-            return
+        param_name = None
 
-        param_name = selected_items[0].text(0)
-        if not param_name or param_name.startswith(("Parameters", "Results", "Economic", "Variables", "Sets")):
+        # First try to get from tree selection
+        selected_items = self.param_tree.selectedItems()
+        if selected_items:
+            candidate_name = selected_items[0].text(0)
+            if candidate_name and not candidate_name.startswith(("Parameters", "Results", "Economic", "Variables", "Sets")):
+                param_name = candidate_name
+
+        # If tree selection failed, use the stored currently displayed parameter
+        if not param_name and self.current_displayed_parameter:
+            param_name = self.current_displayed_parameter
+
+        if not param_name:
             return
 
         parameter = scenario.get_parameter(param_name)
@@ -555,23 +572,44 @@ class MainWindow(QMainWindow):
 
     def _on_chart_update_needed(self):
         """Update chart when data changes without refreshing the table"""
-        # Get the currently selected parameter
-        selected_items = self.param_tree.selectedItems()
-        if not selected_items:
-            return
+        try:
+            # Get the currently selected parameter
+            selected_items = self.param_tree.selectedItems()
+            if not selected_items:
+                print("DEBUG: No selected items in parameter tree")
+                return
 
-        param_name = selected_items[0].text(0)
-        if not param_name or param_name.startswith(("Parameters", "Results", "Economic", "Variables", "Sets")):
-            return
+            param_name = selected_items[0].text(0)
+            print(f"DEBUG: Chart update needed for parameter: {param_name}")
+            if not param_name or param_name.startswith(("Parameters", "Results", "Economic", "Variables", "Sets")):
+                print(f"DEBUG: Skipping chart update for category/header: {param_name}")
+                return
 
-        # Get the parameter object
-        scenario = self._get_current_scenario(self.current_view == "results")
-        if scenario:
+            # Get the parameter object
+            scenario = self._get_current_scenario(self.current_view == "results")
+            if not scenario:
+                print("DEBUG: No current scenario found")
+                return
+
             parameter = scenario.get_parameter(param_name)
-            if parameter:
-                # Update chart with current data (which includes our changes)
-                chart_df = self._get_chart_data(parameter, self.current_view == "results")
+            if not parameter:
+                print(f"DEBUG: Parameter {param_name} not found in scenario")
+                return
+
+            print(f"DEBUG: Updating chart for parameter {param_name} with {len(parameter.df)} rows")
+
+            # Update chart with current data (which includes our changes)
+            chart_df = self._get_chart_data(parameter, self.current_view == "results")
+            if chart_df is not None:
+                print(f"DEBUG: Chart data has {len(chart_df)} rows, {len(chart_df.columns)} columns")
                 self.chart_widget.update_chart(chart_df, parameter.name, self.current_view == "results")
+            else:
+                print("DEBUG: Chart data is None")
+
+        except Exception as e:
+            print(f"ERROR in _on_chart_update_needed: {e}")
+            import traceback
+            traceback.print_exc()
 
     def _switch_to_input_view(self):
         """Switch to input parameters view"""
@@ -612,12 +650,12 @@ class MainWindow(QMainWindow):
     def _refresh_current_display(self):
         """Refresh the current parameter/result display"""
         # This would be called when display mode or chart type changes
-        # For now, retrigger the current parameter selection
-        selected_items = self.param_tree.selectedItems()
-        if selected_items:
-            item_name = selected_items[0].text(0)
-            if item_name and not item_name.startswith(("Parameters", "Results", "Economic", "Variables", "Sets")):
-                self._on_parameter_selected(item_name, self.current_view == "results")
+        # Use the stored current parameter instead of tree selection (which may be cleared)
+        if self.current_displayed_parameter:
+            print(f"DEBUG: Refreshing display for parameter: {self.current_displayed_parameter}")
+            self._on_parameter_selected(self.current_displayed_parameter, self.current_view == "results")
+        else:
+            print("DEBUG: No current displayed parameter to refresh")
 
     def _auto_select_parameter_if_exists(self, parameter_name: str, is_results: bool):
         """Auto-select a parameter in the tree if it exists in the current scenario"""
