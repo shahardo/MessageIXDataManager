@@ -373,7 +373,8 @@ class MainWindow(QMainWindow):
                         filters=filters, hide_empty=False
                     )
 
-                    self.chart_widget.update_chart(chart_df, parameter.name, is_results)
+                    if chart_df is not None:
+                        self.chart_widget.update_chart(chart_df, parameter.name, is_results)
         except Exception as e:
             print(f"ERROR in parameter selection: {e}")
             import traceback
@@ -426,7 +427,8 @@ class MainWindow(QMainWindow):
                     scenario_options=scenario.options if scenario else None,
                     filters=filters, hide_empty=False
                 )
-                self.chart_widget.update_chart(chart_df, parameter.name, self.current_view == "results")
+                if chart_df is not None:
+                    self.chart_widget.update_chart(chart_df, parameter.name, self.current_view == "results")
 
             # Refresh the display to show the updated pivoted data (for advanced mode)
             if mode == "advanced":
@@ -588,12 +590,13 @@ class MainWindow(QMainWindow):
         if parameter_name == "Dashboard":
             # Special handling for Dashboard - it's at root level
             root = self.param_tree.invisibleRootItem()
-            for i in range(root.childCount()):
-                child = root.child(i)
-                if child.text(0) == "Dashboard":
-                    self.param_tree.setCurrentItem(child)
-                    self.param_tree.scrollToItem(child)
-                    return True
+            if root:
+                for i in range(root.childCount()):
+                    child = root.child(i)
+                    if child and child.text(0) == "Dashboard":
+                        self.param_tree.setCurrentItem(child)
+                        self.param_tree.scrollToItem(child)
+                        return True
             return False
 
         scenario = self._get_current_scenario(is_results)
@@ -603,6 +606,8 @@ class MainWindow(QMainWindow):
         # Find and select the parameter in the tree
         def find_and_select_item(parent_item):
             """Recursively search for the parameter item"""
+            if not parent_item:
+                return False
             for i in range(parent_item.childCount()):
                 child = parent_item.child(i)
                 if child.text(0) == parameter_name:
@@ -647,74 +652,6 @@ class MainWindow(QMainWindow):
             return self.current_displayed_parameter
 
         return None
-
-    def _get_chart_data(self, parameter, is_results: bool):
-        """Get transformed data for chart display using the same logic as table view"""
-        df = parameter.df
-
-        # Use the same transformation logic as the data display widget
-        # For charts, we always want advanced view transformation (pivoted data)
-        # Charts always hide empty columns for cleaner visualization
-        transformed_df = self.data_display.transform_to_display_format(
-            df,
-            is_results=is_results,
-            current_filters=self.data_display._get_current_filters(),  # Get current filters from data display widget
-            hide_empty=True,       # Charts always hide empty columns
-            for_chart=True         # Indicate this is for chart display
-        )
-
-        # Apply year clipping based on scenario options
-        scenario = self._get_current_scenario(is_results)
-        if scenario and transformed_df is not None and not transformed_df.empty and scenario.options.get('YearsLimitEnabled', True):
-            min_year = scenario.options.get('MinYear', 2020)
-            max_year = scenario.options.get('MaxYear', 2050)
-
-            # Check for year column (could be 'year' or 'year_act')
-            year_col = None
-            for y in ['year', 'year_act']:
-                if y in transformed_df.columns:
-                    year_col = y
-                    break
-
-            if year_col:
-                # Filter by year column - ensure numeric comparison
-                try:
-                    year_values = pd.to_numeric(transformed_df[year_col], errors='coerce')
-                    transformed_df = transformed_df[
-                        (year_values >= min_year) & (year_values <= max_year)
-                    ]
-                except (TypeError, ValueError):
-                    # If conversion fails, skip filtering
-                    pass
-            elif isinstance(transformed_df.index, pd.MultiIndex):
-                # Check for year in MultiIndex (could be 'year' or 'year_act')
-                year_level = None
-                for y in ['year', 'year_act']:
-                    if y in transformed_df.index.names:
-                        year_level = y
-                        break
-
-                if year_level:
-                    # Filter by year in MultiIndex - ensure numeric comparison
-                    try:
-                        year_values = pd.to_numeric(transformed_df.index.get_level_values(year_level), errors='coerce')
-                        mask = (year_values >= min_year) & (year_values <= max_year)
-                        transformed_df = transformed_df[mask]
-                    except (TypeError, ValueError):
-                        # If conversion fails, skip filtering
-                        pass
-            elif hasattr(transformed_df.index, 'name') and transformed_df.index.name in ['year', 'year_act']:
-                # Filter by year index - ensure numeric comparison
-                try:
-                    year_values = pd.to_numeric(transformed_df.index, errors='coerce')
-                    transformed_df = transformed_df[
-                        (year_values >= min_year) & (year_values <= max_year)
-                    ]
-                except (TypeError, ValueError):
-                    # If conversion fails, skip filtering
-                    pass
-
-        return transformed_df
 
     def _open_input_file(self):
         """Handle opening input Excel file(s)"""
@@ -1160,13 +1097,15 @@ class MainWindow(QMainWindow):
         has_unsaved_changes = False
 
         # Check input scenarios
-        if self.input_manager.get_current_scenario():
-            if self.data_export_manager.has_modified_data(self.input_manager.get_current_scenario()):
+        input_scenario = self.input_manager.get_current_scenario()
+        if input_scenario:
+            if self.data_export_manager.has_modified_data(input_scenario):
                 has_unsaved_changes = True
 
         # Check results scenarios
-        if self.results_analyzer.get_current_results():
-            if self.data_export_manager.has_modified_data(self.results_analyzer.get_current_results()):
+        results_scenario = self.results_analyzer.get_current_results()
+        if results_scenario:
+            if self.data_export_manager.has_modified_data(results_scenario):
                 has_unsaved_changes = True
 
         if has_unsaved_changes:
@@ -1181,7 +1120,8 @@ class MainWindow(QMainWindow):
                 # Try to save changes
                 self._save_file()
                 # If save was cancelled or failed, don't close
-                if self.data_export_manager.has_modified_data(self._get_current_scenario(self.current_view == "results")):
+                current_scenario = self._get_current_scenario(self.current_view == "results")
+                if current_scenario and self.data_export_manager.has_modified_data(current_scenario):
                     event.ignore()
                     return
             elif reply == QMessageBox.Cancel:

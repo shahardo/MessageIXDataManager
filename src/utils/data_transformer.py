@@ -103,7 +103,7 @@ class DataTransformer:
             if year_level:
                 # Filter by year in MultiIndex - ensure numeric comparison
                 try:
-                    year_values = pd.to_numeric(pd.Series(df.index.get_level_values(year_level)), errors='coerce')
+                    year_values = pd.to_numeric(df.index.get_level_values(year_level), errors='coerce')
                     mask = (year_values >= min_year) & (year_values <= max_year)
                     df = df[mask]
                 except (TypeError, ValueError):
@@ -112,7 +112,7 @@ class DataTransformer:
         elif hasattr(df.index, 'name') and df.index.name in ['year', 'year_act']:
             # Filter by year index - ensure numeric comparison
             try:
-                year_values = pd.to_numeric(pd.Series(df.index), errors='coerce')
+                year_values = pd.to_numeric(df.index, errors='coerce')
                 mask = (year_values >= min_year) & (year_values <= max_year)
                 df = df[mask]
             except (TypeError, ValueError):
