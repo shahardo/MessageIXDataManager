@@ -219,13 +219,13 @@ class InputFileDashboard(QWidget):
                     text-align: center;
                 }}
                 .stat-value {{
-                    font-size: 28px;
+                    font-size: 20px;
                     font-weight: bold;
                     color: #2c3e50;
                     margin-bottom: 5px;
                 }}
                 .stat-label {{
-                    font-size: 14px;
+                    font-size: 10px;
                     color: #7f8c8d;
                 }}
                 .summary-table {{
@@ -241,6 +241,7 @@ class InputFileDashboard(QWidget):
                     padding: 12px 15px;
                     text-align: left;
                     border-bottom: 1px solid #e0e0e0;
+                    font-size: 11px;
                 }}
                 .summary-table th {{
                     background-color: #3498db;
@@ -253,6 +254,12 @@ class InputFileDashboard(QWidget):
                 h2 {{
                     color: #2c3e50;
                     margin-bottom: 20px;
+                    font-size: 18px;
+                }}
+                h3 {{
+                    color: #2c3e50;
+                    margin-bottom: 15px;
+                    font-size: 16px;
                 }}
             </style>
         </head>
@@ -408,7 +415,7 @@ class InputFileDashboard(QWidget):
                     border-radius: 4px;
                     padding: 8px 12px;
                     border: 1px solid #e0e0e0;
-                    font-size: 14px;
+                    font-size: 12px;
                     color: #2c3e50;
                 }}
                 .item-card:hover {{
@@ -418,6 +425,7 @@ class InputFileDashboard(QWidget):
                 h2 {{
                     color: #2c3e50;
                     margin-bottom: 15px;
+                    font-size: 18px;
                 }}
                 .search-box {{
                     margin-bottom: 15px;
@@ -495,6 +503,11 @@ class InputFileDashboard(QWidget):
                     border-right: 1px solid #e0e0e0;
                     font-size: 12px;
                 }
+                .summary-table th:not(:first-child), .summary-table td:not(:first-child) {
+                    max-width: 50px;
+                    overflow: show;
+                    white-space: normal; /* Allows text to wrap (this is the default) */
+                }
                 .summary-table th {
                     background-color: #3498db;
                     color: white;
@@ -519,7 +532,7 @@ class InputFileDashboard(QWidget):
                 .check-mark {
                     color: #27ae60;
                     font-weight: bold;
-                    font-size: 16px;
+                    font-size: 14px;
                 }
                 .table-container {
                     overflow-x: auto;
@@ -529,6 +542,7 @@ class InputFileDashboard(QWidget):
                 h2 {
                     color: #2c3e50;
                     margin-bottom: 15px;
+                    font-size: 18px;
                 }
                 .search-box {
                     margin-bottom: 15px;
@@ -570,7 +584,7 @@ class InputFileDashboard(QWidget):
                 has_tech = tech in tech_coverage.get(param_name, set())
                 cell_content = '✓' if has_tech else ''
                 cell_class = 'check-mark' if has_tech else ''
-                html += f'                            <td class="check-cell"><span class="{cell_class}">{cell_content}</span></td>\n'
+                html += f'                            <td class="check-cell">{cell_content}</td>\n'
 
             html += '                        </tr>\n'
 
@@ -648,6 +662,11 @@ class InputFileDashboard(QWidget):
                     border-right: 1px solid #e0e0e0;
                     font-size: 12px;
                 }
+                .summary-table th:not(:first-child), .summary-table td:not(:first-child) {
+                    max-width: 50px;
+                    overflow: show;
+                    white-space: normal; /* Allows text to wrap (this is the default) */
+                }
                 .summary-table th {
                     background-color: #3498db;
                     color: white;
@@ -672,7 +691,7 @@ class InputFileDashboard(QWidget):
                 .check-mark {
                     color: #27ae60;
                     font-weight: bold;
-                    font-size: 16px;
+                    font-size: 14px;
                 }
                 .table-container {
                     overflow-x: auto;
@@ -682,6 +701,7 @@ class InputFileDashboard(QWidget):
                 h2 {
                     color: #2c3e50;
                     margin-bottom: 15px;
+                    font-size: 18px;
                 }
                 .search-box {
                     margin-bottom: 15px;
@@ -722,8 +742,7 @@ class InputFileDashboard(QWidget):
             for param_name in sorted_params:
                 has_commodity = commodity in commodity_coverage.get(param_name, set())
                 cell_content = '✓' if has_commodity else ''
-                cell_class = 'check-mark' if has_commodity else ''
-                html += f'                            <td class="check-cell"><span class="{cell_class}">{cell_content}</span></td>\n'
+                html += f'                            <td class="check-cell">{cell_content}</td>\n'
 
             html += '                        </tr>\n'
 

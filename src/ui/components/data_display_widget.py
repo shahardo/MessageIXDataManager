@@ -10,7 +10,6 @@ from PyQt5.QtWidgets import (
     QMenu, QAction, QApplication, QMessageBox, QInputDialog
 )
 from PyQt5.QtCore import Qt, pyqtSignal, QTimer
-from PyQt5.QtGui import QKeySequence
 import pandas as pd
 import numpy as np
 from typing import Optional, Dict, List, Union, Any, TYPE_CHECKING

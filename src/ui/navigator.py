@@ -8,7 +8,7 @@ with support for file removal and loading new files.
 import os
 from typing import List, Optional
 from PyQt5.QtWidgets import QTreeWidget, QTreeWidgetItem, QPushButton, QHBoxLayout, QWidget, QHeaderView
-from PyQt5.QtCore import Qt, pyqtSignal, QEvent, QSize
+from PyQt5.QtCore import Qt, pyqtSignal, QSize
 from PyQt5.QtGui import QIcon, QResizeEvent
 from .ui_styler import UIStyler
 
@@ -203,7 +203,7 @@ class ProjectNavigator(QTreeWidget):
                         # Add remove button in second column
                         remove_btn = QPushButton("×")
                         UIStyler.setup_remove_button(remove_btn)
-                        remove_btn.clicked.connect(lambda checked, fp=file_path, ft="input": self._remove_file(fp, ft))
+                        remove_btn.clicked.connect(lambda _, fp=file_path, ft="input": self._remove_file(fp, ft))
                         self.setItemWidget(file_item, 1, remove_btn)
 
                 item.setExpanded(True)
@@ -243,7 +243,7 @@ class ProjectNavigator(QTreeWidget):
                         # Add remove button in second column
                         remove_btn = QPushButton("×")
                         UIStyler.setup_remove_button(remove_btn)
-                        remove_btn.clicked.connect(lambda checked, fp=file_path, ft="results": self._remove_file(fp, ft))
+                        remove_btn.clicked.connect(lambda _, fp=file_path, ft="results": self._remove_file(fp, ft))
                         self.setItemWidget(file_item, 1, remove_btn)
 
                 item.setExpanded(True)

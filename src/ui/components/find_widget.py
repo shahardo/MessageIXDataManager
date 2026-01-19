@@ -7,10 +7,10 @@ based on current selection context.
 
 from PyQt5.QtWidgets import (
     QWidget, QHBoxLayout, QLineEdit, QPushButton, QLabel,
-    QFrame, QApplication
+    QApplication
 )
 from PyQt5.QtCore import Qt, pyqtSignal, QPoint
-from PyQt5.QtGui import QFont, QKeyEvent, QKeySequence
+from PyQt5.QtGui import QKeyEvent
 from typing import Optional, List, Tuple
 
 

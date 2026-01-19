@@ -798,8 +798,9 @@ class MainWindow(QMainWindow):
             # Get the current results scenario
             scenario = self._get_current_scenario(True)  # True for results
 
-            # Hide data splitter and show dashboard
+            # Hide data splitter and input dashboard, show results dashboard
             self.dataSplitter.hide()
+            self.input_file_dashboard.hide()
             self.results_file_dashboard.update_dashboard(scenario)
             self.results_file_dashboard.show()
 
@@ -814,8 +815,9 @@ class MainWindow(QMainWindow):
             # Get the current input scenario
             scenario = self._get_current_scenario(False)  # False for input
 
-            # Hide data splitter and show dashboard
+            # Hide data splitter and results dashboard, show input dashboard
             self.dataSplitter.hide()
+            self.results_file_dashboard.hide()
             self.input_file_dashboard.update_dashboard(scenario)
             self.input_file_dashboard.show()
 

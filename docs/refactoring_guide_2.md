@@ -12,20 +12,20 @@ This document outlines the execution plan for refactoring the MessageIX Data Man
 **Objective:** Solidify the data handling layer before refactoring the UI that depends on it.
 
 ### 1.1. Unify Data Managers
-* [ ] **Current State:** `InputManager` and `ResultsAnalyzer` duplicate file loading, scenario management, and path tracking.
-* [ ] **Action:**
-    * [ ] Create `src/core/base_data_manager.py` containing `DataManager(ABC)`.
-    * [ ] Move `load_file`, `get_current_scenario`, and `_merge_scenario` logic to base class.
-    * [ ] Refactor `InputManager` and `ResultsAnalyzer` to inherit from `DataManager`.
-    * [ ] Implement abstract method `_parse_workbook` in subclasses.
-* [ ] **Benefit:** Centralizes file I/O error handling and progress reporting; reduces bug surface area.
+* [x] **Current State:** `InputManager` and `ResultsAnalyzer` duplicate file loading, scenario management, and path tracking.
+* [x] **Action:**
+    * [x] Create `src/core/base_data_manager.py` containing `DataManager(ABC)`.
+    * [x] Move `load_file`, `get_current_scenario`, and `_merge_scenario` logic to base class.
+    * [x] Refactor `InputManager` and `ResultsAnalyzer` to inherit from `DataManager`.
+    * [x] Implement abstract method `_parse_workbook` in subclasses.
+* [x] **Benefit:** Centralizes file I/O error handling and progress reporting; reduces bug surface area.
 
 ### 1.2. Standardize Parameter Creation
-* [ ] **Current State:** Data cleaning logic (NaN handling, type conversion) is duplicated and inconsistent across managers.
-* [ ] **Action:**
-    * [ ] Utilize `src/utils/parameter_utils.py` (ensure it covers all edge cases like integer-to-float conversion for NaNs).
-    * [ ] Replace `_create_parameter` methods in both managers with `create_parameter_from_data`.
-* [ ] **Benefit:** Ensures consistent data quality and simplifies unit testing of data parsing.
+* [x] **Current State:** Data cleaning logic (NaN handling, type conversion) is duplicated and inconsistent across managers.
+* [x] **Action:**:
+    * [x] Utilize `src/utils/parameter_utils.py` (ensure it covers all edge cases like integer-to-float conversion for NaNs).
+    * [x] Replace `_create_parameter` methods in both managers with `create_parameter_from_data`.
+* [x] **Benefit:** Ensures consistent data quality and simplifies unit testing of data parsing.
 
 ### 1.3. Robust Error Handling Framework
 * [ ] **Current State:** Scattered `try/except` blocks with generic error messages.
@@ -110,16 +110,20 @@ This document outlines the execution plan for refactoring the MessageIX Data Man
 Based on the recent refactoring effort, the following tasks have been completed:
 
 ✅ **Phase 1.3** - Robust Error Handling Framework (ErrorHandler and SafeOperation classes implemented)
+✅ **Phase 2.1** - Extract File Navigation (FileNavigatorWidget created and integrated)
 ✅ **Phase 2.2** - Extract Data Display (DataDisplayWidget extracted with table logic)
+✅ **Phase 2.3** - Extract Charting (ChartWidget created and integrated)
+✅ **Phase 2.4** - Extract Parameter Tree (ParameterTreeWidget created and integrated)
 ✅ **Phase 2.5** - Reassemble MainWindow (MainWindow now uses composition pattern)
 ✅ **Phase 3.1** - Unified Display Logic (display_data_table method implemented)
+✅ **Phase 3.2** - Centralized Styling (ui_styler.py and styles.qss implemented)
 ✅ **Phase 3.3** - Simplify Complex Transformations (DataTransformer extracted with separate methods)
 ✅ **Phase 4.1** - Type Hinting & Documentation (Added to new components)
+✅ **Phase 4.2** - Dead Code Removal (Removed unused _get_chart_data method)
 
 ## Remaining Next Steps
-1. [ ] Create `src/core/base_data_manager.py`.
-2. [ ] Refactor `InputManager` and `ResultsAnalyzer` to inherit from base class.
-3. [ ] Extract File Navigation (FileNavigatorWidget logic from MainWindow).
-4. [ ] Extract Charting (ChartWidget logic consolidation).
-5. [ ] Extract Parameter Tree (ParameterTreeWidget logic consolidation).
-6. [ ] Implement centralized styling with `src/ui/styles.qss` and `ui_styler.py`.
+1. [x] Create `src/core/base_data_manager.py`. - **COMPLETED**
+2. [x] Refactor `InputManager` and `ResultsAnalyzer` to inherit from base class. - **COMPLETED**
+3. [x] Standardize Parameter Creation (Phase 1.2) - implement parameter_utils.py standardization - **COMPLETED**
+4. [ ] Run dead code analysis (Phase 4.2) - identify unused imports and methods
+5. [ ] Final integration testing - comprehensive test suite verification

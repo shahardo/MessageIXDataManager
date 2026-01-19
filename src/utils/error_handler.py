@@ -7,7 +7,6 @@ Provides centralized error handling, user-friendly messages, and logging.
 import os
 import logging
 from typing import Optional, Callable, Any
-from contextlib import contextmanager
 
 
 class ErrorHandler:
@@ -124,7 +123,7 @@ class SafeOperation:
     def __enter__(self):
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    def __exit__(self, exc_type, exc_val, _):
         if exc_type:
             self.error_occurred = True
             error_msg = self._handle_error(exc_val)
