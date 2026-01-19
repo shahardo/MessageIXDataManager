@@ -24,6 +24,9 @@ from .components import (
 )
 from .components.find_widget import FindWidget
 from .components.data_display_widget import UndoManager
+from .controllers.find_controller import FindController
+from .controllers.edit_handler import EditHandler
+from managers.file_handlers import InputFileHandler, ResultsFileHandler, AutoLoadHandler
 from managers.input_manager import InputManager
 from managers.solver_manager import SolverManager
 from managers.results_analyzer import ResultsAnalyzer
@@ -34,6 +37,7 @@ from managers.parameter_manager import ParameterManager
 from managers.session_manager import SessionManager
 from core.data_models import ScenarioData
 from utils.error_handler import ErrorHandler, SafeOperation
+from utils.data_transformer import DataTransformer
 
 
 class MainWindow(QMainWindow):
@@ -115,12 +119,22 @@ class MainWindow(QMainWindow):
         # Store currently displayed parameter for cell editing (independent of tree selection)
         self.current_displayed_parameter: Optional[str] = None
 
-        # Initialize find widget
+        # Initialize find widget and controller
         self.find_widget = FindWidget(self)
         self.find_widget.hide()
+        self.find_controller = FindController(self.param_tree, self.param_table)
         self.current_search_mode = "parameter"  # "parameter" or "table"
         self.last_parameter_search = ""  # Remember search text for parameters
         self.last_table_search = ""      # Remember search text for tables
+
+        # Initialize edit handler
+        self.edit_handler = EditHandler(self._get_current_scenario, self.data_display)
+
+        # Initialize file handlers
+        self.input_file_handler = InputFileHandler(self.input_manager)
+        self.results_file_handler = ResultsFileHandler(self.results_analyzer)
+        self.auto_load_handler = AutoLoadHandler(self.input_manager, self.results_analyzer, self.session_manager)
+
         self._connect_find_widget_signals()
 
         # Auto-load last opened files
@@ -351,7 +365,13 @@ class MainWindow(QMainWindow):
                     self.data_display.display_parameter_data(parameter, is_results)
 
                     # Update chart with transformed data for display
-                    chart_df = self._get_chart_data(parameter, is_results)
+                    scenario = self._get_current_scenario(is_results)
+                    filters = self.data_display._get_current_filters() if hasattr(self.data_display, '_get_current_filters') else {}
+                    chart_df = DataTransformer.prepare_chart_data(
+                        parameter, is_results=is_results,
+                        scenario_options=scenario.options if scenario else None,
+                        filters=filters, hide_empty=False
+                    )
 
                     self.chart_widget.update_chart(chart_df, parameter.name, is_results)
         except Exception as e:
@@ -383,149 +403,37 @@ class MainWindow(QMainWindow):
 
     def _on_cell_value_changed(self, mode: str, row_or_year, col_or_tech, new_value):
         """Handle cell value changes from table editing"""
-        # Get the current scenario and parameter
-        scenario = self._get_current_scenario(self.current_view == "results")
-        if not scenario:
-            return
-
-        # Get the currently selected parameter
-        param_name = None
-
-        # First try to get from tree selection
-        selected_items = self.param_tree.selectedItems()
-        if selected_items:
-            candidate_name = selected_items[0].text(0)
-            if candidate_name and not candidate_name.startswith(("Parameters", "Results", "Economic", "Variables", "Sets")):
-                param_name = candidate_name
-
-        # If tree selection failed, use the stored currently displayed parameter
-        if not param_name and self.current_displayed_parameter:
-            param_name = self.current_displayed_parameter
-
+        # Get the currently displayed parameter name
+        param_name = self._get_current_displayed_parameter()
         if not param_name:
             return
 
-        parameter = scenario.get_parameter(param_name)
-        if not parameter:
-            return
+        # Use the edit handler to process the change
+        success = self.edit_handler.handle_cell_value_change(mode, row_or_year, col_or_tech, new_value, self.undo_manager)
 
-        # Store the original data before making changes (for undo)
-        original_df = parameter.df.copy()
-        df = parameter.df.copy()
+        if success:
+            # Update UI elements
+            self._update_undo_redo_ui()
+            self.statusbar.showMessage(f"Modified {param_name} - unsaved changes")
 
-        old_value = None  # Will be set based on mode
+            # Update chart immediately with the new data
+            scenario = self._get_current_scenario(self.current_view == "results")
+            filters = self.data_display._get_current_filters() if hasattr(self.data_display, '_get_current_filters') else {}
+            parameter = scenario.get_parameter(param_name) if scenario else None
+            if parameter:
+                chart_df = DataTransformer.prepare_chart_data(
+                    parameter, is_results=self.current_view == "results",
+                    scenario_options=scenario.options if scenario else None,
+                    filters=filters, hide_empty=False
+                )
+                self.chart_widget.update_chart(chart_df, parameter.name, self.current_view == "results")
 
-        if mode == "raw":
-            # Direct editing of raw data table
-            row_idx = row_or_year
-            column_name = col_or_tech
+            # Refresh the display to show the updated pivoted data (for advanced mode)
+            if mode == "advanced":
+                self._refresh_current_display()
 
-            # Get the old value
-            if 0 <= row_idx < len(df) and column_name in df.columns:
-                old_value = df.loc[row_idx, column_name]
-                df.loc[row_idx, column_name] = new_value
-                log_message = f"Updated {param_name}: row {row_idx + 1}, column '{column_name}' = {new_value}"
-            else:
-                self._append_to_console(f"Warning: Invalid raw edit - row {row_idx}, column '{column_name}'")
-                return
-
-        elif mode == "advanced":
-            # Pivot/advanced mode editing - sync to raw data
-            year = row_or_year
-            technology = col_or_tech
-
-            # Identify column types
-            column_info = self.data_display._identify_columns(df)
-
-            # Find the year column and technology column
-            year_col = None
-            tech_col = None
-
-            for col in column_info['year_cols']:
-                if col in df.columns:
-                    year_col = col
-                    break
-
-            for col in column_info['pivot_cols']:
-                if col in df.columns:
-                    tech_col = col
-                    break
-
-            value_col = column_info.get('value_col')
-
-            if not (year_col and tech_col and value_col):
-                self._append_to_console("Warning: Cannot sync pivot changes - missing required columns")
-                return
-
-            # Find rows that match the year and technology (robust comparison)
-            try:
-                year_values = pd.to_numeric(df[year_col], errors='coerce')
-            except:
-                year_values = df[year_col]  # Fallback if conversion fails
-            tech_values = df[tech_col].astype(str).str.strip()
-            mask = (year_values == year) & (tech_values == str(technology).strip())
-            matching_rows = df[mask]
-
-            if matching_rows.empty:
-                self._append_to_console(f"Warning: No matching data found for year={year}, technology='{technology}' (checked {len(df)} rows)")
-                return
-
-            # Get old value and update
-            old_value = matching_rows[value_col].iloc[0] if not matching_rows.empty else None
-            df.loc[mask, value_col] = new_value
-            log_message = f"Updated {param_name}: {technology} in {year} = {new_value} (matched {len(matching_rows)} rows)"
-
-        else:
-            self._append_to_console(f"Warning: Unknown editing mode: {mode}")
-            return
-
-        # Update the parameter with the modified DataFrame
-        parameter.df = df
-
-        # Mark the parameter as modified
-        scenario.mark_modified(param_name)
-
-        # Record the operation for undo/redo
-        if mode == "raw":
-            command = EditCellCommand(scenario, param_name, row_idx, column_name, old_value, new_value)
-        else:
-            # For pivot mode, find the column info
-            column_info = self.data_display._identify_columns(df)
-            year_col = None
-            tech_col = None
-            value_col = column_info.get('value_col')
-
-            for col in column_info['year_cols']:
-                if col in df.columns:
-                    year_col = col
-                    break
-
-            for col in column_info['pivot_cols']:
-                if col in df.columns:
-                    tech_col = col
-                    break
-
-            command = EditPivotCommand(scenario, param_name, year, technology, old_value, new_value,
-                                     year_col or "", tech_col or "", value_col or "")
-
-        self.undo_manager.execute(command)
-
-        # Update UI elements
-        self._update_undo_redo_ui()
-
-        # Update status bar
-        self.statusbar.showMessage(f"Modified {param_name} - unsaved changes")
-
-        # Update chart immediately with the new data
-        chart_df = self._get_chart_data(parameter, self.current_view == "results")
-        self.chart_widget.update_chart(chart_df, parameter.name, self.current_view == "results")
-
-        # Refresh the display to show the updated pivoted data (for advanced mode)
-        if mode == "advanced":
-            self._refresh_current_display()
-
-        # Log the change
-        self._append_to_console(log_message)
+            # Log the change
+            self._append_to_console(f"Updated {param_name}: {col_or_tech} = {new_value}")
 
     def _on_column_paste_requested(self, column_name: str, paste_format: str, row_changes: dict):
         """Handle column paste requests from table"""
@@ -565,7 +473,13 @@ class MainWindow(QMainWindow):
             scenario.mark_modified(param_name)
 
             # Update chart immediately with the new data
-            chart_df = self._get_chart_data(parameter, self.current_view == "results")
+            scenario = self._get_current_scenario(self.current_view == "results")
+            filters = self.data_display._get_current_filters() if hasattr(self.data_display, '_get_current_filters') else {}
+            chart_df = DataTransformer.prepare_chart_data(
+                parameter, is_results=self.current_view == "results",
+                scenario_options=scenario.options if scenario else None,
+                filters=filters, hide_empty=False
+            )
             self.chart_widget.update_chart(chart_df, parameter.name, self.current_view == "results")
 
             # Refresh the display to show the updated data
@@ -605,7 +519,13 @@ class MainWindow(QMainWindow):
             print(f"DEBUG: Updating chart for parameter {param_name} with {len(parameter.df)} rows")
 
             # Update chart with current data (which includes our changes)
-            chart_df = self._get_chart_data(parameter, self.current_view == "results")
+            scenario = self._get_current_scenario(self.current_view == "results")
+            filters = self.data_display._get_current_filters() if hasattr(self.data_display, '_get_current_filters') else {}
+            chart_df = DataTransformer.prepare_chart_data(
+                parameter, is_results=self.current_view == "results",
+                scenario_options=scenario.options if scenario else None,
+                filters=filters, hide_empty=False
+            )
             if chart_df is not None:
                 print(f"DEBUG: Chart data has {len(chart_df)} rows, {len(chart_df.columns)} columns")
                 self.chart_widget.update_chart(chart_df, parameter.name, self.current_view == "results")
@@ -713,6 +633,21 @@ class MainWindow(QMainWindow):
                 return self.input_manager.get_scenario_by_file_path(self.selected_input_file)
             return self.input_manager.get_current_scenario()
 
+    def _get_current_displayed_parameter(self) -> Optional[str]:
+        """Get the currently displayed parameter name"""
+        # First try to get from tree selection
+        selected_items = self.param_tree.selectedItems()
+        if selected_items:
+            candidate_name = selected_items[0].text(0)
+            if candidate_name and not candidate_name.startswith(("Parameters", "Results", "Economic", "Variables", "Sets")):
+                return candidate_name
+
+        # If tree selection failed, use the stored currently displayed parameter
+        if self.current_displayed_parameter:
+            return self.current_displayed_parameter
+
+        return None
+
     def _get_chart_data(self, parameter, is_results: bool):
         """Get transformed data for chart display using the same logic as table view"""
         df = parameter.df
@@ -789,55 +724,12 @@ class MainWindow(QMainWindow):
         )
 
         if file_paths:
-            loaded_files = []
-            total_parameters = 0
-            total_sets = 0
-            all_validation_issues = []
-            error_handler = ErrorHandler()
+            # Use the file handler to load files
+            result = self.input_file_handler.load_files(
+                file_paths, self.update_progress, self._append_to_console
+            )
 
-            for file_path in file_paths:
-                def on_error(error_msg):
-                    self.hide_progress_bar()
-                    self._append_to_console(error_msg)
-                    QMessageBox.critical(self, "Load Error", error_msg)
-                    logging_manager.log_input_load(file_path, False, error_msg)
-
-                with SafeOperation(f"input file loading: {os.path.basename(file_path)}",
-                                 error_handler, logging_manager.logger, on_error) as safe_op:
-                    self._append_to_console(f"Loading input file: {file_path}")
-
-                    # Show progress bar
-                    self.show_progress_bar(100)
-
-                    # Define progress callback
-                    def progress_callback(value, message):
-                        self.update_progress(value, message)
-
-                    # Load file with Input Manager
-                    scenario = self.input_manager.load_excel_file(file_path, progress_callback)
-
-                    # Hide progress bar
-                    self.hide_progress_bar()
-
-                    # Log successful load
-                    logging_manager.log_input_load(file_path, True)
-
-                    # Validate the loaded data
-                    validation = self.input_manager.validate_scenario()
-
-                    # Accumulate statistics
-                    loaded_files.append(file_path)
-                    total_parameters += len(scenario.parameters)
-                    total_sets += len(scenario.sets)
-                    if not validation['valid']:
-                        all_validation_issues.extend(validation['issues'])
-
-                    # Report validation results for this file
-                    if validation['valid']:
-                        self._append_to_console(f"✓ Successfully loaded {len(scenario.parameters)} parameters, {len(scenario.sets)} sets")
-                    else:
-                        self._append_to_console(f"⚠ Loaded {len(scenario.parameters)} parameters with validation issues:")
-
+            loaded_files = result['loaded_files']
             if loaded_files:
                 # Clear file selection to show combined view
                 self.selected_input_file = None
@@ -855,10 +747,11 @@ class MainWindow(QMainWindow):
                 self._switch_to_input_view()
 
                 # Report overall results
+                all_validation_issues = result['validation_issues']
                 if all_validation_issues:
                     self._append_to_console(f"⚠ Loaded {len(loaded_files)} file(s) with {len(all_validation_issues)} total validation issues")
                 else:
-                    self._append_to_console(f"✓ Successfully loaded {len(loaded_files)} file(s) with {total_parameters} parameters, {total_sets} sets")
+                    self._append_to_console(f"✓ Successfully loaded {len(loaded_files)} file(s) with {result['total_parameters']} parameters, {result['total_sets']} sets")
 
                 self.statusbar.showMessage(f"Loaded {len(loaded_files)} input file(s)")
 
@@ -870,45 +763,12 @@ class MainWindow(QMainWindow):
         )
 
         if file_paths:
-            loaded_files = []
-            total_variables = 0
-            total_equations = 0
-            error_handler = ErrorHandler()
+            # Use the file handler to load files
+            result = self.results_file_handler.load_files(
+                file_paths, self.update_progress, self._append_to_console
+            )
 
-            for file_path in file_paths:
-                def on_error(error_msg):
-                    self.hide_progress_bar()
-                    self.console.append(error_msg)
-                    QMessageBox.critical(self, "Load Error", error_msg)
-                    logging_manager.log_results_load(file_path, False, {'error': error_msg})
-
-                with SafeOperation(f"results file loading: {os.path.basename(file_path)}",
-                                 error_handler, logging_manager.logger, on_error) as safe_op:
-                    self._append_to_console(f"Loading results file: {file_path}")
-
-                    # Show progress bar
-                    self.show_progress_bar(100)
-
-                    # Define progress callback
-                    def progress_callback(value, message):
-                        self.update_progress(value, message)
-
-                    # Load file with Results Analyzer
-                    results = self.results_analyzer.load_results_file(file_path, progress_callback)
-
-                    # Hide progress bar
-                    self.hide_progress_bar()
-
-                    # Log successful results load
-                    logging_manager.log_results_load(file_path, True, self.results_analyzer.get_summary_stats())
-
-                    loaded_files.append(file_path)
-
-                    # Accumulate statistics
-                    stats = self.results_analyzer.get_summary_stats()
-                    total_variables += stats['total_variables']
-                    total_equations += stats['total_equations']
-
+            loaded_files = result['loaded_files']
             if loaded_files:
                 # Clear file selection to show combined view
                 self.selected_results_file = None
@@ -926,7 +786,7 @@ class MainWindow(QMainWindow):
                 self._switch_to_results_view()
 
                 # Show summary
-                self._append_to_console(f"Loaded {len(loaded_files)} result file(s) with {total_variables} variables, {total_equations} equations")
+                self._append_to_console(f"Loaded {len(loaded_files)} result file(s) with {result['total_variables']} variables, {result['total_equations']} equations")
 
                 # Update dashboard with new results
                 self.dashboard.update_results(True)
@@ -1171,35 +1031,10 @@ class MainWindow(QMainWindow):
 
     def _auto_load_last_files(self):
         """Automatically load the last opened files on startup"""
-        input_files, results_files = self._get_last_opened_files()
-
-        # Load all input files
-        loaded_input_files = []
-        for input_file in input_files:
-            if input_file and os.path.exists(input_file):
-                try:
-                    self._append_to_console(f"Auto-loading input file: {input_file}")
-
-                    # Show progress bar for auto-loading
-                    self.show_progress_bar(100)
-
-                    # Define progress callback
-                    def progress_callback(value, message):
-                        self.update_progress(value, message)
-
-                    scenario = self.input_manager.load_excel_file(input_file, progress_callback)
-
-                    # Hide progress bar
-                    self.hide_progress_bar()
-
-                    loaded_input_files.append(input_file)
-
-                    self._append_to_console(f"✓ Auto-loaded input file with {len(scenario.parameters)} parameters")
-
-                except Exception as e:
-                    # Hide progress bar on error
-                    self.hide_progress_bar()
-                    self._append_to_console(f"Failed to auto-load input file {input_file}: {str(e)}")
+        # Use the auto load handler
+        loaded_input_files, loaded_results_files = self.auto_load_handler.auto_load_files(
+            self._append_to_console, self.update_progress
+        )
 
         if loaded_input_files:
             # Update UI with all loaded input files
@@ -1211,35 +1046,6 @@ class MainWindow(QMainWindow):
 
             # Auto-select Dashboard for input files
             self._auto_select_parameter_if_exists("Dashboard", False)
-
-        # Load all results files
-        loaded_results_files = []
-        for results_file in results_files:
-            if results_file and os.path.exists(results_file):
-                try:
-                    self.console.append(f"Auto-loading results file: {results_file}")
-
-                    # Show progress bar for auto-loading results
-                    self.show_progress_bar(100)
-
-                    # Define progress callback
-                    def progress_callback(value, message):
-                        self.update_progress(value, message)
-
-                    results = self.results_analyzer.load_results_file(results_file, progress_callback)
-
-                    # Hide progress bar
-                    self.hide_progress_bar()
-
-                    loaded_results_files.append(results_file)
-
-                    stats = self.results_analyzer.get_summary_stats()
-                    self._append_to_console(f"✓ Auto-loaded results file with {stats['total_variables']} variables")
-
-                except Exception as e:
-                    # Hide progress bar on error
-                    self.hide_progress_bar()
-                    self._append_to_console(f"Failed to auto-load results file {results_file}: {str(e)}")
 
         if loaded_results_files:
             # Update UI with all loaded results files
@@ -1493,101 +1299,26 @@ class MainWindow(QMainWindow):
     def _initialize_parameter_search(self):
         """Initialize parameter search - collect all parameter names"""
         scenario = self._get_current_scenario(self.current_view == "results")
-        if not scenario:
-            return
-
-        self.parameter_matches = []
-        self.current_param_match_index = -1
-
-        # Collect all parameter names from the tree
-        def collect_parameters(parent_item, path=[]):
-            for i in range(parent_item.childCount()):
-                child = parent_item.child(i)
-                item_name = child.text(0)
-
-                # Skip category headers (they contain counts)
-                if not item_name.startswith(("Parameters", "Results", "Economic", "Variables", "Sets")) and not item_name.endswith(")"):
-                    self.parameter_matches.append((item_name, child))
-
-                # Recursively collect from children
-                collect_parameters(child, path + [item_name])
-
-        root = self.param_tree.invisibleRootItem()
-        collect_parameters(root)
+        self.find_controller.initialize_parameter_search(scenario)
 
     def _initialize_table_search(self):
         """Initialize table search - scan all table cells"""
-        self.table_matches = []
-        self.current_table_match_index = -1
-
-        # Scan all cells in the current table view
-        for row in range(self.param_table.rowCount()):
-            for col in range(self.param_table.columnCount()):
-                item = self.param_table.item(row, col)
-                if item:
-                    cell_text = item.text().strip().lower()
-                    if cell_text:
-                        self.table_matches.append((row, col, cell_text))
+        self.find_controller.initialize_table_search()
 
     def _find_first_parameter(self, search_text: str):
         """Find first parameter match"""
-        search_lower = search_text.lower().strip()
-        if not search_lower:
-            self.find_widget.update_match_count(0, 0)
-            return
-
-        # Find first match
-        for i, (param_name, tree_item) in enumerate(self.parameter_matches):
-            if search_lower in param_name.lower():
-                self.current_param_match_index = i
-                self._select_parameter_match(i)
-                self.find_widget.update_match_count(i + 1, len([p for p, _ in self.parameter_matches if search_lower in p.lower()]))
-                return
-
-        # No matches found
-        self.find_widget.update_match_count(0, 0)
+        current_match, total_matches = self.find_controller.find_first_parameter(search_text)
+        self.find_widget.update_match_count(current_match, total_matches)
 
     def _find_next_parameter(self, search_text: str):
         """Find next parameter match"""
-        search_lower = search_text.lower().strip()
-        if not search_lower:
-            return
-
-        total_matches = len([p for p, _ in self.parameter_matches if search_lower in p.lower()])
-        if total_matches == 0:
-            return
-
-        # Find next match
-        start_index = (self.current_param_match_index + 1) % len(self.parameter_matches)
-        for i in range(len(self.parameter_matches)):
-            check_index = (start_index + i) % len(self.parameter_matches)
-            param_name, tree_item = self.parameter_matches[check_index]
-            if search_lower in param_name.lower():
-                self.current_param_match_index = check_index
-                self._select_parameter_match(check_index)
-                self.find_widget.update_match_count(check_index + 1, total_matches)
-                return
+        current_match, total_matches = self.find_controller.find_next_parameter(search_text)
+        self.find_widget.update_match_count(current_match, total_matches)
 
     def _find_previous_parameter(self, search_text: str):
         """Find previous parameter match"""
-        search_lower = search_text.lower().strip()
-        if not search_lower:
-            return
-
-        total_matches = len([p for p, _ in self.parameter_matches if search_lower in p.lower()])
-        if total_matches == 0:
-            return
-
-        # Find previous match
-        start_index = (self.current_param_match_index - 1) % len(self.parameter_matches)
-        for i in range(len(self.parameter_matches)):
-            check_index = (start_index - i) % len(self.parameter_matches)
-            param_name, tree_item = self.parameter_matches[check_index]
-            if search_lower in param_name.lower():
-                self.current_param_match_index = check_index
-                self._select_parameter_match(check_index)
-                self.find_widget.update_match_count(check_index + 1, total_matches)
-                return
+        current_match, total_matches = self.find_controller.find_previous_parameter(search_text)
+        self.find_widget.update_match_count(current_match, total_matches)
 
     def _select_parameter_match(self, match_index: int):
         """Select the parameter match in the tree"""
@@ -1603,63 +1334,18 @@ class MainWindow(QMainWindow):
 
     def _find_first_table_cell(self, search_text: str):
         """Find first table cell match"""
-        search_lower = search_text.lower().strip()
-        if not search_lower:
-            self.find_widget.update_match_count(0, 0)
-            return
-
-        # Find first match
-        for i, (row, col, cell_text) in enumerate(self.table_matches):
-            if search_lower in cell_text:
-                self.current_table_match_index = i
-                self._select_table_match(i)
-                self.find_widget.update_match_count(i + 1, len([c for _, _, c in self.table_matches if search_lower in c]))
-                return
-
-        # No matches found
-        self.find_widget.update_match_count(0, 0)
+        current_match, total_matches = self.find_controller.find_first_table_cell(search_text)
+        self.find_widget.update_match_count(current_match, total_matches)
 
     def _find_next_table_cell(self, search_text: str):
         """Find next table cell match"""
-        search_lower = search_text.lower().strip()
-        if not search_lower:
-            return
-
-        total_matches = len([c for _, _, c in self.table_matches if search_lower in c])
-        if total_matches == 0:
-            return
-
-        # Find next match
-        start_index = (self.current_table_match_index + 1) % len(self.table_matches)
-        for i in range(len(self.table_matches)):
-            check_index = (start_index + i) % len(self.table_matches)
-            row, col, cell_text = self.table_matches[check_index]
-            if search_lower in cell_text:
-                self.current_table_match_index = check_index
-                self._select_table_match(check_index)
-                self.find_widget.update_match_count(check_index + 1, total_matches)
-                return
+        current_match, total_matches = self.find_controller.find_next_table_cell(search_text)
+        self.find_widget.update_match_count(current_match, total_matches)
 
     def _find_previous_table_cell(self, search_text: str):
         """Find previous table cell match"""
-        search_lower = search_text.lower().strip()
-        if not search_lower:
-            return
-
-        total_matches = len([c for _, _, c in self.table_matches if search_lower in c])
-        if total_matches == 0:
-            return
-
-        # Find previous match
-        start_index = (self.current_table_match_index - 1) % len(self.table_matches)
-        for i in range(len(self.table_matches)):
-            check_index = (start_index - i) % len(self.table_matches)
-            row, col, cell_text = self.table_matches[check_index]
-            if search_lower in cell_text:
-                self.current_table_match_index = check_index
-                self._select_table_match(check_index)
-                self.find_widget.update_match_count(check_index + 1, total_matches)
-                return
+        current_match, total_matches = self.find_controller.find_previous_table_cell(search_text)
+        self.find_widget.update_match_count(current_match, total_matches)
 
     def _select_table_match(self, match_index: int):
         """Select the table cell match"""

@@ -45,13 +45,13 @@ This document outlines the execution plan for refactoring the MessageIX Data Man
 * [ ] **Integration:** Emits signals (e.g., `file_loaded`, `scenario_selected`) that `MainWindow` listens to.
 
 ### 2.2. Extract Data Display
-* [ ] **Component:** `DataDisplayWidget` (`src/ui/components/data_display.py`)
-* [ ] **Responsibilities:**
-    * [ ] The main `QTableWidget`.
-    * [ ] Logic for "Raw" vs "Advanced" views.
-    * [ ] Column filtering and sorting.
-    * [ ] Formatting (headers, row colors).
-* [ ] **Refactoring:** Move `_display_parameter_data`, `_configure_table`, and `_populate_table` logic here.
+* [x] **Component:** `DataDisplayWidget` (`src/ui/components/data_display.py`)
+* [x] **Responsibilities:**
+    * [x] The main `QTableWidget`.
+    * [x] Logic for "Raw" vs "Advanced" views.
+    * [x] Column filtering and sorting.
+    * [x] Formatting (headers, row colors).
+* [x] **Refactoring:** Move `_display_parameter_data`, `_configure_table`, and `_populate_table` logic here.
 
 ### 2.3. Extract Charting
 * [ ] **Component:** `ChartWidget` (`src/ui/components/chart_widget.py`)
@@ -68,14 +68,14 @@ This document outlines the execution plan for refactoring the MessageIX Data Man
     * [ ] Handling selection changes.
 
 ### 2.5. Reassemble MainWindow
-* [ ] **Action:** `MainWindow` becomes a lightweight orchestrator that initializes these widgets and connects their signals/slots.
+* [x] **Action:** `MainWindow` becomes a lightweight orchestrator that initializes these widgets and connects their signals/slots.
 
 ## Phase 3: Logic Consolidation & UI Standardization
 **Objective:** Clean up the remaining logic and apply consistent styling.
 
 ### 3.1. Unified Display Logic
-* [ ] **Action:** Implement `display_data_table(data, title_prefix, is_results)` in `DataDisplayWidget`.
-* [ ] **Goal:** Merge `_display_parameter_data` and `_display_result_data` into a single method, using flags for minor differences.
+* [x] **Action:** Implement `display_data_table(data, title_prefix, is_results)` in `DataDisplayWidget`.
+* [x] **Goal:** Merge `_display_parameter_data` and `_display_result_data` into a single method, using flags for minor differences.
 
 ### 3.2. Centralized Styling
 * [ ] **Action:**
@@ -84,17 +84,17 @@ This document outlines the execution plan for refactoring the MessageIX Data Man
     * [ ] Remove all inline `setStyleSheet` calls and hardcoded fonts/colors in widgets.
 
 ### 3.3. Simplify Complex Transformations
-* [ ] **Action:** Refactor `_transform_to_advanced_view` into smaller, testable functions:
-    * [ ] `_identify_column_types(df)`
-    * [ ] `_apply_filters(df, filters)`
-    * [ ] `_pivot_data(df)`
+* [x] **Action:** Refactor `_transform_to_advanced_view` into smaller, testable functions:
+    * [x] `_identify_column_types(df)`
+    * [x] `_apply_filters(df, filters)`
+    * [x] `_pivot_data(df)`
 
 ## Phase 4: Code Quality & Maintenance
 **Objective:** Ensure long-term maintainability.
 
 ### 4.1. Type Hinting & Documentation
-* [ ] **Action:** Add Python type hints (`List`, `Dict`, `Optional`, `pd.DataFrame`) to all method signatures in the new components.
-* [ ] **Action:** Add docstrings (Google style) to public methods.
+* [x] **Action:** Add Python type hints (`List`, `Dict`, `Optional`, `pd.DataFrame`) to all method signatures in the new components.
+* [x] **Action:** Add docstrings (Google style) to public methods.
 
 ### 4.2. Dead Code Removal
 * [ ] **Action:** Run `vulture` or similar tools to identify unused imports and methods after the refactor.
@@ -106,8 +106,20 @@ This document outlines the execution plan for refactoring the MessageIX Data Man
 * [ ] **Phase 4:** 2 Days
 * [ ] **Total:** ~2.5 Weeks
 
-## Immediate Next Steps
+## Completed Refactoring Work
+Based on the recent refactoring effort, the following tasks have been completed:
+
+✅ **Phase 1.3** - Robust Error Handling Framework (ErrorHandler and SafeOperation classes implemented)
+✅ **Phase 2.2** - Extract Data Display (DataDisplayWidget extracted with table logic)
+✅ **Phase 2.5** - Reassemble MainWindow (MainWindow now uses composition pattern)
+✅ **Phase 3.1** - Unified Display Logic (display_data_table method implemented)
+✅ **Phase 3.3** - Simplify Complex Transformations (DataTransformer extracted with separate methods)
+✅ **Phase 4.1** - Type Hinting & Documentation (Added to new components)
+
+## Remaining Next Steps
 1. [ ] Create `src/core/base_data_manager.py`.
-2. [ ] Refactor `InputManager` to inherit from it.
-3. [ ] Create `src/ui/components/` directory if it doesn't exist.
-4. [ ] Begin extracting `DataDisplayWidget` (the largest chunk of MainWindow).
+2. [ ] Refactor `InputManager` and `ResultsAnalyzer` to inherit from base class.
+3. [ ] Extract File Navigation (FileNavigatorWidget logic from MainWindow).
+4. [ ] Extract Charting (ChartWidget logic consolidation).
+5. [ ] Extract Parameter Tree (ParameterTreeWidget logic consolidation).
+6. [ ] Implement centralized styling with `src/ui/styles.qss` and `ui_styler.py`.
