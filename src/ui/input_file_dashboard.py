@@ -40,26 +40,26 @@ class InputFileDashboard(QWidget):
             print(f"Error loading UI: {e}")
             # Continue without UI for testing purposes
 
-        if ui_loaded:
-            self.dashboardTabs.currentChanged.connect(self._on_tab_changed)
+        if not ui_loaded or not hasattr(self, 'dashboardTabs'):
+            # UI load failed or in test environment
+            self.web_views = {}
+            return
+
+        self.dashboardTabs.currentChanged.connect(self._on_tab_changed)
 
         # Map web views from UI file or create mocks for testing
-        if ui_loaded:
-            self.web_views = {
-                'overview': self.overviewWebView,
-                'commodities': self.commoditiesWebView,
-                'technologies': self.technologiesWebView,
-                'years': self.yearsWebView,
-                'regions': self.regionsWebView,
-                'tech_summary': self.techSummaryWebView,
-                'commodity_summary': self.commoditySummaryWebView
-            }
+        self.web_views = {
+            'overview': self.overviewWebView,
+            'commodities': self.commoditiesWebView,
+            'technologies': self.technologiesWebView,
+            'years': self.yearsWebView,
+            'regions': self.regionsWebView,
+            'tech_summary': self.techSummaryWebView,
+            'commodity_summary': self.commoditySummaryWebView
+        }
 
-            # Enable JavaScript for web views
-            self._setup_web_views()
-        else:
-            # For testing without UI
-            self.web_views = {}
+        # Enable JavaScript for web views
+        self._setup_web_views()
 
     def _setup_web_views(self):
         """Set up web view settings"""

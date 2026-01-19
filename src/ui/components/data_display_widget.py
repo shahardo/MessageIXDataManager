@@ -848,7 +848,7 @@ class DataDisplayWidget(QWidget):
             filtered_df = self._apply_filters(df, current_filters, column_info)
 
             # Transform data structure
-            transformed_df = self._transform_data_structure(filtered_df, column_info, is_results)
+            transformed_df = self._transform_data_structure(filtered_df, column_info, is_results, for_chart)
 
             # Clean and finalize output
             final_df = self._clean_output(transformed_df, hide_empty, is_results)
@@ -914,7 +914,7 @@ class DataDisplayWidget(QWidget):
             # Return original df as fallback
             return df
 
-    def _transform_data_structure(self, df: pd.DataFrame, column_info: dict, is_results: bool) -> pd.DataFrame:
+    def _transform_data_structure(self, df: pd.DataFrame, column_info: dict, is_results: bool, for_chart: bool = False) -> pd.DataFrame:
         """Transform DataFrame structure based on data type"""
         # Pivoting logic for input data
         if not is_results and self._should_pivot(df, column_info):

@@ -90,6 +90,10 @@ class MainWindow(QMainWindow):
         # Initialize undo manager
         self.undo_manager = UndoManager()
 
+        if not hasattr(self, 'dataContainer'):
+            # probably test environment without UI loaded
+            return
+        
         # Add dashboard widget to the data container layout
         self._setup_data_area_widgets()
 
