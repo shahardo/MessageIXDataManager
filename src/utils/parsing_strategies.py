@@ -6,6 +6,7 @@ from abc import ABC, abstractmethod
 from typing import Any, Optional, Callable
 import pandas as pd
 import logging
+import os
 
 from core.data_models import ScenarioData
 from utils.parameter_factory import parameter_factory_registry
@@ -113,7 +114,7 @@ class ParameterParsingStrategy(ParsingStrategy):
     def _is_parameter_sheet(self, sheet: Any) -> bool:
         """Check if sheet contains parameter-like data"""
         try:
-            rows = list(sheet.iter_rows(values_only=True))
+            rows = list(sheet.iter_rows(min_row=1, max_row=10, values_only=True))
             if len(rows) < 2:
                 return False
 
@@ -234,7 +235,7 @@ class ResultParsingStrategy(ParsingStrategy):
     def _is_result_sheet(self, sheet: Any) -> bool:
         """Check if sheet contains result-like data (not parameter-like)"""
         try:
-            rows = list(sheet.iter_rows(values_only=True))
+            rows = list(sheet.iter_rows(min_row=1, max_row=10, values_only=True))
             if len(rows) < 2:
                 return False
 
@@ -349,15 +350,18 @@ class ExcelParser:
             ParameterParsingStrategy('input')
         ]
 
-    def parse_workbook(self, wb: Any, scenario: ScenarioData,
+    def parse_workbook(self, wb: Any, scenario: ScenarioData, file_path: str,
                       progress_callback: Optional[Callable[[int, str], None]] = None) -> None:
         """Parse entire workbook using appropriate strategies"""
         total_sheets = len(wb.sheetnames)
+        base_msg = f"Loading {os.path.basename(file_path)}"
+        dots = "..."
 
         for i, sheet_name in enumerate(wb.sheetnames):
             if progress_callback:
-                progress = int((i / total_sheets) * 100)
-                progress_callback(progress, f"Parsing sheet: {sheet_name}")
+                progress = 10 + int(((i + 1) / total_sheets) * 90)
+                dots += "."
+                progress_callback(progress, f"{base_msg}{dots}")
 
             sheet = wb[sheet_name]
             strategy = self._get_strategy_for_sheet(sheet, sheet_name)

@@ -66,6 +66,7 @@ class InputManager(BaseDataManager):
         self,
         wb: Any,
         scenario: ScenarioData,
+        file_path: str,
         progress_callback: Optional[Callable[[int, str], None]] = None
     ) -> None:
         """
@@ -84,7 +85,7 @@ class InputManager(BaseDataManager):
             ParameterParsingStrategy('input')
         ]
 
-        parser.parse_workbook(wb, scenario, progress_callback)
+        parser.parse_workbook(wb, scenario, file_path, progress_callback)
 
 
 

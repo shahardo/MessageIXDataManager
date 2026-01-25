@@ -88,6 +88,7 @@ class ResultsAnalyzer(BaseDataManager):
         self,
         wb: Any,
         scenario: ScenarioData,
+        file_path: str,
         progress_callback: Optional[Callable[[int, str], None]] = None
     ) -> None:
         """
@@ -103,7 +104,7 @@ class ResultsAnalyzer(BaseDataManager):
         # Replace default strategies with result-specific strategy
         parser.strategies = [ResultParsingStrategy()]
 
-        parser.parse_workbook(wb, scenario, progress_callback)
+        parser.parse_workbook(wb, scenario, file_path, progress_callback)
 
     def _is_result_sheet(self, worksheet) -> bool:
         """
@@ -437,5 +438,280 @@ class ResultsAnalyzer(BaseDataManager):
                         metrics['emissions_2050'] += df_2050[col].sum()
 
         return metrics
+
+    def calculate_crf(self, interest_rate: float, lifetime: float) -> float:
+        """Calculates Capital Recovery Factor for annualized capital costs."""
+        if interest_rate == 0:
+            return 1 / lifetime
+
+        # Handle infinite lifetime or very long lifetimes to prevent overflow
+        lifetime = min(lifetime, 100)
+
+        rate_factor = (1 + interest_rate) ** lifetime
+        crf = (interest_rate * rate_factor) / (rate_factor - 1)
+        return crf
+
+    def calculate_electricity_cost_breakdown(self, scenario: ScenarioData, regions=None, electricity_commodity='electr') -> pd.DataFrame:
+        """
+        Analyzes a MESSAGEix scenario to break down electricity generation costs
+        by technology and cost component (Capex, Opex, Fuels, Emissions).
+
+        Returns DataFrame with unit costs ($/MWh) by technology and year.
+        """
+        print("DEBUG: Starting cost breakdown calculation")
+
+        if regions is None:
+            print(f"DEBUG: scenario.sets = {scenario.sets}")
+            print(f"DEBUG: type(scenario.sets) = {type(scenario.sets)}")
+
+            # Handle case where scenario.sets might be None or missing 'node'
+            if scenario.sets and isinstance(scenario.sets, dict) and 'node' in scenario.sets:
+                regions = list(scenario.sets['node'].values)
+                print(f"DEBUG: Found regions in sets: {regions}")
+            else:
+                print("DEBUG: No regions in sets, trying parameter data")
+                # Fallback: try to get regions from parameter data
+                all_regions = set()
+                for param_name, param in scenario.parameters.items():
+                    print(f"DEBUG: Checking parameter {param_name}")
+                    if hasattr(param.df, 'columns'):
+                        print(f"DEBUG: Columns in {param_name}: {list(param.df.columns)}")
+                        if 'node' in param.df.columns:
+                            node_values = param.df['node'].unique()
+                            all_regions.update(node_values)
+                            print(f"DEBUG: Found node values: {node_values}")
+                        elif 'region' in param.df.columns:
+                            region_values = param.df['region'].unique()
+                            all_regions.update(region_values)
+                            print(f"DEBUG: Found region values: {region_values}")
+
+                regions = list(all_regions) if all_regions else ['World']
+                print(f"DEBUG: Final regions list: {regions}")
+
+        # Get default interest rate for CRF calculation
+        interest_rate = 0.05  # Default 5%
+        try:
+            interest_par = scenario.get_parameter('interest_rate')
+            if interest_par and not interest_par.df.empty:
+                interest_rate = interest_par.df['value'].mean()
+        except:
+            pass
+
+        # Identify electricity generating technologies
+        output_param = scenario.get_parameter('output')
+        if output_param:
+            elec_techs = output_param.df[output_param.df['commodity'] == electricity_commodity]['technology'].unique().tolist()
+        else:
+            # Fallback: use technologies from electricity generation data
+            elec_gen_param = scenario.get_parameter('Electricity generation (TWh)')
+            if elec_gen_param and not elec_gen_param.df.empty:
+                # Get technology names from electricity generation data
+                tech_cols = [col for col in elec_gen_param.df.columns if col not in ['year', 'year_act', 'node', 'region']]
+                elec_techs = tech_cols
+            else:
+                # Final fallback: common electricity technologies
+                elec_techs = ['coal', 'gas', 'nuclear', 'hydro', 'solar', 'wind']
+
+        # Get activity (generation) data - try multiple parameter names
+        act_param = None
+        act_param_names = ['ACT', 'var_act', 'activity', 'Activity']
+        for param_name in act_param_names:
+            act_param = scenario.get_parameter(param_name)
+            if act_param and not act_param.df.empty:
+                break
+
+        if not act_param or act_param.df.empty:
+            # If no direct activity parameter, use electricity generation as proxy
+            electricity_param_names = ['Electricity generation (TWh)', 'var_electricity', 'var_electricity_generation']
+            for param_name in electricity_param_names:
+                elec_param = scenario.get_parameter(param_name)
+                if elec_param and not elec_param.df.empty:
+                    # Use electricity generation data directly as activity proxy
+                    # Convert from TWh to MWh and restructure for activity format
+                    act_df = elec_param.df.copy()
+
+                    # Convert electricity generation to activity-like format
+                    print(f"DEBUG: Electricity gen DataFrame shape: {act_df.shape}")
+                    print(f"DEBUG: Electricity gen DataFrame columns: {act_df.columns.tolist()}")
+                    print(f"DEBUG: Electricity gen DataFrame sample:\n{act_df.head()}")
+
+                    # This data is in wide format with technologies as columns
+                    # Convert to long format for activity data
+                    id_cols = ['year']  # Only year column exists
+                    value_cols = [col for col in act_df.columns if col not in id_cols]
+
+                    print(f"DEBUG: ID cols: {id_cols}, Value cols: {value_cols}")
+
+                    # Melt wide format to long format
+                    act_df = act_df.melt(id_vars=id_cols, value_vars=value_cols,
+                                       var_name='technology', value_name='value')
+
+                    print(f"DEBUG: After melt shape: {act_df.shape}")
+                    print(f"DEBUG: After melt sample:\n{act_df.head()}")
+
+                    # Convert units and add required columns
+                    act_df['value'] = act_df['value'] * 1000000  # TWh to MWh
+                    act_df['year_act'] = act_df['year']  # Copy year to year_act
+                    act_df['node'] = 'World'  # Add node column
+                    act_df['mode'] = 'M1'  # Default mode
+                    act_df['time'] = 'year'  # Default time
+
+                    print(f"DEBUG: Final activity DataFrame shape: {act_df.shape}")
+                    print(f"DEBUG: Final activity DataFrame sample:\n{act_df.head()}")
+
+                    # Create a parameter-like object
+                    from core.data_models import Parameter
+                    act_param = Parameter('ACT_synthetic', act_df, {'result_type': 'variable'})
+                    break
+
+            if not act_param:
+                raise ValueError("Neither ACT nor electricity generation parameters found - cannot calculate generation costs")
+
+        # Filter for electricity technologies and ensure node column exists
+        act_df = act_param.df[act_param.df['technology'].isin(elec_techs)].copy()
+
+        # Add node column if missing (for global/single-region data)
+        if 'node' not in act_df.columns:
+            act_df['node'] = 'World'
+
+        # Total Generation per tech per year (sum over modes)
+        gen_total = act_df.groupby(['node', 'year_act', 'technology'])['value'].sum().reset_index(name='total_gen_MWh')
+
+        # Filter out technologies with zero generation BEFORE cost calculations
+        gen_total = gen_total[gen_total['total_gen_MWh'] > 0.001].copy()
+
+        print(f"DEBUG: Technologies with generation > 0: {gen_total['technology'].unique().tolist()}")
+        print(f"DEBUG: Total technologies to process: {len(gen_total)}")
+
+        # Filter the activity DataFrame to only include technologies with generation > 0
+        active_techs = gen_total['technology'].unique()
+        act_df = act_df[act_df['technology'].isin(active_techs)].copy()
+
+        # --- Component Calculations ---
+
+       # Try to find input files with cost parameters
+        input_cost_scenario = self._load_input_costs()
+        if input_cost_scenario:
+            print("DEBUG: Found input files with cost parameters, using detailed costs")
+            has_detailed_costs = True
+            # Use input file scenario for cost calculations
+            cost_scenario = input_cost_scenario
+        else:
+            print("DEBUG: No input files with costs found, checking current scenario")
+            has_detailed_costs = False
+
+        if has_detailed_costs:
+            print("DEBUG: Using detailed cost parameters for calculation")
+            # Variable Opex (VOM)
+            vom_total = self._calculate_variable_opex(act_df, cost_scenario, elec_techs)
+
+            # Check if VOM costs are all zero (no matching technologies)
+            if vom_total['cost_vom_total'].sum() == 0:
+                print("DEBUG: Detailed VOM costs are all zero - likely no matching technologies, falling back to simplified costs")
+                has_detailed_costs = False
+            else:
+                print(f"DEBUG: Found non-zero VOM costs, total: ${vom_total['cost_vom_total'].sum():.2f}")
+
+                # Fixed Opex (FOM)
+                fom_total = self._calculate_fixed_opex(cost_scenario, elec_techs)
+
+                # Fuel Costs
+                fuel_total = self._calculate_fuel_costs(act_df, cost_scenario, elec_techs)
+
+                # Emission Costs
+                em_total = self._calculate_emission_costs(act_df, cost_scenario, elec_techs)
+
+                # Annualized Investment Costs (CAPEX) - Most Complex
+                capex_total = self._calculate_capex_costs(cost_scenario, elec_techs, interest_rate)
+
+        if not has_detailed_costs:
+            print("DEBUG: Using simplified price-based cost estimation")
+            # Try to use available price data for simplified cost estimation
+            cost_results = self._calculate_simplified_costs(act_df, scenario, elec_techs, interest_rate)
+
+            vom_total = cost_results['vom']
+            fom_total = cost_results['fom']
+            fuel_total = cost_results['fuel']
+            em_total = cost_results['em']
+            capex_total = cost_results['capex']
+
+        # --- Final Assembly ---
+        final_df = gen_total.copy()
+
+        # Initialize cost columns with zeros
+        cost_cols = ['cost_capex_total', 'cost_fom_total', 'cost_vom_total', 'cost_fuel_total', 'cost_em_total']
+        for col in cost_cols:
+            final_df[col] = 0.0
+
+        # Merge cost components that have data
+        cost_dfs = [
+            ('capex', capex_total),
+            ('fom', fom_total),
+            ('vom', vom_total),
+            ('fuel', fuel_total),
+            ('em', em_total)
+        ]
+
+        for cost_type, df in cost_dfs:
+            if not df.empty and len(df) > 0:
+                # Update the corresponding column with actual values
+                col_name = f'cost_{cost_type}_total'
+                merge_df = df[['node', 'year_act', 'technology', col_name]].copy()
+                final_df = pd.merge(final_df, merge_df, on=['node', 'year_act', 'technology'], how='left', suffixes=('', '_new'))
+                # Use the merged values where available, keep zeros otherwise
+                final_df[col_name] = final_df[f'{col_name}_new'].fillna(final_df[col_name])
+                final_df = final_df.drop(columns=[f'{col_name}_new'])
+
+        # Calculate Unit Costs ($/MWh)
+        for col in cost_cols:
+            unit_col = col.replace('cost_', 'Unit_').replace('_total', '')
+            final_df[unit_col] = final_df[col] / final_df['total_gen_MWh']
+
+        # Calculate Total Unit Cost
+        unit_cost_cols = [col for col in final_df.columns if col.startswith('Unit_')]
+        final_df['Unit_Total_LCOE_Proxy'] = final_df[unit_cost_cols].sum(axis=1)
+
+        return final_df
+
+    def _load_input_costs(self) -> Optional[ScenarioData]:
+        """Get the currently loaded input scenario if it has cost parameters."""
+        print("DEBUG: Looking for input scenario in application...")
+
+        print("DEBUG: No input scenario with cost parameters found")
+        return None
+
+    def _calculate_variable_opex(self, act_df: pd.DataFrame, scenario: ScenarioData, elec_techs: list) -> pd.DataFrame:
+        """Calculate variable operating costs."""
+        print("DEBUG: Calculating variable Opex...")
+
+        print(f"DEBUG: VOM result shape: {result.shape}")
+        print(f"DEBUG: VOM result sample: {result.head()}")
+        return result
+
+    def _calculate_fixed_opex(self, scenario: ScenarioData, elec_techs: list) -> pd.DataFrame:
+        """Calculate fixed operating costs based on capacity."""
+        print("DEBUG: Calculating fixed Opex...")
+
+        print(f"DEBUG: FOM result shape: {result.shape}")
+        print(f"DEBUG: FOM result sample: {result.head()}")
+        return result
+
+    def _calculate_fuel_costs(self, act_df: pd.DataFrame, scenario: ScenarioData, elec_techs: list) -> pd.DataFrame:
+        """Calculate fuel costs."""
+        return False
+
+    def _calculate_emission_costs(self, act_df: pd.DataFrame, scenario: ScenarioData, elec_techs: list) -> pd.DataFrame:
+        """Calculate emission costs."""
+        return False
+
+    def _calculate_capex_costs(self, scenario: ScenarioData, elec_techs: list, interest_rate: float) -> pd.DataFrame:
+        """Calculate annualized capital costs - the most complex component."""
+        return False
+
+    def _calculate_simplified_costs(self, act_df: pd.DataFrame, scenario: ScenarioData, elec_techs: list, interest_rate: float) -> Dict[str, pd.DataFrame]:
+        """Calculate simplified costs using available price data."""
+        print("DEBUG: Starting simplified cost calculation")
+
+        return False
 
     # Keep remove_file method for backward compatibility (inherited from BaseDataManager)

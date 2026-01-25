@@ -7,6 +7,7 @@ import logging
 from abc import ABC, abstractmethod
 from typing import List, Optional, Callable, Protocol
 from openpyxl import load_workbook
+import zipfile
 
 from core.data_models import ScenarioData, Parameter
 from utils.error_handler import ErrorHandler, SafeOperation
@@ -106,23 +107,28 @@ class BaseDataManager(ABC):
         with SafeOperation(f"file loading: {os.path.basename(file_path)}", error_handler, logger) as safe_op:
             # Initialize progress
             if progress_callback:
-                progress_callback(0, "Loading workbook...")
+                progress_callback(0, f"Loading {os.path.basename(file_path)}...")
 
             # Load workbook
-            wb = load_workbook(file_path, data_only=True)
+            try:
+                wb = load_workbook(file_path, data_only=True, read_only=True)
+            except zipfile.BadZipFile as e:
+                # If read_only fails, try normal load (slower, but might work)
+                print(f"  [Warning] read_only load failed ({e}), trying normal load")
+                wb = load_workbook(file_path, data_only=True)
 
             if progress_callback:
-                progress_callback(20, "Workbook loaded, parsing data...")
+                progress_callback(10, f"Loading {os.path.basename(file_path)}...")
 
             # Delegate to subclass for specific parsing
-            self._parse_workbook(wb, scenario, progress_callback)
+            self._parse_workbook(wb, scenario, file_path, progress_callback)
 
             # Store reference
             self.scenarios.append(scenario)
             self.loaded_file_paths.append(file_path)
 
             if progress_callback:
-                progress_callback(100, "Loading complete")
+                progress_callback(100, f"Loaded {os.path.basename(file_path)}")
 
             print(f"Successfully loaded {len(scenario.parameters)} parameters and {len(scenario.sets)} sets")
 
@@ -136,7 +142,7 @@ class BaseDataManager(ABC):
         return scenario
 
     @abstractmethod
-    def _parse_workbook(self, wb, scenario: ScenarioData, progress_callback: Optional[Callable[[int, str], None]] = None):
+    def _parse_workbook(self, wb, scenario: ScenarioData, file_path: str, progress_callback: Optional[Callable[[int, str], None]] = None):
         """Subclass-specific parsing logic"""
         pass
 
