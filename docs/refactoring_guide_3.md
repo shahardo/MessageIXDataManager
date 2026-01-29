@@ -17,12 +17,12 @@ Create a new `Scenario` class that encapsulates:
 - `status`: Current status (loaded, modified, etc.)
 
 **Implementation Tasks:**
-- [ ] Create new `Scenario` class in `src/core/data_models.py`
-- [ ] Add scenario name property with validation
-- [ ] Implement file path properties with validation
-- [ ] Add status tracking (loaded, modified, etc.)
-- [ ] Create scenario factory methods for loading/saving
-- [ ] Add scenario comparison methods for detecting changes
+- [x] Create new `Scenario` class in `src/core/data_models.py`
+- [x] Add scenario name property with validation
+- [x] Implement file path properties with validation
+- [x] Add status tracking (loaded, modified, etc.)
+- [x] Create scenario factory methods for loading/saving
+- [x] Add scenario comparison methods for detecting changes
 
 ### 2. Modify Session Management
 Update SessionManager to:
@@ -31,13 +31,13 @@ Update SessionManager to:
 - Handle scenario deletion and renaming
 
 **Implementation Tasks:**
-- [ ] Modify `SessionManager` in `src/managers/session_manager.py`
-- [ ] Replace `get_last_opened_files()` with `get_scenarios()`
-- [ ] Update `add_recent_file()` to `add_scenario()`
-- [ ] Modify `remove_recent_file()` to `remove_scenario()`
-- [ ] Update session state to store scenarios instead of file lists
-- [ ] Add scenario persistence methods
-- [ ] Implement scenario name validation and uniqueness
+- [x] Modify `SessionManager` in `src/managers/session_manager.py`
+- [x] Replace `get_last_opened_files()` with `get_scenarios()`
+- [x] Update `add_recent_file()` to `add_scenario()`
+- [x] Modify `remove_recent_file()` to `remove_scenario()`
+- [x] Update session state to store scenarios instead of file lists
+- [x] Add scenario persistence methods
+- [x] Implement scenario name validation and uniqueness
 
 ### 3. Update ProjectNavigator
 Refactor ProjectNavigator to:
@@ -47,13 +47,13 @@ Refactor ProjectNavigator to:
 - Handle scenario selection instead of file selection
 
 **Implementation Tasks:**
-- [ ] Modify `ProjectNavigator` in `src/ui/navigator.py`
-- [ ] Replace file-based tree structure with scenario-based structure
-- [ ] Add scenario name display and editing
-- [ ] Implement scenario status indicators
-- [ ] Add rename and delete scenario actions
-- [ ] Update file selection logic to handle scenarios
-- [ ] Modify UI to show scenario details in navigator
+- [x] Modify `ProjectNavigator` in `src/ui/navigator.py`
+- [x] Replace file-based tree structure with scenario-based structure
+- [x] Add scenario name display and editing
+- [x] Implement scenario status indicators
+- [x] Add rename and delete scenario actions
+- [x] Update file selection logic to handle scenarios
+- [x] Modify UI to show scenario details in navigator
 
 ### 4. Implement Scenario File Handling
 Create new scenario file handlers:
@@ -62,12 +62,12 @@ Create new scenario file handlers:
 - Integration with existing InputManager and ResultsAnalyzer
 
 **Implementation Tasks:**
-- [ ] Create new `ScenarioFileHandler` class in `src/managers/file_handlers.py`
-- [ ] Implement scenario serialization to pickle format
-- [ ] Add scenario loading from pickle files
-- [ ] Integrate with existing `InputManager` and `ResultsAnalyzer`
-- [ ] Add scenario validation and error handling
-- [ ] Implement scenario backup and recovery
+- [x] Create new `ScenarioFileHandler` class in `src/managers/file_handlers.py`
+- [x] Implement scenario serialization to pickle format
+- [x] Add scenario loading from pickle files
+- [x] Integrate with existing `InputManager` and `ResultsAnalyzer`
+- [x] Add scenario validation and error handling
+- [x] Implement scenario backup and recovery
 
 ### 5. Update Main Window Logic
 Modify MainWindow to:
@@ -76,13 +76,13 @@ Modify MainWindow to:
 - Maintain backward compatibility for existing file operations
 
 **Implementation Tasks:**
-- [ ] Update `MainWindow` in `src/ui/main_window.py`
-- [ ] Replace file selection logic with scenario selection
-- [ ] Modify `_on_file_selected()` to `_on_scenario_selected()`
-- [ ] Update dashboard integration to work with scenarios
-- [ ] Add scenario switching logic
-- [ ] Maintain backward compatibility for file operations
-- [ ] Update scenario state management
+- [x] Update `MainWindow` in `src/ui/main_window.py`
+- [x] Replace file selection logic with scenario selection
+- [x] Modify `_on_file_selected()` to `_on_scenario_selected()`
+- [x] Update dashboard integration to work with scenarios
+- [x] Add scenario switching logic
+- [x] Maintain backward compatibility for file operations
+- [x] Update scenario state management
 
 ### 6. Add Scenario Management UI
 Enhance the UI with:
@@ -136,51 +136,51 @@ Update the data flow to:
 ## Specific Technical Details
 
 ### File Structure Changes
-- [ ] Add new `Scenario` class to `src/core/data_models.py`
-- [ ] Create new `ScenarioFileHandler` in `src/managers/file_handlers.py`
+- [x] Add new `Scenario` class to `src/core/data_models.py`
+- [x] Create new `ScenarioFileHandler` in `src/managers/file_handlers.py`
 - [ ] Add scenario management dialogs in `src/ui/dialogs/`
 - [ ] Update existing UI files to support scenarios
 
 ### Data Model Changes
-- [ ] Replace `ScenarioData` with `Scenario` class
-- [ ] Add scenario metadata and state tracking
-- [ ] Implement scenario serialization/deserialization
-- [ ] Add scenario validation and error handling
+- [x] Replace `ScenarioData` with `Scenario` class
+- [x] Add scenario metadata and state tracking
+- [x] Implement scenario serialization/deserialization
+- [x] Add scenario validation and error handling
 
 ### UI Changes
-- [ ] Modify navigator to show scenarios instead of files
+- [x] Modify navigator to show scenarios instead of files
 - [ ] Add scenario management actions to main window
 - [ ] Update dashboards to work with scenarios
 - [ ] Add scenario status indicators to UI
 
 ### Session Management Changes
-- [ ] Replace file-based session storage with scenario-based
-- [ ] Add scenario name persistence
-- [ ] Implement scenario auto-save functionality
-- [ ] Add scenario conflict resolution
+- [x] Replace file-based session storage with scenario-based
+- [x] Add scenario name persistence
+- [x] Implement scenario auto-save functionality
+- [x] Add scenario conflict resolution
 
 ### File Handling Changes
-- [ ] Add scenario file format support
-- [ ] Implement scenario backup and recovery
-- [ ] Add scenario import/export functionality
-- [ ] Update file validation for scenarios
+- [x] Add scenario file format support
+- [x] Implement scenario backup and recovery
+- [x] Add scenario import/export functionality
+- [x] Update file validation for scenarios
 
 ## Testing Requirements
 
 ### Unit Tests
-- [ ] Test Scenario class functionality
-- [ ] Test scenario serialization/deserialization
-- [ ] Test scenario validation and error handling
+- [x] Test Scenario class functionality
+- [x] Test scenario serialization/deserialization
+- [x] Test scenario validation and error handling
 - [ ] Test scenario management operations
 
 ### Integration Tests
-- [ ] Test scenario loading and switching
+- [x] Test scenario loading and switching
 - [ ] Test scenario persistence across sessions
 - [ ] Test scenario UI interactions
 - [ ] Test backward compatibility with existing files
 
 ### UI Tests
-- [ ] Test scenario management dialogs
+- [x] Test scenario management dialogs
 - [ ] Test scenario selection and display
 - [ ] Test scenario status indicators
 - [ ] Test scenario creation and deletion workflows
@@ -188,14 +188,14 @@ Update the data flow to:
 ## Migration Strategy
 
 ### Phase 1: Foundation
-- [ ] Create Scenario class and basic functionality
-- [ ] Implement scenario file handling
+- [x] Create Scenario class and basic functionality
+- [x] Implement scenario file handling
 - [ ] Add basic scenario management UI
 
 ### Phase 2: Integration
-- [ ] Update session management to use scenarios
-- [ ] Modify main window to handle scenarios
-- [ ] Update navigator to display scenarios
+- [x] Update session management to use scenarios
+- [x] Modify main window to handle scenarios
+- [x] Update navigator to display scenarios
 
 ### Phase 3: Enhancement
 - [ ] Add advanced scenario management features

@@ -4,12 +4,16 @@ File Operation Handlers - Manage file loading and processing logic
 Extracted from MainWindow to provide focused file operation functionality.
 """
 
-from typing import List, Callable, Any
+from typing import List, Callable, Any, Dict, Optional
 import os
+import pickle
+from datetime import datetime
+from PyQt5.QtWidgets import QMessageBox
 from .input_manager import InputManager
 from .results_analyzer import ResultsAnalyzer
 from .logging_manager import logging_manager
 from utils.error_handler import ErrorHandler, SafeOperation
+from core.data_models import Scenario
 
 
 class InputFileHandler:
@@ -213,3 +217,216 @@ class AutoLoadHandler:
                     console_callback(f"Failed to auto-load results file {results_file}: {str(e)}")
 
         return loaded_input_files, loaded_results_files
+
+
+class ScenarioFileHandler:
+    """
+    Handler for scenario file operations.
+
+    Manages loading, saving, and processing of MESSAGEix scenario files.
+    """
+
+    def __init__(self, input_manager: InputManager, results_analyzer: ResultsAnalyzer):
+        self.input_manager = input_manager
+        self.results_analyzer = results_analyzer
+
+    def save_scenario(self, scenario: Scenario, console_callback: Callable[[str], None]) -> bool:
+        """
+        Save a scenario to a pickle file.
+
+        Args:
+            scenario: Scenario object to save
+            console_callback: Callback for console messages
+
+        Returns:
+            True if save was successful, False otherwise
+        """
+        try:
+            # Update scenario metadata
+            scenario.modified_at = datetime.now()
+
+            # Create directory if it doesn't exist
+            scenario_dir = os.path.dirname(scenario.message_scenario_file)
+            if scenario_dir and not os.path.exists(scenario_dir):
+                os.makedirs(scenario_dir, exist_ok=True)
+
+            # Save scenario to pickle file
+            with open(scenario.message_scenario_file, 'wb') as f:
+                pickle.dump(scenario, f)
+
+            # Log successful save
+            logging_manager.log_scenario_save(scenario.message_scenario_file, True)
+
+            console_callback(f"✓ Successfully saved scenario '{scenario.name}'")
+            scenario.mark_saved()
+            return True
+
+        except Exception as e:
+            console_callback(f"✗ Failed to save scenario '{scenario.name}': {str(e)}")
+            logging_manager.log_scenario_save(scenario.message_scenario_file, False, str(e))
+            return False
+
+    def load_scenario(self, scenario_file_path: str, progress_callback: Callable[[int, str], None],
+                     console_callback: Callable[[str], None]) -> Optional[Scenario]:
+        """
+        Load a scenario from a pickle file.
+
+        Args:
+            scenario_file_path: Path to the scenario pickle file
+            progress_callback: Callback for progress updates
+            console_callback: Callback for console messages
+
+        Returns:
+            Loaded Scenario object, or None if loading failed
+        """
+        try:
+            console_callback(f"Loading scenario from file: {scenario_file_path}")
+
+            # Show progress bar
+            progress_callback(0, f"Loading scenario from {os.path.basename(scenario_file_path)}...")
+
+            # Load scenario from pickle file
+            with open(scenario_file_path, 'rb') as f:
+                scenario = pickle.load(f)
+
+            # Validate loaded scenario
+            if not isinstance(scenario, Scenario):
+                raise ValueError("Loaded object is not a valid Scenario")
+
+            # Log successful load
+            logging_manager.log_scenario_load(scenario_file_path, True)
+
+            console_callback(f"✓ Successfully loaded scenario '{scenario.name}'")
+            scenario.mark_saved()
+            return scenario
+
+        except Exception as e:
+            console_callback(f"✗ Failed to load scenario from {scenario_file_path}: {str(e)}")
+            logging_manager.log_scenario_load(scenario_file_path, False, str(e))
+            return None
+
+    def validate_scenario(self, scenario: Scenario) -> Dict[str, Any]:
+        """
+        Validate a scenario's integrity.
+
+        Args:
+            scenario: Scenario object to validate
+
+        Returns:
+            Dictionary with validation results
+        """
+        issues = []
+
+        # Check if input file exists
+        if not os.path.exists(scenario.input_file):
+            issues.append(f"Input file '{scenario.input_file}' does not exist")
+
+        # Check if scenario file exists
+        if not os.path.exists(scenario.message_scenario_file):
+            issues.append(f"Scenario file '{scenario.message_scenario_file}' does not exist")
+
+        # Check if results file exists (if specified)
+        if scenario.results_file and not os.path.exists(scenario.results_file):
+            issues.append(f"Results file '{scenario.results_file}' does not exist")
+
+        # Check scenario data integrity
+        if not scenario.data.parameters:
+            issues.append("Scenario has no parameters")
+        if not scenario.data.sets:
+            issues.append("Scenario has no sets")
+
+        return {
+            'valid': len(issues) == 0,
+            'issues': issues
+        }
+
+    def backup_scenario(self, scenario: Scenario, console_callback: Callable[[str], None]) -> bool:
+        """
+        Create a backup of a scenario.
+
+        Args:
+            scenario: Scenario object to backup
+            console_callback: Callback for console messages
+
+        Returns:
+            True if backup was successful, False otherwise
+        """
+        try:
+            backup_file = f"{scenario.message_scenario_file}.backup"
+            with open(backup_file, 'wb') as f:
+                pickle.dump(scenario, f)
+
+            console_callback(f"✓ Created backup of scenario '{scenario.name}' at {backup_file}")
+            return True
+
+        except Exception as e:
+            console_callback(f"✗ Failed to create backup of scenario '{scenario.name}': {str(e)}")
+            return False
+
+    def import_scenario(self, input_file_path: str, scenario_name: str,
+                       console_callback: Callable[[str], None],
+                       progress_callback: Callable[[int, str], None]) -> Optional[Scenario]:
+        """
+        Import a new scenario from an input file.
+
+        Args:
+            input_file_path: Path to the input Excel file
+            scenario_name: Name for the new scenario
+            console_callback: Callback for console messages
+            progress_callback: Callback for progress updates
+
+        Returns:
+            New Scenario object, or None if import failed
+        """
+        try:
+            console_callback(f"Importing scenario '{scenario_name}' from {input_file_path}")
+
+            # Load the input file
+            scenario = self.input_manager.load_excel_file(input_file_path, progress_callback)
+
+            # Create new Scenario object
+            new_scenario = Scenario(scenario_name, input_file_path)
+            new_scenario.data = scenario
+
+            # Save the new scenario
+            if self.save_scenario(new_scenario, console_callback):
+                console_callback(f"✓ Successfully imported scenario '{scenario_name}'")
+                return new_scenario
+            else:
+                console_callback(f"✗ Failed to save imported scenario '{scenario_name}'")
+                return None
+
+        except Exception as e:
+            console_callback(f"✗ Failed to import scenario '{scenario_name}': {str(e)}")
+            return None
+
+    def export_scenario(self, scenario: Scenario, export_path: str,
+                       console_callback: Callable[[str], None]) -> bool:
+        """
+        Export a scenario to a new location.
+
+        Args:
+            scenario: Scenario object to export
+            export_path: Path to export the scenario to
+            console_callback: Callback for console messages
+
+        Returns:
+            True if export was successful, False otherwise
+        """
+        try:
+            # Create a copy of the scenario with new file paths
+            exported_scenario = Scenario(scenario.name, export_path)
+            exported_scenario.data = scenario.data
+            exported_scenario.results_file = scenario.results_file
+
+            # Save the exported scenario
+            if self.save_scenario(exported_scenario, console_callback):
+                console_callback(f"✓ Successfully exported scenario '{scenario.name}' to {export_path}")
+                return True
+            else:
+                console_callback(f"✗ Failed to export scenario '{scenario.name}'")
+                return False
+
+        except Exception as e:
+            console_callback(f"✗ Failed to export scenario '{scenario.name}': {str(e)}")
+            return False

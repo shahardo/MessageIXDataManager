@@ -9,7 +9,7 @@ MESSAGEix input files and results.
 from PyQt5.QtWidgets import (
     QMainWindow, QSplitter, QFileDialog, QMessageBox, QApplication
 )
-from PyQt5.QtCore import Qt, QSettings, QPoint
+from PyQt5.QtCore import Qt, QSettings, QPoint, QEvent
 from PyQt5 import uic
 import os
 import pandas as pd
@@ -18,7 +18,6 @@ from typing import Optional, List, Dict, Any
 from .dashboard import ResultsDashboard
 from .results_file_dashboard import ResultsFileDashboard
 from .input_file_dashboard import InputFileDashboard
-from .navigator import ProjectNavigator
 from .components import (
     DataDisplayWidget, ChartWidget, ParameterTreeWidget, FileNavigatorWidget
 )
@@ -35,7 +34,7 @@ from managers.logging_manager import logging_manager
 from managers.commands import EditCellCommand, EditPivotCommand, PasteColumnCommand
 from managers.parameter_manager import ParameterManager
 from managers.session_manager import SessionManager
-from core.data_models import ScenarioData
+from core.data_models import ScenarioData, Scenario
 from utils.error_handler import ErrorHandler, SafeOperation
 from utils.data_transformer import DataTransformer
 
@@ -179,7 +178,7 @@ class MainWindow(QMainWindow):
     def _setup_ui_components(self):
         """Set up the UI components using composition"""
         # Create component instances, passing existing widgets from .ui file
-        self.file_navigator = FileNavigatorWidget()
+        self.file_navigator = FileNavigatorWidget(session_manager=self.session_manager)
         self.param_tree = ParameterTreeWidget()
         self.data_display = DataDisplayWidget()
         self.chart_widget = ChartWidget()
@@ -675,6 +674,10 @@ class MainWindow(QMainWindow):
                 for file_path in loaded_files:
                     self._save_last_opened_files(file_path, "input")
 
+                # Create or update scenarios for each loaded file
+                for file_path in loaded_files:
+                    self._create_or_update_scenario_from_file(file_path, "input")
+
                 # Update UI with all loaded files
                 self.file_navigator.update_input_files(self.input_manager.get_loaded_file_paths())
                 for file_path in loaded_files:
@@ -714,6 +717,10 @@ class MainWindow(QMainWindow):
                 for file_path in loaded_files:
                     self._save_last_opened_files(file_path, "results")
 
+                # Create or update scenarios for each loaded file
+                for file_path in loaded_files:
+                    self._create_or_update_scenario_from_file(file_path, "results")
+
                 # Update UI with all loaded files
                 self.file_navigator.update_result_files(self.results_analyzer.get_loaded_file_paths())
                 for file_path in loaded_files:
@@ -729,6 +736,60 @@ class MainWindow(QMainWindow):
                 self.dashboard.update_results(True)
 
                 self.statusbar.showMessage(f"Results loaded: {len(loaded_files)} file(s)")
+
+    def _create_or_update_scenario_from_file(self, file_path: str, file_type: str):
+        """
+        Create or update a Scenario object and save it to the session manager.
+        
+        Args:
+            file_path: Full path to the loaded file
+            file_type: Type of file ("input" or "results")
+        """
+        try:
+            # Generate scenario name from filename
+            file_name = os.path.splitext(os.path.basename(file_path))[0]
+            scenario_name = file_name
+            
+            # Check if scenario already exists
+            existing_scenario = self.session_manager.get_scenario(scenario_name)
+            
+            if existing_scenario:
+                scenario = existing_scenario
+                print(f"DEBUG: Updated existing scenario: {scenario_name}")
+            else:
+                # Create new scenario - Scenario requires input_file, so use file_path if it's input, otherwise use a dummy
+                if file_type == "input":
+                    scenario = Scenario(name=scenario_name, input_file=file_path)
+                else:
+                    # For results-only files, we still need to provide an input_file to Scenario
+                    # This will be updated if an input file is loaded later
+                    scenario = Scenario(name=scenario_name, input_file=file_path)
+                print(f"DEBUG: Created new scenario: {scenario_name}")
+            
+            # Update the appropriate file path
+            if file_type == "input":
+                scenario.input_file = file_path
+                scenario.status = "loaded"
+            elif file_type == "results":
+                scenario.results_file = file_path
+                scenario.status = "loaded"
+            
+            # Save scenario to session manager
+            self.session_manager.add_scenario(scenario)
+            print(f"DEBUG: Saved scenario to session manager: {scenario_name}")
+            
+            # Update file navigator with new scenarios
+            scenarios = self.session_manager.get_scenarios()
+            print(f"DEBUG: Retrieved {len(scenarios)} scenarios from session manager")
+            self.file_navigator.update_scenarios(scenarios)
+            print(f"DEBUG: Updated file navigator with {len(scenarios)} scenarios")
+            
+        except Exception as e:
+            error_msg = f"Failed to create scenario for {file_path}: {str(e)}"
+            self._append_to_console(f"ERROR: {error_msg}")
+            print(f"ERROR: {error_msg}")
+            import traceback
+            traceback.print_exc()
 
     def _run_solver(self):
         """Handle running the solver"""
@@ -917,6 +978,8 @@ class MainWindow(QMainWindow):
         """Save the current session state including selected files and view mode"""
         state = {
             'current_view': self.current_view,
+            'selected_scenario': None,  # Not used in this context
+            'last_selected_parameter': None,  # Not used in this context
             'selected_input_file': self.selected_input_file,
             'selected_results_file': self.selected_results_file,
             'last_selected_input_parameter': self.last_selected_input_parameter,
@@ -1093,7 +1156,7 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "Save Error", f"Error saving file: {str(e)}")
             self.statusbar.showMessage("Save failed")
 
-    def closeEvent(self, event):
+    def closeEvent(self, a0):
         """Handle application close event - check for unsaved changes"""
         # Check for unsaved changes before closing
         has_unsaved_changes = False
@@ -1124,16 +1187,16 @@ class MainWindow(QMainWindow):
                 # If save was cancelled or failed, don't close
                 current_scenario = self._get_current_scenario(self.current_view == "results")
                 if current_scenario and self.data_export_manager.has_modified_data(current_scenario):
-                    event.ignore()
+                    # Don't close the application
                     return
             elif reply == QMessageBox.Cancel:
-                event.ignore()
+                # Don't close the application
                 return
             # If Discard, continue with closing
 
         # Save current session state
         self._save_current_session_state()
-        super().closeEvent(event)
+        super().closeEvent(a0)
 
     def _connect_find_widget_signals(self):
         """Connect find widget signals"""

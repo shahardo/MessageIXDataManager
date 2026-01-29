@@ -172,9 +172,9 @@ class LoggingManager:
         # Create log record with extra attributes
         extra = {'category': category}
         if details:
-            extra['details'] = details
+            extra['details'] = json.dumps(details)
         if config_id is not None:
-            extra['config_id'] = config_id
+            extra['config_id'] = str(config_id)
 
         # Log at appropriate level
         log_method = getattr(self.logger, level.lower(), self.logger.info)
@@ -199,7 +199,7 @@ class LoggingManager:
         """Log solver execution"""
         details = {'command': command, 'status': status}
         if duration:
-            details['duration_seconds'] = duration
+            details['duration_seconds'] = str(duration)
 
         level = 'INFO' if status == 'completed' else 'WARNING' if status == 'stopped' else 'ERROR'
         message = f"Solver execution {status}"
@@ -214,6 +214,26 @@ class LoggingManager:
         level = 'INFO' if success else 'ERROR'
         message = f"Results file load {'successful' if success else 'failed'}: {os.path.basename(file_path)}"
         self.log(level, 'RESULTS_LOAD', message, details)
+
+    def log_scenario_save(self, file_path: str, success: bool, error_msg: Optional[str] = None):
+        """Log scenario save operations"""
+        details = {'file_path': file_path, 'file_type': 'scenario'}
+        if not success and error_msg:
+            details['error'] = error_msg
+
+        level = 'INFO' if success else 'ERROR'
+        message = f"Scenario save {'successful' if success else 'failed'}: {os.path.basename(file_path)}"
+        self.log(level, 'SCENARIO_SAVE', message, details)
+
+    def log_scenario_load(self, file_path: str, success: bool, error_msg: Optional[str] = None):
+        """Log scenario load operations"""
+        details = {'file_path': file_path, 'file_type': 'scenario'}
+        if not success and error_msg:
+            details['error'] = error_msg
+
+        level = 'INFO' if success else 'ERROR'
+        message = f"Scenario load {'successful' if success else 'failed'}: {os.path.basename(file_path)}"
+        self.log(level, 'SCENARIO_LOAD', message, details)
 
     def get_recent_logs(self, limit: int = 100, category: Optional[str] = None) -> list:
         """Get recent log entries from database"""
