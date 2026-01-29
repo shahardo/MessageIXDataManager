@@ -78,7 +78,7 @@ class MainWindow(QMainWindow):
         # Initialize managers
         self.input_manager: InputManager = InputManager()
         self.solver_manager: SolverManager = SolverManager()
-        self.results_analyzer: ResultsAnalyzer = ResultsAnalyzer()
+        self.results_analyzer: ResultsAnalyzer = ResultsAnalyzer(self)
         self.data_export_manager: DataExportManager = DataExportManager()
         self.parameter_manager: ParameterManager = ParameterManager()
         self.session_manager: SessionManager = SessionManager()

@@ -27,13 +27,17 @@ class ResultsAnalyzer(BaseDataManager):
         summary_stats: Dictionary containing summary statistics of loaded results
     """
 
-    def __init__(self) -> None:
+    def __init__(self, main_window=None) -> None:
         """
         Initialize the ResultsAnalyzer.
 
         Sets up the analyzer with empty state and initializes summary statistics.
+
+        Args:
+            main_window: Reference to the main application window for accessing input scenarios
         """
         super().__init__()
+        self.main_window = main_window
         self.summary_stats: Dict[str, Any] = {}
 
     @property
@@ -677,41 +681,211 @@ class ResultsAnalyzer(BaseDataManager):
         """Get the currently loaded input scenario if it has cost parameters."""
         print("DEBUG: Looking for input scenario in application...")
 
-        print("DEBUG: No input scenario with cost parameters found")
+        if not self.main_window:
+            print("DEBUG: No main window reference available")
+            return None
+
+        if not hasattr(self.main_window, 'input_manager'):
+            print("DEBUG: Main window has no input_manager")
+            return None
+
+        # Try to get scenario by the selected input file path
+        if hasattr(self.main_window, 'selected_input_file') and self.main_window.selected_input_file:
+            scenario = self.main_window.input_manager.get_scenario_by_file_path(self.main_window.selected_input_file)
+            if scenario and self._has_cost_parameters(scenario):
+                print(f"DEBUG: Found input scenario with cost parameters: {self.main_window.selected_input_file}")
+                return scenario
+
+        # Fallback: try current scenario
+        scenario = self.main_window.input_manager.get_current_scenario()
+        if scenario and self._has_cost_parameters(scenario):
+            print("DEBUG: Found current input scenario with cost parameters")
+            return scenario
+
+        print("DEBUG: No input scenario with cost parameters found - cost calculation cannot be performed")
         return None
+
+    def _has_cost_parameters(self, scenario: ScenarioData) -> bool:
+        """Check if a scenario has the required cost parameters."""
+        required_cost_params = [
+            'investment_cost',
+            'fixed_cost',
+            'variable_cost',
+            'technical_lifetime'
+        ]
+
+        # Check if scenario has at least some of the key cost parameters
+        cost_params_found = 0
+        for param_name in required_cost_params:
+            if scenario.get_parameter(param_name):
+                cost_params_found += 1
+
+        # Also check for historical capacity
+        if scenario.get_parameter('historical_new_capacity'):
+            cost_params_found += 1
+
+        # Require at least 2 cost parameters to consider it a cost scenario
+        return cost_params_found >= 2
 
     def _calculate_variable_opex(self, act_df: pd.DataFrame, scenario: ScenarioData, elec_techs: list) -> pd.DataFrame:
         """Calculate variable operating costs."""
         print("DEBUG: Calculating variable Opex...")
 
-        print(f"DEBUG: VOM result shape: {result.shape}")
-        print(f"DEBUG: VOM result sample: {result.head()}")
-        return result
+        # Return empty DataFrame for now - to be implemented
+        return pd.DataFrame(columns=['node', 'year_act', 'technology', 'cost_vom_total'])
 
     def _calculate_fixed_opex(self, scenario: ScenarioData, elec_techs: list) -> pd.DataFrame:
         """Calculate fixed operating costs based on capacity."""
         print("DEBUG: Calculating fixed Opex...")
 
-        print(f"DEBUG: FOM result shape: {result.shape}")
-        print(f"DEBUG: FOM result sample: {result.head()}")
-        return result
+        # Return empty DataFrame for now - to be implemented
+        return pd.DataFrame(columns=['node', 'year_act', 'technology', 'cost_fom_total'])
 
     def _calculate_fuel_costs(self, act_df: pd.DataFrame, scenario: ScenarioData, elec_techs: list) -> pd.DataFrame:
         """Calculate fuel costs."""
-        return False
+        # Return empty DataFrame for now - to be implemented
+        return pd.DataFrame(columns=['node', 'year_act', 'technology', 'cost_fuel_total'])
 
     def _calculate_emission_costs(self, act_df: pd.DataFrame, scenario: ScenarioData, elec_techs: list) -> pd.DataFrame:
         """Calculate emission costs."""
-        return False
+        # Return empty DataFrame for now - to be implemented
+        return pd.DataFrame(columns=['node', 'year_act', 'technology', 'cost_em_total'])
 
     def _calculate_capex_costs(self, scenario: ScenarioData, elec_techs: list, interest_rate: float) -> pd.DataFrame:
         """Calculate annualized capital costs - the most complex component."""
-        return False
+        cap_new_param = scenario.get_parameter('CAP_NEW')
+        inv_cost_param = scenario.get_parameter('investment_cost')
+        lifetime_param = scenario.get_parameter('technical_lifetime')
+        hist_cap_param = scenario.get_parameter('historical_new_capacity')
+
+        if not cap_new_param or not inv_cost_param or not lifetime_param:
+            return pd.DataFrame(columns=['node', 'year_act', 'technology', 'cost_capex_total'])
+
+        # Merge capacity investments with costs and lifetimes
+        capex_df = pd.merge(cap_new_param.df, inv_cost_param.df,
+                           on=['node', 'technology', 'year_vtg'],
+                           how='inner', suffixes=('_cap', '_cost'))
+
+        # Add lifetimes (try vintage-specific first, then technology-level)
+        lifetime_df = lifetime_param.df.copy()
+        capex_df = pd.merge(capex_df, lifetime_df,
+                           on=['node', 'technology', 'year_vtg'], how='left')
+
+        # Fill missing lifetimes
+        if 'lifetime' not in capex_df.columns:
+            capex_df['lifetime'] = 30
+        else:
+            capex_df['lifetime'] = capex_df['lifetime'].fillna(30)
+
+        # Calculate CRF and annualized costs
+        capex_df['crf'] = capex_df.apply(lambda row: self.calculate_crf(interest_rate, row['lifetime']), axis=1)
+        capex_df['overnight_cost'] = capex_df['value_cap'] * capex_df['value_cost']
+        capex_df['annualized_inv_cost_stream'] = capex_df['overnight_cost'] * capex_df['crf']
+
+        # --- Handle Historical Capacity ---
+        historical_capex = pd.DataFrame()
+        if hist_cap_param and not hist_cap_param.df.empty:
+            # Historical capacity has different structure - need to map to future years
+            hist_df = hist_cap_param.df.copy()
+
+            # Add costs and lifetimes for historical capacity
+            hist_df = pd.merge(hist_df, inv_cost_param.df,
+                              left_on=['node', 'technology', 'year_vtg'],
+                              right_on=['node', 'technology', 'year_vtg'],
+                              how='inner', suffixes=('_hist', '_cost'))
+
+            # Add lifetimes for historical capacity
+            hist_df = pd.merge(hist_df, lifetime_df,
+                              on=['node', 'technology', 'year_vtg'], how='left')
+
+            # Fill missing lifetimes
+            if 'lifetime' not in hist_df.columns:
+                hist_df['lifetime'] = 30
+            else:
+                hist_df['lifetime'] = hist_df['lifetime'].fillna(30)
+
+            # Calculate CRF for historical capacity
+            hist_df['crf'] = hist_df.apply(lambda row: self.calculate_crf(interest_rate, row['lifetime']), axis=1)
+            hist_df['overnight_cost'] = hist_df['value_hist'] * hist_df['value_cost']
+            hist_df['annualized_inv_cost_stream'] = hist_df['overnight_cost'] * hist_df['crf']
+
+            # Expand historical capacity to all active years
+            min_year = scenario.options.get('MinYear', 2020)
+            max_year = scenario.options.get('MaxYear', 2050)
+            if 'year' in scenario.sets:
+                model_years = sorted(scenario.sets['year'].tolist())
+            else:
+                model_years = list(range(min_year, max_year + 1))
+
+            expanded_hist_capex = []
+            for _, row in hist_df.iterrows():
+                vtg = row['year_vtg']
+                life = row['lifetime']
+                stream_cost = row['annualized_inv_cost_stream']
+
+                # Find years where this historical vintage is still active
+                active_years = [y for y in model_years if vtg <= y < vtg + life]
+
+                for year_act in active_years:
+                    expanded_hist_capex.append({
+                        'node': row['node'],
+                        'technology': row['technology'],
+                        'year_act': year_act,
+                        'cost_capex_total': stream_cost
+                    })
+
+            historical_capex = pd.DataFrame(expanded_hist_capex)
+
+        # --- Combine Model Horizon and Historical Capacity ---
+        # Expand model horizon capacity to all active years
+        min_year = scenario.options.get('MinYear', 2020)
+        max_year = scenario.options.get('MaxYear', 2050)
+        if 'year' in scenario.sets:
+            model_years = sorted(scenario.sets['year'].tolist())
+        else:
+            model_years = list(range(min_year, max_year + 1))
+
+        expanded_capex = []
+        for _, row in capex_df.iterrows():
+            vtg = row['year_vtg']
+            life = row['lifetime']
+            stream_cost = row['annualized_inv_cost_stream']
+
+            # Find years where this vintage is active
+            active_years = [y for y in model_years if vtg <= y < vtg + life]
+
+            for year_act in active_years:
+                expanded_capex.append({
+                    'node': row['node'],
+                    'technology': row['technology'],
+                    'year_act': year_act,
+                    'cost_capex_total': stream_cost
+                })
+
+        capex_long_df = pd.DataFrame(expanded_capex)
+
+        # Combine with historical capacity if available
+        if not historical_capex.empty:
+            capex_long_df = pd.concat([capex_long_df, historical_capex], ignore_index=True)
+
+        # Sum costs for same technology in same operation year
+        if not capex_long_df.empty:
+            return capex_long_df.groupby(['node', 'year_act', 'technology'])['cost_capex_total'].sum().reset_index()
+        else:
+            return pd.DataFrame(columns=['node', 'year_act', 'technology', 'cost_capex_total'])
 
     def _calculate_simplified_costs(self, act_df: pd.DataFrame, scenario: ScenarioData, elec_techs: list, interest_rate: float) -> Dict[str, pd.DataFrame]:
         """Calculate simplified costs using available price data."""
         print("DEBUG: Starting simplified cost calculation")
 
-        return False
+        # Return empty DataFrames for each cost component when simplified calculation is not available
+        empty_df = pd.DataFrame(columns=['node', 'year_act', 'technology', 'cost_total'])
+        return {
+            'vom': empty_df.copy(),
+            'fom': empty_df.copy(),
+            'fuel': empty_df.copy(),
+            'em': empty_df.copy(),
+            'capex': empty_df.copy()
+        }
 
     # Keep remove_file method for backward compatibility (inherited from BaseDataManager)
