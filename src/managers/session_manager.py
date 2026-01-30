@@ -34,6 +34,7 @@ class SessionManager:
         """
         self.settings = QSettings(org_name, app_name)
         self.max_recent_scenarios = 5
+        self.on_scenario_removed = None
 
     def get_scenarios(self) -> List[Scenario]:
         """
@@ -120,6 +121,8 @@ class SessionManager:
         # Find and remove the scenario
         for scenario in scenarios:
             if scenario.name == scenario_name:
+                if self.on_scenario_removed:
+                    self.on_scenario_removed(scenario)
                 scenarios.remove(scenario)
                 self._save_scenarios(scenarios)
                 return

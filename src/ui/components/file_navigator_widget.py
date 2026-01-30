@@ -109,8 +109,7 @@ class FileNavigatorWidget(QWidget):
         scenarios = self.session_manager.get_scenarios()
         if scenarios:
             self.update_scenarios(scenarios)
-            # Auto-load files that were open when application was last closed
-            self._auto_load_open_files(scenarios)
+            # Note: File loading and scenario selection will be done by main window
         else:
             self._show_no_scenarios()
 
@@ -146,6 +145,27 @@ class FileNavigatorWidget(QWidget):
             # Log the error but don't crash
             print(f"Warning: Failed to auto-load {file_type} file: {file_path}")
             print(f"Error: {str(e)}")
+
+    def _select_last_selected_scenario(self, scenarios):
+        """Select the last selected scenario if it exists in the current scenarios"""
+        session_state = self.session_manager.load_session_state()
+        last_selected_name = session_state.get('selected_scenario')
+        
+        print(f"DEBUG: Last selected scenario from session: {last_selected_name}")
+        print(f"DEBUG: Available scenarios: {[s.name for s in scenarios]}")
+        
+        if last_selected_name:
+            # Find the scenario with the matching name
+            for scenario in scenarios:
+                if scenario.name == last_selected_name:
+                    print(f"DEBUG: Selecting last selected scenario: {last_selected_name}")
+                    self.scenario_selected.emit(scenario)
+                    return
+        
+        # If no last selected scenario or it doesn't exist, select the first scenario
+        if scenarios:
+            print(f"DEBUG: Selecting first scenario: {scenarios[0].name}")
+            self.scenario_selected.emit(scenarios[0])
 
     def update_scenarios(self, scenarios):
         """
@@ -600,53 +620,6 @@ class FileNavigatorWidget(QWidget):
         layout.addStretch()
         return widget
 
-
-class FileEntryWidget(QWidget):
-    """Custom widget for file entries that highlights close button on hover"""
-    
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.close_button = None
-        self.setStyleSheet("""
-            QWidget {
-                background-color: transparent;
-                border: none;
-                padding: 0px;
-            }
-        """)
-    
-    def enterEvent(self, event):
-        """Handle mouse enter event - highlight close button"""
-        if self.close_button:
-            self.close_button.setStyleSheet("""
-                QPushButton {
-                    background-color: #dc3545;
-                    color: white;
-                    border: none;
-                    border-radius: 2px;
-                    font-weight: bold;
-                    font-size: 8px;
-                    padding: 0px 3px;
-                }
-            """)
-        super().enterEvent(event)
-    
-    def leaveEvent(self, event):
-        """Handle mouse leave event - reset close button style"""
-        if self.close_button:
-            self.close_button.setStyleSheet("""
-                QPushButton {
-                    background-color: #6c757d;
-                    color: white;
-                    border: none;
-                    border-radius: 2px;
-                    font-weight: bold;
-                    font-size: 8px;
-                    padding: 0px 3px;
-                }
-            """)
-        super().leaveEvent(event)
-
     def _open_file_dialog(self, scenario, file_type):
         """Open file dialog for the specified file type"""
         from PyQt5.QtWidgets import QFileDialog
@@ -710,3 +683,50 @@ class FileEntryWidget(QWidget):
         """Refresh the navigator display"""
         scenarios = self.session_manager.get_scenarios()
         self.update_scenarios(scenarios)
+
+
+class FileEntryWidget(QWidget):
+    """Custom widget for file entries that highlights close button on hover"""
+    
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.close_button = None
+        self.setStyleSheet("""
+            QWidget {
+                background-color: transparent;
+                border: none;
+                padding: 0px;
+            }
+        """)
+    
+    def enterEvent(self, event):
+        """Handle mouse enter event - highlight close button"""
+        if self.close_button:
+            self.close_button.setStyleSheet("""
+                QPushButton {
+                    background-color: #dc3545;
+                    color: white;
+                    border: none;
+                    border-radius: 2px;
+                    font-weight: bold;
+                    font-size: 8px;
+                    padding: 0px 3px;
+                }
+            """)
+        super().enterEvent(event)
+    
+    def leaveEvent(self, event):
+        """Handle mouse leave event - reset close button style"""
+        if self.close_button:
+            self.close_button.setStyleSheet("""
+                QPushButton {
+                    background-color: #6c757d;
+                    color: white;
+                    border: none;
+                    border-radius: 2px;
+                    font-weight: bold;
+                    font-size: 8px;
+                    padding: 0px 3px;
+                }
+            """)
+        super().leaveEvent(event)

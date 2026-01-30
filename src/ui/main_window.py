@@ -81,6 +81,7 @@ class MainWindow(QMainWindow):
         self.data_export_manager: DataExportManager = DataExportManager()
         self.parameter_manager: ParameterManager = ParameterManager()
         self.session_manager: SessionManager = SessionManager()
+        self.session_manager.on_scenario_removed = self._on_scenario_removed
 
         # Load technology descriptions from CSV
         self.tech_descriptions = self._load_tech_descriptions()
@@ -110,6 +111,7 @@ class MainWindow(QMainWindow):
         self.current_view: str = "input"  # "input" or "results"
         self.selected_input_file: Optional[str] = None
         self.selected_results_file: Optional[str] = None
+        self.selected_scenario: Optional[Scenario] = None
 
         # Remember last selected parameters for each file type
         self.last_selected_input_parameter: Optional[str] = None
@@ -248,6 +250,7 @@ class MainWindow(QMainWindow):
         """Connect component signals to main window handlers"""
         # Parameter tree signals
         self.param_tree.parameter_selected.connect(self._on_parameter_selected)
+        self.param_tree.section_selected.connect(self._on_section_selected)
         self.param_tree.options_changed.connect(self._on_options_changed)
 
         # Data display signals
@@ -263,6 +266,7 @@ class MainWindow(QMainWindow):
         """Connect all component signals"""
         # File navigator signals
         self.file_navigator.file_selected.connect(self._on_file_selected)
+        self.file_navigator.scenario_selected.connect(self._on_scenario_selected)
         self.file_navigator.load_files_requested.connect(self._on_load_files_requested)
         self.file_navigator.file_removed.connect(self._on_file_removed)
 
@@ -294,26 +298,206 @@ class MainWindow(QMainWindow):
 
     def _on_file_selected(self, file_path: str, file_type: str):
         """Handle file selection in navigator"""
+        print(f"DEBUG: File selected: {file_path} ({file_type})")
+        
+        # 1. Ensure file is loaded in the appropriate manager
         if file_type == "input":
-            self.selected_input_file = file_path
-            self._switch_to_input_view()
-            self._clear_data_display()
-            # Auto-select the last selected parameter if it exists in this file
-            if self.last_selected_input_parameter:
-                self._auto_select_parameter_if_exists(self.last_selected_input_parameter, False)
-            # If no parameter is selected, auto-select dashboard
-            elif not self.param_tree.selectedItems():
-                self._auto_select_parameter_if_exists("Dashboard", False)
+            if not self.input_manager.get_scenario_by_file_path(file_path):
+                print(f"DEBUG: Loading input file: {file_path}")
+                self.input_file_handler.load_files([file_path], self.update_progress, self._append_to_console)
         elif file_type == "results":
-            self.selected_results_file = file_path
-            self._switch_to_results_view()
+            if not self.results_analyzer.get_results_by_file_path(file_path):
+                print(f"DEBUG: Loading results file: {file_path}")
+                self.results_file_handler.load_files([file_path], self.update_progress, self._append_to_console)
+
+        # 2. Find the scenario associated with this file
+        target_scenario = None
+        
+        # Check currently selected scenario first
+        if self.selected_scenario:
+            if (file_type == "input" and self.selected_scenario.input_file == file_path) or \
+               (file_type == "results" and self.selected_scenario.results_file == file_path):
+                target_scenario = self.selected_scenario
+        
+        # If not found, check all scenarios
+        if not target_scenario:
+            scenarios = self.session_manager.get_scenarios()
+            for scenario in scenarios:
+                if (file_type == "input" and scenario.input_file == file_path) or \
+                   (file_type == "results" and scenario.results_file == file_path):
+                    target_scenario = scenario
+                    break
+        
+        # 3. Switch view
+        if target_scenario:
+            print(f"DEBUG: Switching to multi-section view for scenario: {target_scenario.name}")
+            self.selected_scenario = target_scenario
+            self.selected_input_file = target_scenario.input_file
+            self.selected_results_file = target_scenario.results_file
+            
+            self._switch_to_multi_section_view(target_scenario)
             self._clear_data_display()
-            # Auto-select the last selected parameter if it exists in this file
-            if self.last_selected_results_parameter:
-                self._auto_select_parameter_if_exists(self.last_selected_results_parameter, True)
+            
+            # Auto-select dashboard or parameter
+            if file_type == "input":
+                if self.last_selected_input_parameter:
+                    self._auto_select_parameter_if_exists(self.last_selected_input_parameter, False)
+                elif not self.param_tree.selectedItems():
+                    self._auto_select_parameter_if_exists("Dashboard", False)
+            elif file_type == "results":
+                if self.last_selected_results_parameter:
+                    self._auto_select_parameter_if_exists(self.last_selected_results_parameter, True)
+                elif not self.param_tree.selectedItems():
+                    self._auto_select_parameter_if_exists("Dashboard", True)
+        else:
+            # Fallback for files not associated with a scenario (should be rare now)
+            print(f"DEBUG: No scenario found for file, creating temporary scenario")
+            # Create a temporary scenario wrapper to use multi-section view
+            temp_scenario = Scenario("Temporary")
+            if file_type == "input":
+                temp_scenario.input_file = file_path
+            elif file_type == "results":
+                temp_scenario.results_file = file_path
+            
+            self.selected_scenario = temp_scenario
+            self.selected_input_file = temp_scenario.input_file
+            self.selected_results_file = temp_scenario.results_file
+            
+            self._switch_to_multi_section_view(temp_scenario)
+            self._clear_data_display()
+            
+            if file_type == "input":
+                if self.last_selected_input_parameter:
+                    self._auto_select_parameter_if_exists(self.last_selected_input_parameter, False)
+                elif not self.param_tree.selectedItems():
+                    self._auto_select_parameter_if_exists("Dashboard", False)
+            elif file_type == "results":
+                if self.last_selected_results_parameter:
+                    self._auto_select_parameter_if_exists(self.last_selected_results_parameter, True)
 
         # Save current session state
         self._save_current_session_state()
+
+    def _on_scenario_selected(self, scenario: Scenario):
+        """Handle scenario selection in navigator"""
+        print(f"DEBUG: Scenario selected: {scenario.name}")
+        print(f"DEBUG: Scenario input_file: {scenario.input_file}")
+        print(f"DEBUG: Scenario results_file: {scenario.results_file}")
+        
+        # Ensure files are loaded
+        if scenario.input_file and not self.input_manager.get_scenario_by_file_path(scenario.input_file):
+             print(f"DEBUG: Loading input file for scenario: {scenario.input_file}")
+             self.input_file_handler.load_files([scenario.input_file], self.update_progress, self._append_to_console)
+             
+        if scenario.results_file and not self.results_analyzer.get_results_by_file_path(scenario.results_file):
+             print(f"DEBUG: Loading results file for scenario: {scenario.results_file}")
+             self.results_file_handler.load_files([scenario.results_file], self.update_progress, self._append_to_console)
+        
+        self.selected_scenario = scenario
+        
+        # Set selected files based on what's available
+        self.selected_input_file = scenario.input_file
+        self.selected_results_file = scenario.results_file
+        
+        # Always use multi-section view for all scenarios
+        self._switch_to_multi_section_view(scenario)
+        
+        self._clear_data_display()
+        
+        # Auto-select dashboard if no parameter is selected
+        if not self.param_tree.selectedItems():
+            has_results = scenario.results_file is not None
+            self._auto_select_parameter_if_exists("Dashboard", has_results)
+
+        # Save current session state
+        self._save_current_session_state()
+
+    def _switch_to_multi_section_view(self, scenario: Scenario):
+        """Switch to multi-section view showing Parameters, Variables, and Results"""
+        self.current_view = "multi"
+        
+        print("DEBUG: Switching to multi-section view - clearing and updating tree")
+        
+        # Clear the existing tree
+        self.param_tree.clear()
+        self.param_tree.current_scenario = None
+        self.param_tree.sections = {}
+        
+        print("DEBUG: Tree cleared, now updating tree")
+        
+        # Create a combined scenario data object for the tree
+        from core.data_models import ScenarioData
+        combined_data = ScenarioData()
+        
+        # Load data from both input and results sources into combined data
+        if scenario.input_file:
+            input_scenario = self.input_manager.get_scenario_by_file_path(scenario.input_file)
+            print(f"DEBUG: Input scenario from manager: {input_scenario is not None}")
+            if input_scenario:
+                param_names = input_scenario.get_parameter_names()
+                print(f"DEBUG: Input scenario has {len(param_names)} parameters")
+                # Copy input parameters to combined data
+                for param_name in param_names:
+                    param = input_scenario.get_parameter(param_name)
+                    if param:
+                        combined_data.add_parameter(param)
+        
+        if scenario.results_file:
+            results_scenario = self.results_analyzer.get_results_by_file_path(scenario.results_file)
+            print(f"DEBUG: Results scenario from manager: {results_scenario is not None}")
+            if results_scenario:
+                param_names = results_scenario.get_parameter_names()
+                print(f"DEBUG: Results scenario has {len(param_names)} parameters")
+                # Copy results to combined data
+                for param_name in param_names:
+                    param = results_scenario.get_parameter(param_name)
+                    if param:
+                        combined_data.add_parameter(param)
+        
+        print(f"DEBUG: Combined data has {len(combined_data.get_parameter_names())} parameters")
+        
+        # Organize data into sections
+        sections_data = {}
+        
+        # Parameters section (from input data)
+        parameters = []
+        for param_name in combined_data.get_parameter_names():
+            param = combined_data.get_parameter(param_name)
+            if param and not param.metadata.get('result_type'):  # Input parameters don't have result_type
+                parameters.append((param_name, param))
+        if parameters:
+            sections_data["parameters"] = parameters
+            print(f"DEBUG: Parameters section has {len(parameters)} items")
+        
+        # Variables and Results sections (from results data)
+        variables = []
+        results = []
+        for param_name in combined_data.get_parameter_names():
+            param = combined_data.get_parameter(param_name)
+            if param:
+                result_type = param.metadata.get('result_type', '')
+                if result_type == 'variable':
+                    variables.append((param_name, param))
+                elif result_type and result_type in ['equation', 'result']:
+                    results.append((param_name, param))
+        
+        if variables:
+            sections_data["variables"] = variables
+            print(f"DEBUG: Variables section has {len(variables)} items")
+        if results:
+            sections_data["results"] = results
+            print(f"DEBUG: Results section has {len(results)} items")
+        
+        print(f"DEBUG: Final sections_data: {list(sections_data.keys())}")
+        
+        # Update the parameter tree with sections
+        print("DEBUG: Calling update_tree_with_sections")
+        self.param_tree.update_tree_with_sections(combined_data, sections_data)
+        self.param_tree.expandAll()
+        self.param_tree.updateGeometry()
+        self.param_tree.viewport().update()
+        self.param_tree.repaint()
+        print("DEBUG: Finished updating tree")
 
     def _on_parameter_selected(self, parameter_name: str, is_results: bool):
         """Handle parameter/result selection in tree"""
@@ -380,6 +564,24 @@ class MainWindow(QMainWindow):
             traceback.print_exc()
             # Try to show a basic error message in the console
             self._append_to_console(f"Error displaying parameter {parameter_name}: {str(e)}")
+
+    def _on_section_selected(self, section_type: str):
+        """Handle section header selection in parameter tree"""
+        try:
+            if section_type == "parameters":
+                self._show_input_file_dashboard()
+            elif section_type == "variables":
+                # For now, show results dashboard for variables
+                # This will be updated when we have separate variable dashboards
+                self._show_results_file_dashboard()
+            elif section_type == "results":
+                self._show_results_file_dashboard()
+            else:
+                print(f"Unknown section type: {section_type}")
+        except Exception as e:
+            print(f"ERROR in section selection: {e}")
+            import traceback
+            traceback.print_exc()
 
     def _on_display_mode_changed(self):
         """Handle display mode change (raw/advanced)"""
@@ -538,30 +740,6 @@ class MainWindow(QMainWindow):
             import traceback
             traceback.print_exc()
 
-    def _switch_to_input_view(self):
-        """Switch to input parameters view"""
-        self.current_view = "input"
-        self.param_tree.set_view_mode(False)
-
-        # Update parameter tree
-        scenario = self._get_current_scenario(False)
-        if scenario:
-            self.param_tree.update_parameters(scenario)
-
-    def _switch_to_results_view(self):
-        """Switch to results view"""
-        self.current_view = "results"
-        self.param_tree.set_view_mode(True)
-
-        # Update results tree
-        scenario = self._get_current_scenario(True)
-        if scenario:
-            self.param_tree.update_results(scenario)
-        else:
-            # No results scenario available - clear tree and switch back to input view
-            self.param_tree.clear()
-            self._switch_to_input_view()
-
     def _clear_data_display(self):
         """Clear the data display and chart"""
         if self.current_view == "results" and self.selected_results_file:
@@ -628,6 +806,15 @@ class MainWindow(QMainWindow):
 
     def _get_current_scenario(self, is_results: bool) -> Optional[ScenarioData]:
         """Get the current scenario based on selection"""
+        # In multi-section mode, return the combined scenario data
+        if self.current_view == "multi" and self.selected_scenario:
+            # For multi-section, we need to return the appropriate data source
+            if is_results and self.selected_scenario.results_file:
+                return self.results_analyzer.get_results_by_file_path(self.selected_scenario.results_file)
+            elif not is_results and self.selected_scenario.input_file:
+                return self.input_manager.get_scenario_by_file_path(self.selected_scenario.input_file)
+            return None
+        
         if is_results:
             if self.selected_results_file:
                 return self.results_analyzer.get_results_by_file_path(self.selected_results_file)
@@ -675,21 +862,27 @@ class MainWindow(QMainWindow):
                 # Clear file selection to show combined view
                 self.selected_input_file = None
 
-                # Save all opened files for auto-load
+                # Clear last opened files and save all opened files for auto-load
+                self._clear_last_opened_files("input")
                 for file_path in loaded_files:
                     self._save_last_opened_files(file_path, "input")
 
                 # Create or update scenarios for each loaded file
+                created_scenarios = []
                 for file_path in loaded_files:
-                    self._create_or_update_scenario_from_file(file_path, "input")
+                    scenario = self._create_or_update_scenario_from_file(file_path, "input")
+                    if scenario:
+                        created_scenarios.append(scenario)
 
                 # Update UI with all loaded files
                 self.file_navigator.update_input_files(self.input_manager.get_loaded_file_paths())
                 for file_path in loaded_files:
                     self.file_navigator.add_recent_file(file_path, "input")
 
-                # Update parameter tree (will show combined data)
-                self._switch_to_input_view()
+                # Auto-select the first created scenario to show its data
+                if created_scenarios:
+                    first_scenario = created_scenarios[0]
+                    self._on_scenario_selected(first_scenario)
 
                 # Report overall results
                 all_validation_issues = result['validation_issues']
@@ -723,21 +916,27 @@ class MainWindow(QMainWindow):
                 # Clear file selection to show combined view
                 self.selected_results_file = None
 
-                # Save all opened files for auto-load
+                # Clear last opened files and save all opened files for auto-load
+                self._clear_last_opened_files("results")
                 for file_path in loaded_files:
                     self._save_last_opened_files(file_path, "results")
 
                 # Create or update scenarios for each loaded file
+                created_scenarios = []
                 for file_path in loaded_files:
-                    self._create_or_update_scenario_from_file(file_path, "results")
+                    scenario = self._create_or_update_scenario_from_file(file_path, "results")
+                    if scenario:
+                        created_scenarios.append(scenario)
 
                 # Update UI with all loaded files
                 self.file_navigator.update_result_files(self.results_analyzer.get_loaded_file_paths())
                 for file_path in loaded_files:
                     self.file_navigator.add_recent_file(file_path, "results")
 
-                # Update results tree
-                self._switch_to_results_view()
+                # Auto-select the first created scenario to show its data
+                if created_scenarios:
+                    first_scenario = created_scenarios[0]
+                    self._on_scenario_selected(first_scenario)
 
                 # Show summary
                 self._append_to_console(f"Loaded {len(loaded_files)} result file(s) with {result['total_variables']} variables, {result['total_equations']} equations")
@@ -756,25 +955,31 @@ class MainWindow(QMainWindow):
             file_type: Type of file ("input" or "results")
         """
         try:
-            # Generate scenario name from filename
-            file_name = os.path.splitext(os.path.basename(file_path))[0]
-            scenario_name = file_name
+            # 1. Try to find existing scenario by file path
+            scenarios = self.session_manager.get_scenarios()
+            scenario = None
             
-            # Check if scenario already exists
-            existing_scenario = self.session_manager.get_scenario(scenario_name)
+            for s in scenarios:
+                if file_type == "input" and s.input_file == file_path:
+                    scenario = s
+                    print(f"DEBUG: Found existing scenario by input file: {s.name}")
+                    break
+                elif file_type == "results" and s.results_file == file_path:
+                    scenario = s
+                    print(f"DEBUG: Found existing scenario by results file: {s.name}")
+                    break
             
-            if existing_scenario:
-                scenario = existing_scenario
-                print(f"DEBUG: Updated existing scenario: {scenario_name}")
-            else:
-                # Create new scenario - Scenario requires input_file, so use file_path if it's input, otherwise use a dummy
-                if file_type == "input":
-                    scenario = Scenario(name=scenario_name, input_file=file_path)
+            # 2. If not found by path, try by name (derived from filename)
+            if not scenario:
+                # Generate scenario name from filename
+                file_name = os.path.splitext(os.path.basename(file_path))[0]
+                scenario_name = file_name
+                
+                existing_scenario = self.session_manager.get_scenario(scenario_name)
+                if existing_scenario:
+                    scenario = existing_scenario
                 else:
-                    # For results-only files, we still need to provide an input_file to Scenario
-                    # This will be updated if an input file is loaded later
-                    scenario = Scenario(name=scenario_name, input_file=file_path)
-                print(f"DEBUG: Created new scenario: {scenario_name}")
+                    scenario = Scenario(name=scenario_name)
             
             # Update the appropriate file path
             if file_type == "input":
@@ -786,7 +991,7 @@ class MainWindow(QMainWindow):
             
             # Save scenario to session manager
             self.session_manager.add_scenario(scenario)
-            print(f"DEBUG: Saved scenario to session manager: {scenario_name}")
+            print(f"DEBUG: Saved scenario to session manager: {scenario.name}")
             
             # Update file navigator with new scenarios
             scenarios = self.session_manager.get_scenarios()
@@ -800,6 +1005,9 @@ class MainWindow(QMainWindow):
             print(f"ERROR: {error_msg}")
             import traceback
             traceback.print_exc()
+            return None
+        
+        return scenario
 
     def _run_solver(self):
         """Handle running the solver"""
@@ -952,6 +1160,13 @@ class MainWindow(QMainWindow):
         else:
             self.statusbar.showMessage(f"Failed to remove {file_type} file: {os.path.basename(file_path)}")
 
+    def _on_scenario_removed(self, scenario):
+        """Handle scenario removal from session manager"""
+        if scenario.input_file:
+            self._remove_last_opened_file(scenario.input_file, "input")
+        if scenario.results_file:
+            self._remove_last_opened_file(scenario.results_file, "results")
+
     # Progress bar methods
     def show_progress_bar(self, maximum=100):
         """Show and initialize the progress bar"""
@@ -980,15 +1195,17 @@ class MainWindow(QMainWindow):
         self.statusbar.showMessage(status)
 
     # Settings methods
-    def _save_last_opened_files(self, file_path, file_type):
-        """Save the last opened file path to settings"""
-        self.session_manager.add_recent_file(file_path, file_type)
+    def _clear_last_opened_files(self, file_type: str):
+        """Clear the last opened files list for the given type"""
+        settings = QSettings()
+        key = f"last_opened_{file_type}_files"
+        settings.setValue(key, [])
 
     def _save_current_session_state(self):
         """Save the current session state including selected files and view mode"""
         state = {
             'current_view': self.current_view,
-            'selected_scenario': None,  # Not used in this context
+            'selected_scenario': self.selected_scenario.name if self.selected_scenario else None,
             'last_selected_parameter': None,  # Not used in this context
             'selected_input_file': self.selected_input_file,
             'selected_results_file': self.selected_results_file,
@@ -997,14 +1214,47 @@ class MainWindow(QMainWindow):
         }
         self.session_manager.save_session_state(state)
 
-    def _remove_last_opened_file(self, file_path, file_type):
+    def _save_last_opened_files(self, file_path: str, file_type: str):
+        """Save the last opened file path to settings"""
+        settings = QSettings()
+        key = f"last_opened_{file_type}_files"
+        files = settings.value(key, [])
+        if not isinstance(files, list):
+            files = []
+        if file_path not in files:
+            files.append(file_path)
+        settings.setValue(key, files)
+
+    def _load_last_opened_files(self, file_type: str) -> List[str]:
+        """Load the last opened file paths from settings"""
+        settings = QSettings()
+        key = f"last_opened_{file_type}_files"
+        files = settings.value(key, [])
+        if not isinstance(files, list):
+            files = []
+        return files
+
+    def _clear_last_opened_files(self, file_type: str):
+        """Clear the last opened files list for the given type"""
+        settings = QSettings()
+        key = f"last_opened_{file_type}_files"
+        settings.setValue(key, [])
+
+    def _remove_last_opened_file(self, file_path: str, file_type: str):
         """Remove a file from the last opened files settings"""
-        self.session_manager.remove_recent_file(file_path, file_type)
+        settings = QSettings()
+        key = f"last_opened_{file_type}_files"
+        files = settings.value(key, [])
+        if not isinstance(files, list):
+            files = []
+        if file_path in files:
+            files.remove(file_path)
+        settings.setValue(key, files)
 
     def _get_last_opened_files(self):
         """Get the last opened file paths from settings"""
-        input_files = self.session_manager.get_last_opened_files("input")
-        results_files = self.session_manager.get_last_opened_files("results")
+        input_files = self._load_last_opened_files("input")
+        results_files = self._load_last_opened_files("results")
         return input_files, results_files
 
     def _get_last_session_state(self):
@@ -1014,39 +1264,56 @@ class MainWindow(QMainWindow):
 
     def _restore_session_state(self, loaded_input_files, loaded_results_files):
         """Restore the session state after auto-loading files"""
-        current_view, selected_input_file, selected_results_file = self._get_last_session_state()
-
-        # Restore view mode
-        self.current_view = current_view
-
-        # Restore selected files if they were loaded
-        if selected_input_file and selected_input_file in loaded_input_files:
-            self.selected_input_file = selected_input_file
-            if current_view == "input":
-                self._switch_to_input_view()
-        elif selected_results_file and selected_results_file in loaded_results_files:
-            self.selected_results_file = selected_results_file
-            if current_view == "results":
-                self._switch_to_results_view()
-        else:
-            # If no specific file was selected or it wasn't loaded, switch to appropriate view
-            if loaded_input_files and not loaded_results_files:
-                self._switch_to_input_view()
-            elif loaded_results_files and not loaded_input_files:
-                self._switch_to_results_view()
-            elif loaded_input_files and loaded_results_files:
-                # Both loaded, switch to the saved view
-                if current_view == "results":
-                    self._switch_to_results_view()
-                else:
-                    self._switch_to_input_view()
+        # Since we now use multi-section view exclusively, we just need to ensure
+        # the selected scenario is restored if possible.
+        # The actual view switching happens in _on_scenario_selected which is called
+        # in _auto_load_last_files if scenarios are created.
+        
+        # We can try to restore the specific selected parameter if needed
+        pass
 
     def _auto_load_last_files(self):
         """Automatically load the last opened files on startup"""
-        # Use the auto load handler
-        loaded_input_files, loaded_results_files = self.auto_load_handler.auto_load_files(
-            self._append_to_console, self.update_progress
-        )
+        # Get scenarios from session
+        scenarios = self.session_manager.get_scenarios()
+
+        # If no scenarios in session, clear last opened to prevent loading old files
+        if not scenarios:
+            self._clear_last_opened_files("input")
+            self._clear_last_opened_files("results")
+        
+        # Load last opened files directly
+        input_files = self._load_last_opened_files("input")
+        results_files = self._load_last_opened_files("results")
+        
+        # Ensure files from scenarios are included
+        for scenario in scenarios:
+            if scenario.input_file and os.path.exists(scenario.input_file):
+                if scenario.input_file not in input_files:
+                    input_files.append(scenario.input_file)
+            
+            if scenario.results_file and os.path.exists(scenario.results_file):
+                if scenario.results_file not in results_files:
+                    results_files.append(scenario.results_file)
+        
+        loaded_input_files = []
+        loaded_results_files = []
+        
+        for file_path in input_files:
+            try:
+                self.input_manager.load_excel_file(file_path)
+                loaded_input_files.append(file_path)
+                print(f"DEBUG: Auto-loaded input file {file_path}")
+            except Exception as e:
+                print(f"DEBUG: Failed to auto-load input file {file_path}: {e}")
+        
+        for file_path in results_files:
+            try:
+                self.results_analyzer.load_results_file(file_path)
+                loaded_results_files.append(file_path)
+                print(f"DEBUG: Auto-loaded results file {file_path}")
+            except Exception as e:
+                print(f"DEBUG: Failed to auto-load results file {file_path}: {e}")
 
         # Clear modified flags since we're just loading data, not modifying it
         if loaded_input_files:
@@ -1064,11 +1331,6 @@ class MainWindow(QMainWindow):
             self.file_navigator.update_input_files(loaded_input_files)
             for file_path in loaded_input_files:
                 self.file_navigator.add_recent_file(file_path, "input")
-            # Update parameter tree
-            self._switch_to_input_view()
-
-            # Auto-select Dashboard for input files
-            self._auto_select_parameter_if_exists("Dashboard", False)
 
         if loaded_results_files:
             # Update UI with all loaded results files
@@ -1077,6 +1339,21 @@ class MainWindow(QMainWindow):
                 self.file_navigator.add_recent_file(file_path, "results")
             # Update dashboard
             self.dashboard.update_results(True)
+
+        # Create scenarios for loaded files
+        created_scenarios = []
+        for file_path in loaded_input_files:
+            scenario = self._create_or_update_scenario_from_file(file_path, "input")
+            if scenario:
+                created_scenarios.append(scenario)
+        for file_path in loaded_results_files:
+            scenario = self._create_or_update_scenario_from_file(file_path, "results")
+            if scenario:
+                created_scenarios.append(scenario)
+
+        if created_scenarios:
+            first_scenario = created_scenarios[0]
+            self._on_scenario_selected(first_scenario)
 
         # Restore session state (view mode and selected files)
         self._restore_session_state(loaded_input_files, loaded_results_files)

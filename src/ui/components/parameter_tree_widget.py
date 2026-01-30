@@ -6,17 +6,36 @@ Extracted from MainWindow to provide focused tree navigation functionality.
 
 from PyQt5.QtWidgets import QTreeWidget, QTreeWidgetItem, QWidget, QHBoxLayout, QLabel, QPushButton, QDialog, QListWidget, QListWidgetItem, QVBoxLayout, QHeaderView, QMenu, QAction, QMessageBox
 from PyQt5.QtCore import pyqtSignal, Qt
-from PyQt5.QtGui import QFont
+from PyQt5.QtGui import QFont, QColor
 from typing import Optional, List, Dict
 
 from core.data_models import ScenarioData
 
 
+class SectionTreeItem(QTreeWidgetItem):
+    """Custom tree item for section headers that can be clicked to switch dashboards"""
+
+    def __init__(self, section_name: str, section_type: str, item_count: int = 0):
+        super().__init__()
+        self.section_name = section_name
+        self.section_type = section_type  # "parameters", "variables", "results"
+        self.item_count = item_count
+        self.setText(0, f"{section_name} ({item_count})")
+        self.setToolTip(0, f"Click to show {section_name.lower()} dashboard")
+
+        # Set visual styling for section headers
+        self.setBackground(0, QColor(240, 240, 240))  # Light gray background
+        font = self.font(0)
+        font.setBold(True)
+        self.setFont(0, font)
+
+
 class ParameterTreeWidget(QTreeWidget):
-    """Handles parameter/result tree navigation"""
+    """Handles parameter/result tree navigation with multi-section support"""
 
     # Signals
     parameter_selected = pyqtSignal(object, bool)  # parameter, is_results
+    section_selected = pyqtSignal(str)  # section_type: "parameters", "variables", "results"
     options_changed = pyqtSignal()  # emitted when scenario options are modified
 
     def __init__(self, parent=None):
@@ -24,6 +43,7 @@ class ParameterTreeWidget(QTreeWidget):
         self.current_view = "input"  # "input" or "results"
         self.current_scenario = None
         self.parameter_manager = None
+        self.sections = {}  # section_type -> SectionTreeItem
         self.setup_ui()
         self.setContextMenuPolicy(Qt.CustomContextMenu)
         self.customContextMenuRequested.connect(self._show_context_menu)
@@ -71,8 +91,85 @@ class ParameterTreeWidget(QTreeWidget):
         self.options_button.clicked.connect(self._show_options_dialog)
         self._position_buttons()
 
+    def update_tree_with_sections(self, scenario: ScenarioData, sections_data: Dict[str, List]):
+        """
+        Update the tree with multiple sections containing categorized data
+
+        Args:
+            scenario: The scenario data
+            sections_data: Dict mapping section_type to list of (name, item) tuples
+        """
+        self.clear()
+        self.current_scenario = scenario
+        self.sections = {}
+
+        if not scenario:
+            return
+
+        # Create sections
+        for section_type, items in sections_data.items():
+            if not items:
+                continue
+
+            # Count total items for section header
+            total_items = len(items)
+
+            # Create section header
+            section_name = section_type.title()  # "Parameters", "Variables", "Results"
+            section_item = SectionTreeItem(section_name, section_type, total_items)
+            self.addTopLevelItem(section_item)
+            self.sections[section_type] = section_item
+
+            # Group items by category
+            categories = {}
+            for item_name, item in items:
+                # Determine category based on item type
+                if section_type == "parameters":
+                    category = self._categorize_parameter(item_name, item)
+                elif section_type == "variables":
+                    category = self._categorize_variable(item_name, item)
+                elif section_type == "results":
+                    category = self._categorize_result(item_name, item)
+                else:
+                    category = "Other"
+
+                if category not in categories:
+                    categories[category] = []
+                categories[category].append((item_name, item))
+
+            # Sort categories and add to section
+            for category in sorted(categories.keys()):
+                category_items = categories[category]
+                category_item = QTreeWidgetItem(section_item)
+                category_item.setText(0, f"{category} ({len(category_items)})")
+
+                # Sort items within category
+                category_items.sort(key=lambda x: x[0])
+
+                for item_name, item in category_items:
+                    param_item = QTreeWidgetItem(category_item)
+                    param_item.setText(0, item_name)
+
+                    # Add metadata to tooltip based on section type
+                    if section_type in ["parameters", "variables"]:
+                        dims_info = f"Dimensions: {', '.join(item.metadata.get('dims', []))}" if item.metadata.get('dims') else "No dimensions"
+                        tooltip = f"{section_type.title()[:-1]}: {item_name}\n{dims_info}"
+                    else:  # results
+                        dims_info = f"Dimensions: {', '.join(item.metadata.get('dims', []))}" if item.metadata.get('dims') else "No dimensions"
+                        shape_info = f"Shape: {item.metadata.get('shape', ('?', '?'))}"
+                        units_info = f"Units: {item.metadata.get('units', 'N/A')}"
+                        tooltip = f"Result: {item_name}\n{dims_info}\n{shape_info}\n{units_info}"
+
+                    param_item.setToolTip(0, tooltip)
+
+                category_item.setExpanded(True)
+
+            section_item.setExpanded(True)
+
     def update_parameters(self, scenario: ScenarioData, is_results: bool = False):
         """Update the tree with parameters from a scenario"""
+        # For now, maintain backward compatibility by showing parameters in a single section
+        # This will be updated when we implement the full section-based system
         self.clear()
         self.current_scenario = scenario
 
@@ -235,6 +332,66 @@ class ParameterTreeWidget(QTreeWidget):
         else:
             return "Other"
 
+    def _categorize_variable(self, var_name: str, variable) -> str:
+        """Categorize a variable based on its name and properties"""
+        name_lower = var_name.lower()
+
+        # Activity variables
+        if any(keyword in name_lower for keyword in ['activity', 'act', 'production', 'output']):
+            return "Activity"
+
+        # Capacity variables
+        elif any(keyword in name_lower for keyword in ['capacity', 'cap']):
+            return "Capacity"
+
+        # Flow variables
+        elif any(keyword in name_lower for keyword in ['flow', 'transport', 'trade']):
+            return "Flow"
+
+        # Storage variables
+        elif any(keyword in name_lower for keyword in ['storage', 'stor']):
+            return "Storage"
+
+        # Emission variables
+        elif any(keyword in name_lower for keyword in ['emission', 'emiss']):
+            return "Emissions"
+
+        # Default category
+        else:
+            return "Other"
+
+    def _categorize_result(self, result_name: str, result) -> str:
+        """Categorize a result based on its name and properties"""
+        name_lower = result_name.lower()
+
+        # Objective function results
+        if any(keyword in name_lower for keyword in ['obj', 'objective', 'cost', 'total']):
+            return "Objective"
+
+        # Activity results
+        elif any(keyword in name_lower for keyword in ['activity', 'act', 'production']):
+            return "Activity"
+
+        # Capacity results
+        elif any(keyword in name_lower for keyword in ['capacity', 'cap']):
+            return "Capacity"
+
+        # Flow results
+        elif any(keyword in name_lower for keyword in ['flow', 'transport', 'trade']):
+            return "Flow"
+
+        # Price results
+        elif any(keyword in name_lower for keyword in ['price', 'cost', 'dual']):
+            return "Prices"
+
+        # Emission results
+        elif any(keyword in name_lower for keyword in ['emission', 'emiss']):
+            return "Emissions"
+
+        # Default category
+        else:
+            return "Other"
+
     def _on_item_selected(self):
         """Handle item selection in the tree"""
         selected_items = self.selectedItems()
@@ -244,21 +401,39 @@ class ParameterTreeWidget(QTreeWidget):
         selected_item = selected_items[0]
         item_name = selected_item.text(0)
 
+        # Check if it's a section header
+        if isinstance(selected_item, SectionTreeItem):
+            self.section_selected.emit(selected_item.section_type)
+            return
+
         # Special handling for Dashboard
         if item_name == "Dashboard":
-            self.parameter_selected.emit("Dashboard", self.current_view == "results")
+            # In multi-section mode, dashboard is always input-style
+            is_results = self.current_view == "results" and self.current_view != "multi"
+            self.parameter_selected.emit("Dashboard", is_results)
             return
 
         # Check if it's a category (no parent, and not Dashboard)
         if selected_item.parent() is None:
             # It's a category, emit None to clear displays
-            self.parameter_selected.emit(None, self.current_view == "results")
+            is_results = self.current_view == "results" and self.current_view != "multi"
+            self.parameter_selected.emit(None, is_results)
             return
 
-        # Get parameter/result name
-        # For now, emit the name - the parent will need to look up the actual parameter
-        # This could be improved by storing the parameter object in the item data
-        self.parameter_selected.emit(item_name, self.current_view == "results")
+        # Get parameter/result name and determine data source
+        # For multi-section view, determine source from section hierarchy
+        is_results = self.current_view == "results"
+        if self.current_view == "multi":
+            # Find which section this parameter belongs to
+            parent = selected_item.parent()
+            while parent:
+                if isinstance(parent, SectionTreeItem):
+                    if parent.section_type in ["variables", "results"]:
+                        is_results = True
+                    break
+                parent = parent.parent()
+        
+        self.parameter_selected.emit(item_name, is_results)
 
     def set_view_mode(self, is_results: bool):
         """Set whether this tree shows parameters or results"""
