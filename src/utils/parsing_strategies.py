@@ -169,7 +169,7 @@ class ParameterParsingStrategy(ParsingStrategy):
                         self.param_type, current_param, param_data, headers[1:]
                     )
                     if parameter:
-                        scenario.add_parameter(parameter)
+                        scenario.add_parameter(parameter, mark_modified=False, add_to_history=False)
 
                 # Start new parameter
                 current_param = param_name
@@ -185,7 +185,7 @@ class ParameterParsingStrategy(ParsingStrategy):
                 self.param_type, current_param, param_data, headers[1:]
             )
             if parameter:
-                scenario.add_parameter(parameter)
+                scenario.add_parameter(parameter, mark_modified=False, add_to_history=False)
 
     def _parse_individual_parameter_sheet(self, sheet: Any, param_name: str, scenario: ScenarioData) -> None:
         """Parse an individual parameter sheet"""
@@ -211,7 +211,7 @@ class ParameterParsingStrategy(ParsingStrategy):
                 self.param_type, param_name, param_data, headers
             )
             if parameter:
-                scenario.add_parameter(parameter)
+                scenario.add_parameter(parameter, mark_modified=False, add_to_history=False)
 
 
 class ResultParsingStrategy(ParsingStrategy):
@@ -336,7 +336,7 @@ class ResultParsingStrategy(ParsingStrategy):
                 'result', sheet_name, data, headers, metadata_overrides
             )
             if parameter:
-                scenario.add_parameter(parameter)
+                scenario.add_parameter(parameter, mark_modified=False, add_to_history=False)
 
 
 class ExcelParser:

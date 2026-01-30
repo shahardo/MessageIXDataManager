@@ -667,6 +667,11 @@ class MainWindow(QMainWindow):
 
             loaded_files = result['loaded_files']
             if loaded_files:
+                # Clear modified flags since we're just loading data, not modifying it
+                current_scenario = self.input_manager.get_current_scenario()
+                if current_scenario:
+                    self.data_export_manager.clear_modified_flags(current_scenario)
+
                 # Clear file selection to show combined view
                 self.selected_input_file = None
 
@@ -710,6 +715,11 @@ class MainWindow(QMainWindow):
 
             loaded_files = result['loaded_files']
             if loaded_files:
+                # Clear modified flags since we're just loading data, not modifying it
+                current_scenario = self.results_analyzer.get_current_results()
+                if current_scenario:
+                    self.data_export_manager.clear_modified_flags(current_scenario)
+
                 # Clear file selection to show combined view
                 self.selected_results_file = None
 
@@ -1037,6 +1047,17 @@ class MainWindow(QMainWindow):
         loaded_input_files, loaded_results_files = self.auto_load_handler.auto_load_files(
             self._append_to_console, self.update_progress
         )
+
+        # Clear modified flags since we're just loading data, not modifying it
+        if loaded_input_files:
+            current_scenario = self.input_manager.get_current_scenario()
+            if current_scenario:
+                self.data_export_manager.clear_modified_flags(current_scenario)
+
+        if loaded_results_files:
+            current_scenario = self.results_analyzer.get_current_results()
+            if current_scenario:
+                self.data_export_manager.clear_modified_flags(current_scenario)
 
         if loaded_input_files:
             # Update UI with all loaded input files
