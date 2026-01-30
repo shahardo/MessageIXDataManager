@@ -5,7 +5,7 @@ Extracted from MainWindow to provide focused file navigation functionality.
 Implements the scenario-based architecture as defined in refactoring guide.
 """
 
-from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QFrame
+from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QFrame, QLineEdit
 from PyQt5.QtCore import pyqtSignal, Qt, QSize
 from PyQt5.QtGui import QIcon, QPixmap
 from core.data_models import Scenario
@@ -54,9 +54,23 @@ class FileNavigatorWidget(QWidget):
         self.header_label.setStyleSheet("font-weight: bold; font-size: 12px;")
         
         # Add scenario button
-        self.add_scenario_btn = QPushButton("Add Scenario")
-        self.add_scenario_btn.setIcon(QIcon.fromTheme("list-add"))
+        self.add_scenario_btn = QPushButton("+")
+        self.add_scenario_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #28a745;
+                color: white;
+                border: none;
+                border-radius: 4px;
+                font-weight: bold;
+                font-size: 14px;
+                padding: 2px 8px;
+            }
+            QPushButton:hover {
+                background-color: #218838;
+            }
+        """)
         self.add_scenario_btn.clicked.connect(self._on_add_scenario)
+        self.add_scenario_btn.setToolTip("Add scenario")
         
         header_layout.addWidget(self.header_label)
         header_layout.addStretch()
@@ -187,40 +201,61 @@ class FileNavigatorWidget(QWidget):
         layout = QVBoxLayout(widget)
         layout.setContentsMargins(5, 5, 5, 5)
         
-        # Header row with scenario name and actions
+        # Header row with editable title and trashcan
         header_layout = QHBoxLayout()
         
-        # Scenario icon and name
-        icon_label = QLabel()
-        icon_label.setPixmap(self._get_scenario_icon(scenario).pixmap(20, 20))
+        # Scenario title button (styled as label, clickable to edit)
+        scenario_title_button = QPushButton(scenario.name)
+        scenario_title_button.setStyleSheet("""
+            QPushButton {
+                font-weight: bold;
+                font-size: 11px;
+                color: #495057;
+                border: none;
+                background: transparent;
+                outline: none;
+                text-align: left;
+                padding: 0px;
+            }
+            QPushButton:hover {
+                border: none;
+                background: transparent;
+                outline: none;
+            }
+            QPushButton:focus {
+                border: none;
+                background: transparent;
+                outline: none;
+            }
+            QPushButton:pressed {
+                border: none;
+                background: transparent;
+                outline: none;
+            }
+        """)
+        scenario_title_button.setCursor(Qt.PointingHandCursor)
+        scenario_title_button.clicked.connect(lambda checked, s=scenario, b=scenario_title_button: self._start_editing_title(s, b))
         
-        name_label = QLabel(scenario.name)
-        name_label.setStyleSheet("font-weight: bold; font-size: 11px;")
-        name_label.setToolTip(f"Scenario: {scenario.name}")
-        
-        # Status indicator
-        status_label = QLabel(scenario.status.capitalize())
-        status_label.setStyleSheet(self._get_status_style(scenario.status))
-        status_label.setFixedWidth(60)
-        
-        # Action buttons
-        actions_layout = QHBoxLayout()
-        
-        select_btn = QPushButton("Select")
-        select_btn.setFixedWidth(60)
-        select_btn.clicked.connect(lambda: self._on_scenario_selected(scenario))
-        
-        delete_btn = QPushButton("Delete")
-        delete_btn.setFixedWidth(60)
+        # Trashcan delete button
+        delete_btn = QPushButton()
+        delete_btn.setIcon(QIcon.fromTheme("user-trash"))
+        delete_btn.setStyleSheet("""
+            QPushButton {
+                background-color: transparent;
+                border: none;
+                border-radius: 3px;
+                padding: 4px;
+            }
+            QPushButton:hover {
+                background-color: #dc3545;
+            }
+        """)
+        delete_btn.setFixedSize(24, 24)
         delete_btn.clicked.connect(lambda: self._on_scenario_deleted(scenario))
+        delete_btn.setToolTip("Delete scenario")
         
-        actions_layout.addWidget(select_btn)
-        actions_layout.addWidget(delete_btn)
-        
-        header_layout.addWidget(icon_label)
-        header_layout.addWidget(name_label, 1)
-        header_layout.addWidget(status_label)
-        header_layout.addLayout(actions_layout)
+        header_layout.addWidget(scenario_title_button, 1)
+        header_layout.addWidget(delete_btn, 0)
         
         # File entries section
         files_layout = QVBoxLayout()
@@ -277,15 +312,107 @@ class FileNavigatorWidget(QWidget):
         else:
             return "color: gray;"
 
-    def _on_scenario_selected(self, scenario):
-        """Handle scenario selection"""
-        self.scenario_selected.emit(scenario)
+    def _start_editing_title(self, scenario, button):
+        """Replace the button with an editable text field"""
+        # Find the parent layout
+        parent_layout = button.parent().layout()
         
-        # Emit backward compatibility signals
-        if scenario.input_file:
-            self.file_selected.emit(scenario.input_file, "input")
-        if scenario.results_file:
-            self.file_selected.emit(scenario.results_file, "results")
+        # Find the header layout (first sub-layout containing the button)
+        header_layout = None
+        for i in range(parent_layout.count()):
+            item = parent_layout.itemAt(i)
+            if item.layout():
+                header_layout = item.layout()
+                break
+        
+        if not header_layout:
+            return  # Safety check
+        
+        # Create the edit field
+        edit_field = QLineEdit(scenario.name)
+        edit_field.setStyleSheet("""
+            QLineEdit {
+                border: 1px solid #007bff;
+                border-radius: 3px;
+                padding: 2px 4px;
+                font-weight: bold;
+                font-size: 11px;
+                background-color: white;
+            }
+        """)
+        
+        # Replace the button with the edit field in the header layout
+        for i in range(header_layout.count()):
+            item = header_layout.itemAt(i)
+            if item and item.widget() == button:
+                header_layout.replaceWidget(button, edit_field)
+                button.setParent(None)  # Remove the old button
+                break
+        
+        # Focus and select all text
+        edit_field.setFocus()
+        edit_field.selectAll()
+        
+        # Connect the editing finished signal
+        edit_field.editingFinished.connect(lambda: self._finish_editing_title(scenario, edit_field, header_layout))
+
+    def _finish_editing_title(self, scenario, edit_field, header_layout):
+        """Replace the edit field back with a label"""
+        new_title = edit_field.text().strip()
+        if new_title and new_title != scenario.name:
+            # Remove the scenario with the old name first
+            old_name = scenario.name
+            self.session_manager.remove_scenario(old_name)
+            
+            # Update the scenario name
+            scenario.name = new_title
+            
+            # Add the scenario back with the new name
+            self.session_manager.add_scenario(scenario)
+        
+        # Create new button
+        button = QPushButton(scenario.name)
+        button.setStyleSheet("""
+            QPushButton {
+                font-weight: bold;
+                font-size: 11px;
+                color: #495057;
+                border: none;
+                background: transparent;
+                outline: none;
+                text-align: left;
+                padding: 0px;
+            }
+            QPushButton:hover {
+                border: none;
+                background: transparent;
+                outline: none;
+            }
+            QPushButton:focus {
+                border: none;
+                background: transparent;
+                outline: none;
+            }
+            QPushButton:pressed {
+                border: none;
+                background: transparent;
+                outline: none;
+            }
+        """)
+        button.setCursor(Qt.PointingHandCursor)
+        button.clicked.connect(lambda checked, s=scenario, b=button: self._start_editing_title(s, b))
+        
+        # Replace the edit field with the button in the header layout
+        header_layout.replaceWidget(edit_field, button)
+        edit_field.setParent(None)  # Remove the old edit field
+
+    def _on_scenario_title_changed(self, scenario, new_title):
+        """Handle scenario title editing"""
+        if new_title.strip() and new_title != scenario.name:
+            scenario.name = new_title.strip()
+            self.session_manager.add_scenario(scenario)
+            # Update the display
+            self.update_scenarios(self.current_scenarios)
 
     def _on_scenario_deleted(self, scenario):
         """Handle scenario deletion"""
@@ -401,14 +528,7 @@ class FileNavigatorWidget(QWidget):
 
     def _create_file_entry_widget(self, file_type, file_path, open_callback, close_callback):
         """Create a widget for displaying a file entry with clickable icon and close button"""
-        widget = QWidget()
-        widget.setStyleSheet("""
-            QWidget {
-                background-color: transparent;
-                border: none;
-                padding: 0px;
-            }
-        """)
+        widget = FileEntryWidget()
         
         layout = QHBoxLayout(widget)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -433,7 +553,7 @@ class FileNavigatorWidget(QWidget):
             close_btn = QPushButton("✕")
             close_btn.setStyleSheet("""
                 QPushButton {
-                    background-color: #dc3545;
+                    background-color: #6c757d;
                     color: white;
                     border: none;
                     border-radius: 2px;
@@ -441,14 +561,14 @@ class FileNavigatorWidget(QWidget):
                     font-size: 8px;
                     padding: 0px 3px;
                 }
-                QPushButton:hover {
-                    background-color: #c82333;
-                }
             """)
             close_btn.setFixedSize(16, 16)
             close_btn.clicked.connect(close_callback)
             close_btn.setToolTip(f"Remove {file_type}")
             layout.addWidget(close_btn, 0)
+            
+            # Store reference to close button for hover handling
+            widget.close_button = close_btn
         else:
             # Show open file icon button
             open_btn = QPushButton()
@@ -473,9 +593,59 @@ class FileNavigatorWidget(QWidget):
             open_btn.setToolTip(f"Load {file_type}")
             layout.addWidget(type_label, 0)
             layout.addWidget(open_btn, 0)
+            
+            # No close button for empty entries
+            widget.close_button = None
         
         layout.addStretch()
         return widget
+
+
+class FileEntryWidget(QWidget):
+    """Custom widget for file entries that highlights close button on hover"""
+    
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.close_button = None
+        self.setStyleSheet("""
+            QWidget {
+                background-color: transparent;
+                border: none;
+                padding: 0px;
+            }
+        """)
+    
+    def enterEvent(self, event):
+        """Handle mouse enter event - highlight close button"""
+        if self.close_button:
+            self.close_button.setStyleSheet("""
+                QPushButton {
+                    background-color: #dc3545;
+                    color: white;
+                    border: none;
+                    border-radius: 2px;
+                    font-weight: bold;
+                    font-size: 8px;
+                    padding: 0px 3px;
+                }
+            """)
+        super().enterEvent(event)
+    
+    def leaveEvent(self, event):
+        """Handle mouse leave event - reset close button style"""
+        if self.close_button:
+            self.close_button.setStyleSheet("""
+                QPushButton {
+                    background-color: #6c757d;
+                    color: white;
+                    border: none;
+                    border-radius: 2px;
+                    font-weight: bold;
+                    font-size: 8px;
+                    padding: 0px 3px;
+                }
+            """)
+        super().leaveEvent(event)
 
     def _open_file_dialog(self, scenario, file_type):
         """Open file dialog for the specified file type"""
