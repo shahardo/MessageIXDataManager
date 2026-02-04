@@ -152,8 +152,8 @@ class DataTransformer:
             if hide_empty is None:
                 hide_empty = False if for_chart else True  # Charts typically don't hide empty columns
 
-            # Identify column types
-            column_info = DataTransformer._identify_columns(df)
+            # Identify column types (pass is_results to correctly identify value column for variables)
+            column_info = DataTransformer._identify_columns(df, is_results)
 
             # Apply filters
             filtered_df = DataTransformer._apply_filters(df, filters)
@@ -172,8 +172,13 @@ class DataTransformer:
             return df
 
     @staticmethod
-    def _identify_columns(df: pd.DataFrame) -> Dict[str, Union[List[str], Optional[str]]]:
-        """Identify different types of columns in the DataFrame"""
+    def _identify_columns(df: pd.DataFrame, is_results: bool = False) -> Dict[str, Union[List[str], Optional[str]]]:
+        """Identify different types of columns in the DataFrame
+
+        Args:
+            df: Input DataFrame
+            is_results: True if this is results data (variables/equations use 'lvl' column)
+        """
         year_cols = []
         pivot_cols = []  # Columns that become pivot table headers
         filter_cols = []  # Columns used for filtering
@@ -184,10 +189,13 @@ class DataTransformer:
             col_lower = col.lower()
             if col_lower in ['value', 'val']:
                 value_col = col
+            elif col_lower == 'lvl' and is_results:
+                # For result variables/equations, 'lvl' (level) is the value column
+                value_col = col
             elif col_lower in ['year_vtg', 'year_act', 'year', 'period', 'year_vintage', 'year_active']:
                 year_cols.append(col)
-            elif col_lower in ['time', 'unit', 'units']:
-                # Ignore these columns completely
+            elif col_lower in ['time', 'unit', 'units', 'mrg']:
+                # Ignore these columns completely (mrg is marginal for results)
                 ignored_cols.append(col)
             elif col_lower in ['commodity', 'technology', 'type', 'tec']:
                 # These become pivot table column headers
@@ -196,6 +204,10 @@ class DataTransformer:
                               'mode', 'level', 'grade', 'fuel', 'sector', 'category', 'subcategory']:
                 # These are used for filtering
                 filter_cols.append(col)
+
+        # Fallback: if no value column found for results, check for 'lvl'
+        if value_col is None and is_results and 'lvl' in df.columns:
+            value_col = 'lvl'
 
         return {
             'year_cols': year_cols,
@@ -225,8 +237,9 @@ class DataTransformer:
     @staticmethod
     def _transform_data_structure(df: pd.DataFrame, column_info: dict, is_results: bool, for_chart: bool = False) -> pd.DataFrame:
         """Transform DataFrame structure based on data type"""
-        # Pivoting logic for input data
-        if not is_results and DataTransformer._should_pivot(df, column_info):
+        # Pivoting logic for both input and results data
+        # Results data uses 'lvl' column as value, identified in _identify_columns
+        if DataTransformer._should_pivot(df, column_info):
             return DataTransformer._perform_pivot(df, column_info)
         else:
             return DataTransformer._prepare_2d_format(df, column_info)

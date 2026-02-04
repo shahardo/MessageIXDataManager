@@ -155,6 +155,7 @@ class MainWindow(QMainWindow):
 
         # Store currently displayed parameter for cell editing (independent of tree selection)
         self.current_displayed_parameter: Optional[str] = None
+        self.current_displayed_is_results: bool = False  # Track if current param is results
 
         # Initialize find widget and controller
         self.find_widget = FindWidget(self)
@@ -468,6 +469,7 @@ class MainWindow(QMainWindow):
     def _switch_to_multi_section_view(self, scenario: Scenario):
         """Switch to multi-section view showing Parameters, Variables, and Results"""
         self.current_view = "multi"
+        self.param_tree.current_view = "multi"  # Sync tree widget's view mode
 
         print("DEBUG: Switching to multi-section view - clearing and updating tree")
 
@@ -885,6 +887,7 @@ class MainWindow(QMainWindow):
 
         # Store the currently displayed parameter (independent of tree selection)
         self.current_displayed_parameter = parameter_name
+        self.current_displayed_is_results = is_results  # Remember if this is results data
 
         # Switch back to normal data display if dashboard was showing
         self._restore_normal_display()
@@ -981,12 +984,12 @@ class MainWindow(QMainWindow):
                 row_count = len(parameter.df) if parameter.df is not None else 0
                 with WaitCursorContext(row_count):
                     chart_df = DataTransformer.prepare_chart_data(
-                        parameter, is_results=self.current_view == "results",
+                        parameter, is_results=self.current_displayed_is_results,
                         scenario_options=scenario.options if scenario else None,
                         filters=filters, hide_empty=False
                     )
                     if chart_df is not None:
-                        self.chart_widget.update_chart(chart_df, parameter.name, self.current_view == "results")
+                        self.chart_widget.update_chart(chart_df, parameter.name, self.current_displayed_is_results)
 
             # Refresh the display to show the updated pivoted data (for advanced mode)
             if mode == "advanced":
@@ -998,7 +1001,7 @@ class MainWindow(QMainWindow):
     def _on_column_paste_requested(self, column_name: str, paste_format: str, row_changes: dict):
         """Handle column paste requests from table"""
         # Get the current scenario and parameter
-        scenario = self._get_current_scenario(self.current_view == "results")
+        scenario = self._get_current_scenario(self.current_displayed_is_results)
         if not scenario:
             return
 
@@ -1036,15 +1039,15 @@ class MainWindow(QMainWindow):
                 scenario.mark_modified(param_name)
 
                 # Update chart immediately with the new data
-                scenario = self._get_current_scenario(self.current_view == "results")
+                scenario = self._get_current_scenario(self.current_displayed_is_results)
                 filters = self.data_display._get_current_filters() if hasattr(self.data_display, '_get_current_filters') else {}
                 chart_df = DataTransformer.prepare_chart_data(
-                    parameter, is_results=self.current_view == "results",
+                    parameter, is_results=self.current_displayed_is_results,
                     scenario_options=scenario.options if scenario else None,
                     filters=filters, hide_empty=False
                 )
                 if chart_df is not None:
-                    self.chart_widget.update_chart(chart_df, parameter.name, self.current_view == "results")
+                    self.chart_widget.update_chart(chart_df, parameter.name, self.current_displayed_is_results)
 
                 # Refresh the display to show the updated data
                 self._refresh_current_display()
@@ -1070,7 +1073,7 @@ class MainWindow(QMainWindow):
                 return
 
             # Get the parameter object
-            scenario = self._get_current_scenario(self.current_view == "results")
+            scenario = self._get_current_scenario(self.current_displayed_is_results)
             if not scenario:
                 print("DEBUG: No current scenario found")
                 return
@@ -1086,16 +1089,16 @@ class MainWindow(QMainWindow):
             row_count = len(parameter.df) if parameter.df is not None else 0
             with WaitCursorContext(row_count):
                 # Update chart with current data (which includes our changes)
-                scenario = self._get_current_scenario(self.current_view == "results")
+                scenario = self._get_current_scenario(self.current_displayed_is_results)
                 filters = self.data_display._get_current_filters() if hasattr(self.data_display, '_get_current_filters') else {}
                 chart_df = DataTransformer.prepare_chart_data(
-                    parameter, is_results=self.current_view == "results",
+                    parameter, is_results=self.current_displayed_is_results,
                     scenario_options=scenario.options if scenario else None,
                     filters=filters, hide_empty=False
                 )
                 if chart_df is not None:
                     print(f"DEBUG: Chart data has {len(chart_df)} rows, {len(chart_df.columns)} columns")
-                    self.chart_widget.update_chart(chart_df, parameter.name, self.current_view == "results")
+                    self.chart_widget.update_chart(chart_df, parameter.name, self.current_displayed_is_results)
                 else:
                     print("DEBUG: Chart data is None")
 
@@ -1121,8 +1124,8 @@ class MainWindow(QMainWindow):
         # This would be called when display mode or chart type changes
         # Use the stored current parameter instead of tree selection (which may be cleared)
         if self.current_displayed_parameter:
-            print(f"DEBUG: Refreshing display for parameter: {self.current_displayed_parameter}")
-            self._on_parameter_selected(self.current_displayed_parameter, self.current_view == "results")
+            print(f"DEBUG: Refreshing display for parameter: {self.current_displayed_parameter} (is_results={self.current_displayed_is_results})")
+            self._on_parameter_selected(self.current_displayed_parameter, self.current_displayed_is_results)
         else:
             print("DEBUG: No current displayed parameter to refresh")
 

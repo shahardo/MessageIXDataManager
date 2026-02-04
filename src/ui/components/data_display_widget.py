@@ -437,7 +437,7 @@ class DataDisplayWidget(QWidget):
                 except Exception as e:
                     print(f"Transformation failed for results: {e}")
                     display_df = df
-                self._setup_property_selectors(df)
+                self._setup_property_selectors(df, is_results=True)
             else:
                 # For input data, use raw/advanced modes
                 if self.table_display_mode == "advanced":
@@ -452,7 +452,7 @@ class DataDisplayWidget(QWidget):
                     except Exception as e:
                         print(f"Transformation failed for advanced: {e}")
                         display_df = df
-                    self._setup_property_selectors(df)
+                    self._setup_property_selectors(df, is_results=False)
                 else:
                     display_df = df
         except Exception as e:
@@ -634,7 +634,7 @@ class DataDisplayWidget(QWidget):
         # Reconnect cellChanged signal after population
         self.param_table.cellChanged.connect(self._on_cell_changed)
 
-    def _setup_property_selectors(self, df: pd.DataFrame):
+    def _setup_property_selectors(self, df: pd.DataFrame, is_results: bool = False):
         """Set up property selectors for advanced view based on DataFrame columns"""
         # Save current selections before clearing
         current_selections = {}
@@ -652,7 +652,7 @@ class DataDisplayWidget(QWidget):
             self.hide_empty_checkbox = None
 
         # Get column info to identify which columns should have selectors
-        column_info = self._identify_columns(df)
+        column_info = self._identify_columns(df, is_results)
         filter_columns = column_info.get('filter_cols', [])
 
         # Get selector layout and clear it completely
@@ -840,8 +840,8 @@ class DataDisplayWidget(QWidget):
             if hide_empty is None:
                 hide_empty = self.hide_empty_columns if not for_chart else False  # Charts typically don't hide empty columns
 
-            # Identify column types
-            column_info = self._identify_columns(df)
+            # Identify column types (pass is_results to correctly identify value column for variables)
+            column_info = self._identify_columns(df, is_results)
 
             # Apply filters
             filtered_df = self._apply_filters(df, current_filters, column_info)
@@ -864,8 +864,14 @@ class DataDisplayWidget(QWidget):
         """Transform data to advanced 2D view format - now uses common method"""
         return self.transform_to_display_format(df, is_results, current_filters, hide_empty, for_chart=False)
 
-    def _identify_columns(self, df: pd.DataFrame) -> Dict[str, Union[List[str], Optional[str]]]:
-        """Identify different types of columns in the DataFrame"""
+    def _identify_columns(self, df: pd.DataFrame, is_results: bool = False) -> Dict[str, Union[List[str], Optional[str]]]:
+        """
+        Identify different types of columns in the DataFrame.
+
+        Args:
+            df: The DataFrame to analyze
+            is_results: True if this is results data (variables/equations use 'lvl' column)
+        """
         year_cols = []
         pivot_cols = []  # Columns that become pivot table headers
         filter_cols = []  # Columns used for filtering
@@ -876,10 +882,13 @@ class DataDisplayWidget(QWidget):
             col_lower = col.lower()
             if col_lower in ['value', 'val']:
                 value_col = col
+            elif col_lower == 'lvl' and is_results:
+                # For result variables/equations, 'lvl' (level) is the value column
+                value_col = col
             elif col_lower in ['year_vtg', 'year_act', 'year', 'period', 'year_vintage', 'year_active']:
                 year_cols.append(col)
-            elif col_lower in ['time', 'unit', 'units']:
-                # Ignore these columns completely
+            elif col_lower in ['time', 'unit', 'units', 'mrg']:
+                # Ignore these columns completely (mrg = marginal for results)
                 ignored_cols.append(col)
             elif col_lower in ['commodity', 'technology', 'type', 'tec']:
                 # These become pivot table column headers
@@ -888,6 +897,12 @@ class DataDisplayWidget(QWidget):
                               'mode', 'level', 'grade', 'fuel', 'sector', 'category', 'subcategory']:
                 # These are used for filtering
                 filter_cols.append(col)
+
+        # If no value column found for results, try 'lvl' as fallback
+        if value_col is None and is_results and 'lvl' in df.columns:
+            value_col = 'lvl'
+
+        print(f"DEBUG: _identify_columns(is_results={is_results}): year_cols={year_cols}, pivot_cols={pivot_cols}, value_col={value_col}, filter_cols={filter_cols}")
 
         return {
             'year_cols': year_cols,
@@ -915,8 +930,8 @@ class DataDisplayWidget(QWidget):
 
     def _transform_data_structure(self, df: pd.DataFrame, column_info: dict, is_results: bool, for_chart: bool = False) -> pd.DataFrame:
         """Transform DataFrame structure based on data type"""
-        # Pivoting logic for input data
-        if not is_results and self._should_pivot(df, column_info):
+        # Pivoting logic for both input and results data
+        if self._should_pivot(df, column_info):
             return self._perform_pivot(df, column_info)
         else:
             return self._prepare_2d_format(df, column_info)
