@@ -135,6 +135,7 @@ class MainWindow(QMainWindow):
         self.input_file_handler = InputFileHandler(self.input_manager)
         self.results_file_handler = ResultsFileHandler(self.results_analyzer)
         self.auto_load_handler = AutoLoadHandler(self.input_manager, self.results_analyzer, self.session_manager)
+        self.loaded_data_files = {}  # Cache for loaded data files
 
         self._connect_find_widget_signals()
 
@@ -309,6 +310,9 @@ class MainWindow(QMainWindow):
             if not self.results_analyzer.get_results_by_file_path(file_path):
                 print(f"DEBUG: Loading results file: {file_path}")
                 self.results_file_handler.load_files([file_path], self.update_progress, self._append_to_console)
+        elif file_type == "data":
+            if file_path not in self.loaded_data_files:
+                self._load_data_file(file_path)
 
         # 2. Find the scenario associated with this file
         target_scenario = None
@@ -316,7 +320,8 @@ class MainWindow(QMainWindow):
         # Check currently selected scenario first
         if self.selected_scenario:
             if (file_type == "input" and self.selected_scenario.input_file == file_path) or \
-               (file_type == "results" and self.selected_scenario.results_file == file_path):
+               (file_type == "results" and self.selected_scenario.results_file == file_path) or \
+               (file_type == "data" and self.selected_scenario.message_scenario_file == file_path):
                 target_scenario = self.selected_scenario
         
         # If not found, check all scenarios
@@ -324,7 +329,8 @@ class MainWindow(QMainWindow):
             scenarios = self.session_manager.get_scenarios()
             for scenario in scenarios:
                 if (file_type == "input" and scenario.input_file == file_path) or \
-                   (file_type == "results" and scenario.results_file == file_path):
+                   (file_type == "results" and scenario.results_file == file_path) or \
+                   (file_type == "data" and scenario.message_scenario_file == file_path):
                     target_scenario = scenario
                     break
         
@@ -349,6 +355,11 @@ class MainWindow(QMainWindow):
                     self._auto_select_parameter_if_exists(self.last_selected_results_parameter, True)
                 elif not self.param_tree.selectedItems():
                     self._auto_select_parameter_if_exists("Dashboard", True)
+            elif file_type == "data":
+                # Auto-select first variable if available
+                if not self.param_tree.selectedItems():
+                    # Logic to select first item could be added here
+                    pass
         else:
             # Fallback for files not associated with a scenario (should be rare now)
             print(f"DEBUG: No scenario found for file, creating temporary scenario")
@@ -358,6 +369,8 @@ class MainWindow(QMainWindow):
                 temp_scenario.input_file = file_path
             elif file_type == "results":
                 temp_scenario.results_file = file_path
+            elif file_type == "data":
+                temp_scenario.message_scenario_file = file_path
             
             self.selected_scenario = temp_scenario
             self.selected_input_file = temp_scenario.input_file
@@ -392,6 +405,10 @@ class MainWindow(QMainWindow):
         if scenario.results_file and not self.results_analyzer.get_results_by_file_path(scenario.results_file):
              print(f"DEBUG: Loading results file for scenario: {scenario.results_file}")
              self.results_file_handler.load_files([scenario.results_file], self.update_progress, self._append_to_console)
+             
+        if scenario.message_scenario_file and scenario.message_scenario_file not in self.loaded_data_files:
+             print(f"DEBUG: Loading data file for scenario: {scenario.message_scenario_file}")
+             self._load_data_file(scenario.message_scenario_file)
         
         self.selected_scenario = scenario
         
@@ -436,6 +453,7 @@ class MainWindow(QMainWindow):
             if input_scenario:
                 param_names = input_scenario.get_parameter_names()
                 print(f"DEBUG: Input scenario has {len(param_names)} parameters")
+                combined_data.options = input_scenario.options
                 # Copy input parameters to combined data
                 for param_name in param_names:
                     param = input_scenario.get_parameter(param_name)
@@ -451,6 +469,18 @@ class MainWindow(QMainWindow):
                 # Copy results to combined data
                 for param_name in param_names:
                     param = results_scenario.get_parameter(param_name)
+                    if param:
+                        combined_data.add_parameter(param)
+                        
+        if scenario.message_scenario_file:
+            if scenario.message_scenario_file not in self.loaded_data_files:
+                self._load_data_file(scenario.message_scenario_file)
+            
+            data_scenario = self.loaded_data_files.get(scenario.message_scenario_file)
+            if data_scenario:
+                print(f"DEBUG: Data file has {len(data_scenario.get_parameter_names())} items")
+                for param_name in data_scenario.get_parameter_names():
+                    param = data_scenario.get_parameter(param_name)
                     if param:
                         combined_data.add_parameter(param)
         
@@ -497,7 +527,273 @@ class MainWindow(QMainWindow):
         self.param_tree.updateGeometry()
         self.param_tree.viewport().update()
         self.param_tree.repaint()
+        
+        # Store combined data for retrieval
+        self.current_combined_data = combined_data
         print("DEBUG: Finished updating tree")
+
+    def _load_data_file(self, file_path):
+        """
+        Load a message data file (zipped CSV files).
+
+        Supports Zip files (.zip) - contains CSV tables:
+        - set_xxx.csv: message sets (input)
+        - par_xxx.csv: message parameters (input)
+        - var_xxx.csv: message variables (output)
+
+        If sets/parameters already exist (loaded from input file), they are
+        replaced and the conflict is logged.
+        """
+        if file_path in self.loaded_data_files:
+            return
+
+        print(f"DEBUG: Loading data file: {file_path}")
+        try:
+            import pandas as pd
+            import zipfile
+            from core.data_models import ScenarioData, Parameter
+
+            scenario_data = ScenarioData()
+            replaced_items = []  # Track items that were replaced
+
+            # Determine file type by extension
+            file_ext = os.path.splitext(file_path)[1].lower()
+            assert(file_ext in ['.zip']), "Unsupported data file format"
+
+            # Load from zipped CSV files
+            scenario_data, replaced_items = self._load_zipped_csv_data(file_path)
+
+            if scenario_data is None:
+                return
+
+            self.loaded_data_files[file_path] = scenario_data
+
+            # Log summary
+            num_sets = len(scenario_data.sets)
+            num_params = len([p for p in scenario_data.parameters.values()
+                            if not p.metadata.get('result_type')])
+            num_vars = len([p for p in scenario_data.parameters.values()
+                          if p.metadata.get('result_type') == 'variable'])
+
+            self._append_to_console(
+                f"Loaded data file: {os.path.basename(file_path)} "
+                f"({num_sets} sets, {num_params} parameters, {num_vars} variables)"
+            )
+
+            # Log any replacements
+            if replaced_items:
+                for item_type, item_name in replaced_items:
+                    msg = f"WARNING: Replaced existing {item_type} '{item_name}' with data from {os.path.basename(file_path)}"
+                    self._append_to_console(msg)
+                    logging_manager.log('WARNING', 'DATA_LOAD', msg, {'file_path': file_path, 'item_type': item_type, 'item_name': item_name})
+
+        except Exception as e:
+            print(f"ERROR loading data file: {e}")
+            self._append_to_console(f"Error loading data file: {e}")
+            logging_manager.log('ERROR', 'DATA_LOAD', f"Error loading data file: {e}", {'file_path': file_path, 'error': str(e)})
+            self._remove_failed_data_file(file_path)
+            import traceback
+            traceback.print_exc()
+
+    def _load_zipped_csv_data(self, file_path: str):
+        """
+        Load message data from a zipped archive containing CSV files.
+
+        Expected file naming convention:
+        - set_xxx.csv: message sets (input)
+        - par_xxx.csv: message parameters (input)
+        - var_xxx.csv: message variables (output)
+
+        Args:
+            file_path: Path to the zip file
+
+        Returns:
+            Tuple of (ScenarioData, list of replaced items)
+        """
+        import zipfile
+        import pandas as pd
+        from core.data_models import ScenarioData, Parameter
+
+        scenario_data = ScenarioData()
+        replaced_items = []
+
+        # Get existing data from input file if available (for conflict detection)
+        existing_scenario = None
+        if self.selected_scenario and self.selected_scenario.input_file:
+            existing_scenario = self.input_manager.get_scenario_by_file_path(
+                self.selected_scenario.input_file
+            )
+
+        try:
+            with zipfile.ZipFile(file_path, 'r') as zf:
+                # Get list of CSV files in the archive
+                csv_files = [f for f in zf.namelist() if f.lower().endswith('.csv')]
+
+                print(f"DEBUG: Found {len(csv_files)} CSV files in zip archive")
+
+                for csv_name in csv_files:
+                    try:
+                        # Extract base name without path and extension
+                        base_name = os.path.basename(csv_name)
+                        name_without_ext = os.path.splitext(base_name)[0]
+
+                        # Read CSV into DataFrame
+                        with zf.open(csv_name) as csv_file:
+                            df = pd.read_csv(csv_file)
+
+                        if df.empty:
+                            print(f"DEBUG: Skipping empty file: {csv_name}")
+                            continue
+
+                        # Categorize by prefix
+                        if name_without_ext.lower().startswith('set_'):
+                            # Extract set name (remove 'set_' prefix)
+                            set_name = name_without_ext[4:]
+
+                            # Check for existing set
+                            if existing_scenario and set_name in existing_scenario.sets:
+                                replaced_items.append(('set', set_name))
+
+                            # Store set - use first column as the set values
+                            if len(df.columns) == 1:
+                                scenario_data.sets[set_name] = df.iloc[:, 0]
+                            else:
+                                # Multi-column set - store as DataFrame or use first col
+                                scenario_data.sets[set_name] = df.iloc[:, 0]
+
+                            print(f"DEBUG: Loaded set '{set_name}' with {len(df)} values")
+
+                        elif name_without_ext.lower().startswith('par_'):
+                            # Extract parameter name (remove 'par_' prefix)
+                            param_name = name_without_ext[4:]
+
+                            # Check for existing parameter
+                            if existing_scenario and existing_scenario.get_parameter(param_name):
+                                replaced_items.append(('parameter', param_name))
+
+                            # Determine dimensions (exclude value/unit columns)
+                            dims = list(df.columns)
+                            for col in ['value', 'unit']:
+                                if col in dims:
+                                    dims.remove(col)
+
+                            metadata = {
+                                'dims': dims,
+                                'units': df['unit'].iloc[0] if 'unit' in df.columns and len(df) > 0 else 'unknown',
+                                'result_type': None  # Input parameter
+                            }
+
+                            param = Parameter(name=param_name, df=df, metadata=metadata)
+                            scenario_data.add_parameter(param, mark_modified=False, add_to_history=False)
+
+                            print(f"DEBUG: Loaded parameter '{param_name}' with {len(df)} rows")
+
+                        elif name_without_ext.lower().startswith('var_'):
+                            # Extract variable name (remove 'var_' prefix)
+                            var_name = name_without_ext[4:]
+
+                            # Determine dimensions (exclude level/marginal/unit columns)
+                            dims = list(df.columns)
+                            for col in ['lvl', 'mrg', 'level', 'marginal', 'unit']:
+                                if col in dims:
+                                    dims.remove(col)
+
+                            metadata = {
+                                'dims': dims,
+                                'units': df['unit'].iloc[0] if 'unit' in df.columns and len(df) > 0 else 'unknown',
+                                'result_type': 'variable'
+                            }
+
+                            param = Parameter(name=var_name, df=df, metadata=metadata)
+                            scenario_data.add_parameter(param, mark_modified=False, add_to_history=False)
+
+                            print(f"DEBUG: Loaded variable '{var_name}' with {len(df)} rows")
+
+                        elif name_without_ext.lower().startswith('equ_'):
+                            # Extract equation name (remove 'equ_' prefix)
+                            equ_name = name_without_ext[4:]
+
+                            # Determine dimensions
+                            dims = list(df.columns)
+                            for col in ['lvl', 'mrg', 'level', 'marginal', 'unit']:
+                                if col in dims:
+                                    dims.remove(col)
+
+                            metadata = {
+                                'dims': dims,
+                                'units': 'unknown',
+                                'result_type': 'equation'
+                            }
+
+                            param = Parameter(name=equ_name, df=df, metadata=metadata)
+                            scenario_data.add_parameter(param, mark_modified=False, add_to_history=False)
+
+                            print(f"DEBUG: Loaded equation '{equ_name}' with {len(df)} rows")
+                        else:
+                            # Unknown prefix - treat as generic data
+                            print(f"DEBUG: Skipping file with unknown prefix: {csv_name}")
+
+                    except Exception as e:
+                        print(f"ERROR loading CSV {csv_name}: {e}")
+                        self._append_to_console(f"Error loading {csv_name}: {e}")
+                        logging_manager.log('ERROR', 'DATA_LOAD', f"Error loading CSV {csv_name}", {'file_path': file_path, 'csv_name': csv_name, 'error': str(e)})
+
+        except zipfile.BadZipFile:
+            print(f"ERROR: {file_path} is not a valid zip file")
+            self._append_to_console(f"Error: {os.path.basename(file_path)} is not a valid zip file")
+            logging_manager.log('ERROR', 'DATA_LOAD', "Bad zip file", {'file_path': file_path})
+            self._remove_failed_data_file(file_path)
+            return None, []
+        except Exception as e:
+            print(f"ERROR opening zip file {file_path}: {e}")
+            self._append_to_console(f"Error opening zip file: {e}")
+            logging_manager.log('ERROR', 'DATA_LOAD', "Error opening zip file", {'file_path': file_path, 'error': str(e)})
+            self._remove_failed_data_file(file_path)
+            return None, []
+
+        return scenario_data, replaced_items
+
+    def _remove_failed_data_file(self, file_path: str):
+        """
+        Remove a data file that failed to load from scenarios and auto-load settings.
+
+        Args:
+            file_path: Path to the data file that failed to load
+        """
+        print(f"DEBUG: Removing failed data file from scenarios: {file_path}")
+
+        # Find and update scenarios that reference this data file
+        scenarios = self.session_manager.get_scenarios()
+        scenarios_to_remove = []
+
+        for scenario in scenarios:
+            if scenario.message_scenario_file == file_path:
+                # Clear the data file reference
+                scenario.message_scenario_file = None
+
+                # If scenario has no other files, mark for removal
+                if not scenario.input_file and not scenario.results_file:
+                    scenarios_to_remove.append(scenario)
+                    print(f"DEBUG: Scenario '{scenario.name}' has no files left, marking for removal")
+                else:
+                    # Update the scenario in session manager
+                    self.session_manager.add_scenario(scenario)
+                    print(f"DEBUG: Cleared data file reference from scenario '{scenario.name}'")
+
+        # Remove empty scenarios
+        for scenario in scenarios_to_remove:
+            self.session_manager.remove_scenario(scenario.name)
+            self._append_to_console(f"Removed scenario '{scenario.name}' (no valid files)")
+
+        # Remove from auto-load settings
+        self._remove_last_opened_file(file_path, "data")
+
+        # Update file navigator
+        self.file_navigator.update_scenarios(self.session_manager.get_scenarios())
+
+        # Clear selection if this was the selected scenario's data file
+        if self.selected_scenario and self.selected_scenario.message_scenario_file == file_path:
+            self.selected_scenario.message_scenario_file = None
 
     def _on_parameter_selected(self, parameter_name: str, is_results: bool):
         """Handle parameter/result selection in tree"""
@@ -807,6 +1103,9 @@ class MainWindow(QMainWindow):
     def _get_current_scenario(self, is_results: bool) -> Optional[ScenarioData]:
         """Get the current scenario based on selection"""
         # In multi-section mode, return the combined scenario data
+        if self.current_view == "multi" and hasattr(self, 'current_combined_data'):
+            return self.current_combined_data
+            
         if self.current_view == "multi" and self.selected_scenario:
             # For multi-section, we need to return the appropriate data source
             if is_results and self.selected_scenario.results_file:
@@ -968,6 +1267,10 @@ class MainWindow(QMainWindow):
                     scenario = s
                     print(f"DEBUG: Found existing scenario by results file: {s.name}")
                     break
+                elif file_type == "data" and s.message_scenario_file == file_path:
+                    scenario = s
+                    print(f"DEBUG: Found existing scenario by data file: {s.name}")
+                    break
             
             # 2. If not found by path, try by name (derived from filename)
             if not scenario:
@@ -987,6 +1290,9 @@ class MainWindow(QMainWindow):
                 scenario.status = "loaded"
             elif file_type == "results":
                 scenario.results_file = file_path
+                scenario.status = "loaded"
+            elif file_type == "data":
+                scenario.message_scenario_file = file_path
                 scenario.status = "loaded"
             
             # Save scenario to session manager

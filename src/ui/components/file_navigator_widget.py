@@ -628,7 +628,7 @@ class FileNavigatorWidget(QWidget):
             file_filter = "Excel Files (*.xlsx *.xls);;All Files (*)"
             title = "Open Input File"
         elif file_type == "data":
-            file_filter = "Pickle Files (*.pickle *.pkl);;All Files (*)"
+            file_filter = "Message Data Files (*.zip);;All Files (*)"
             title = "Open Data File"
         elif file_type == "results":
             file_filter = "Excel Files (*.xlsx *.xls);;All Files (*)"
@@ -660,7 +660,7 @@ class FileNavigatorWidget(QWidget):
         self.update_scenarios(self.current_scenarios)
         
         # Emit file selected signal for backward compatibility
-        if file_type in ["input", "results"]:
+        if file_type in ["input", "results", "data"]:
             self.file_selected.emit(file_path, file_type)
 
     def _remove_scenario_file(self, scenario, file_type):
