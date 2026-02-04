@@ -1,6 +1,8 @@
-# Development Plan: Data Table Right-Click Context Menu, Clipboard Operations, Edit Menu, and Enhanced Undo/Redo with Command Objects
+# Development Guide: message_ix data manater
 
 ## Overview
+This app allows reading input and output data files of the message_ix model, visually present the input (parameters) and output (variables) data, and allow to edit and otherwise manipulate the data before running the solever model.
+
 This document outlines the implementation plan for adding right-click context menu functionality to data table columns, clipboard operations, undo/redo functionality using command objects, and an Edit menu to the MessageIX Data Manager application. The undo/redo system will utilize autonomous command objects that encapsulate all necessary information for do and undo operations, stored in a stack for repeated undo calls. Additionally, a new phase introduces functionality to add and remove parameters in input files.
 
 ## Current Application Architecture
@@ -8,7 +10,8 @@ This document outlines the implementation plan for adding right-click context me
 - **Data Table**: `QTableWidget` (`param_table`) in `DataDisplayWidget` component
 - **Data Structure**: Parameters stored as pandas DataFrames with editing capabilities
 - **UI Structure**: Main window with menu bar (File, Run, View menus exist)
-- **No existing clipboard/undo functionality** found
+- **Clipboard**: Allow for copy and paste of data in tables
+- **Undo/redo functionality**: Based on Command objects
 
 ## Detailed Development Plan
 
@@ -388,13 +391,3 @@ New parameters should be taken from the canonical MESSAGEix scheme. Below is the
 - pandas (already in use)
 - Standard Python libraries for clipboard operations
 
-## Estimated Timeline
-- Phase 1: 2-3 days
-- Phase 2: 2-3 days
-- Phase 3: 2 days
-- Phase 4: 3-4 days
-- Phase 5: 1-2 days
-- Phase 6: 2-3 days
-- Phase 7: 4-5 days (including integration and testing)
-
-Total: 16-21 days depending on testing and integration complexity.
