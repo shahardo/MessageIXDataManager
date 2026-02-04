@@ -9,7 +9,7 @@ MESSAGEix input files and results.
 from PyQt5.QtWidgets import (
     QMainWindow, QSplitter, QFileDialog, QMessageBox, QApplication
 )
-from PyQt5.QtCore import Qt, QSettings, QPoint, QEvent
+from PyQt5.QtCore import QSettings, QPoint
 from PyQt5 import uic
 import os
 import pandas as pd
@@ -37,6 +37,42 @@ from managers.session_manager import SessionManager
 from core.data_models import ScenarioData, Scenario
 from utils.error_handler import ErrorHandler, SafeOperation
 from utils.data_transformer import DataTransformer
+
+# Threshold for showing wait cursor during table operations
+NUM_ROWS_FOR_WAIT_CURSOR = 5000
+
+
+class WaitCursorContext:
+    """
+    Context manager for showing wait cursor during long operations.
+
+    Usage:
+        with WaitCursorContext(row_count):
+            # do work...
+
+    The wait cursor is only shown if row_count >= NUM_ROWS_FOR_WAIT_CURSOR.
+    """
+    def __init__(self, row_count: int = 0, force: bool = False):
+        """
+        Initialize the wait cursor context.
+
+        Args:
+            row_count: Number of rows being processed
+            force: If True, always show wait cursor regardless of row count
+        """
+        self.should_show = force or row_count >= NUM_ROWS_FOR_WAIT_CURSOR
+
+    def __enter__(self):
+        if self.should_show:
+            from PyQt5.QtCore import Qt
+            QApplication.setOverrideCursor(Qt.WaitCursor)  # type: ignore[attr-defined]
+            QApplication.processEvents()  # Ensure cursor updates immediately
+        return self
+
+    def __exit__(self, _exc_type, _exc_val, _exc_tb):
+        if self.should_show:
+            QApplication.restoreOverrideCursor()
+        return False  # Don't suppress exceptions
 
 
 class MainWindow(QMainWindow):
@@ -432,105 +468,122 @@ class MainWindow(QMainWindow):
     def _switch_to_multi_section_view(self, scenario: Scenario):
         """Switch to multi-section view showing Parameters, Variables, and Results"""
         self.current_view = "multi"
-        
+
         print("DEBUG: Switching to multi-section view - clearing and updating tree")
-        
+
         # Clear the existing tree
         self.param_tree.clear()
         self.param_tree.current_scenario = None
         self.param_tree.sections = {}
-        
+
         print("DEBUG: Tree cleared, now updating tree")
-        
+
         # Create a combined scenario data object for the tree
         from core.data_models import ScenarioData
         combined_data = ScenarioData()
-        
-        # Load data from both input and results sources into combined data
+
+        # Estimate total items for wait cursor decision
+        total_items = 0
         if scenario.input_file:
             input_scenario = self.input_manager.get_scenario_by_file_path(scenario.input_file)
-            print(f"DEBUG: Input scenario from manager: {input_scenario is not None}")
             if input_scenario:
-                param_names = input_scenario.get_parameter_names()
-                print(f"DEBUG: Input scenario has {len(param_names)} parameters")
-                combined_data.options = input_scenario.options
-                # Copy input parameters to combined data
-                for param_name in param_names:
-                    param = input_scenario.get_parameter(param_name)
-                    if param:
-                        combined_data.add_parameter(param)
-        
+                total_items += len(input_scenario.get_parameter_names())
         if scenario.results_file:
             results_scenario = self.results_analyzer.get_results_by_file_path(scenario.results_file)
-            print(f"DEBUG: Results scenario from manager: {results_scenario is not None}")
             if results_scenario:
-                param_names = results_scenario.get_parameter_names()
-                print(f"DEBUG: Results scenario has {len(param_names)} parameters")
-                # Copy results to combined data
-                for param_name in param_names:
-                    param = results_scenario.get_parameter(param_name)
-                    if param:
-                        combined_data.add_parameter(param)
-                        
-        if scenario.message_scenario_file:
-            if scenario.message_scenario_file not in self.loaded_data_files:
-                self._load_data_file(scenario.message_scenario_file)
-            
+                total_items += len(results_scenario.get_parameter_names())
+        if scenario.message_scenario_file and scenario.message_scenario_file in self.loaded_data_files:
             data_scenario = self.loaded_data_files.get(scenario.message_scenario_file)
             if data_scenario:
-                print(f"DEBUG: Data file has {len(data_scenario.get_parameter_names())} items")
-                for param_name in data_scenario.get_parameter_names():
-                    param = data_scenario.get_parameter(param_name)
-                    if param:
-                        combined_data.add_parameter(param)
-        
-        print(f"DEBUG: Combined data has {len(combined_data.get_parameter_names())} parameters")
-        
-        # Organize data into sections
-        sections_data = {}
-        
-        # Parameters section (from input data)
-        parameters = []
-        for param_name in combined_data.get_parameter_names():
-            param = combined_data.get_parameter(param_name)
-            if param and not param.metadata.get('result_type'):  # Input parameters don't have result_type
-                parameters.append((param_name, param))
-        if parameters:
-            sections_data["parameters"] = parameters
-            print(f"DEBUG: Parameters section has {len(parameters)} items")
-        
-        # Variables and Results sections (from results data)
-        variables = []
-        results = []
-        for param_name in combined_data.get_parameter_names():
-            param = combined_data.get_parameter(param_name)
-            if param:
-                result_type = param.metadata.get('result_type', '')
-                if result_type == 'variable':
-                    variables.append((param_name, param))
-                elif result_type and result_type in ['equation', 'result']:
-                    results.append((param_name, param))
-        
-        if variables:
-            sections_data["variables"] = variables
-            print(f"DEBUG: Variables section has {len(variables)} items")
-        if results:
-            sections_data["results"] = results
-            print(f"DEBUG: Results section has {len(results)} items")
-        
-        print(f"DEBUG: Final sections_data: {list(sections_data.keys())}")
-        
-        # Update the parameter tree with sections
-        print("DEBUG: Calling update_tree_with_sections")
-        self.param_tree.update_tree_with_sections(combined_data, sections_data)
-        self.param_tree.expandAll()
-        self.param_tree.updateGeometry()
-        self.param_tree.viewport().update()
-        self.param_tree.repaint()
-        
-        # Store combined data for retrieval
-        self.current_combined_data = combined_data
-        print("DEBUG: Finished updating tree")
+                total_items += len(data_scenario.get_parameter_names())
+
+        # Use wait cursor for large datasets
+        with WaitCursorContext(total_items):
+            # Load data from both input and results sources into combined data
+            if scenario.input_file:
+                input_scenario = self.input_manager.get_scenario_by_file_path(scenario.input_file)
+                print(f"DEBUG: Input scenario from manager: {input_scenario is not None}")
+                if input_scenario:
+                    param_names = input_scenario.get_parameter_names()
+                    print(f"DEBUG: Input scenario has {len(param_names)} parameters")
+                    combined_data.options = input_scenario.options
+                    # Copy input parameters to combined data
+                    for param_name in param_names:
+                        param = input_scenario.get_parameter(param_name)
+                        if param:
+                            combined_data.add_parameter(param)
+
+            if scenario.results_file:
+                results_scenario = self.results_analyzer.get_results_by_file_path(scenario.results_file)
+                print(f"DEBUG: Results scenario from manager: {results_scenario is not None}")
+                if results_scenario:
+                    param_names = results_scenario.get_parameter_names()
+                    print(f"DEBUG: Results scenario has {len(param_names)} parameters")
+                    # Copy results to combined data
+                    for param_name in param_names:
+                        param = results_scenario.get_parameter(param_name)
+                        if param:
+                            combined_data.add_parameter(param)
+
+            if scenario.message_scenario_file:
+                if scenario.message_scenario_file not in self.loaded_data_files:
+                    self._load_data_file(scenario.message_scenario_file)
+
+                data_scenario = self.loaded_data_files.get(scenario.message_scenario_file)
+                if data_scenario:
+                    print(f"DEBUG: Data file has {len(data_scenario.get_parameter_names())} items")
+                    for param_name in data_scenario.get_parameter_names():
+                        param = data_scenario.get_parameter(param_name)
+                        if param:
+                            combined_data.add_parameter(param)
+
+            print(f"DEBUG: Combined data has {len(combined_data.get_parameter_names())} parameters")
+
+            # Organize data into sections
+            sections_data = {}
+
+            # Parameters section (from input data)
+            parameters = []
+            for param_name in combined_data.get_parameter_names():
+                param = combined_data.get_parameter(param_name)
+                if param and not param.metadata.get('result_type'):  # Input parameters don't have result_type
+                    parameters.append((param_name, param))
+            if parameters:
+                sections_data["parameters"] = parameters
+                print(f"DEBUG: Parameters section has {len(parameters)} items")
+
+            # Variables and Results sections (from results data)
+            variables = []
+            results = []
+            for param_name in combined_data.get_parameter_names():
+                param = combined_data.get_parameter(param_name)
+                if param:
+                    result_type = param.metadata.get('result_type', '')
+                    if result_type == 'variable':
+                        variables.append((param_name, param))
+                    elif result_type and result_type in ['equation', 'result']:
+                        results.append((param_name, param))
+
+            if variables:
+                sections_data["variables"] = variables
+                print(f"DEBUG: Variables section has {len(variables)} items")
+            if results:
+                sections_data["results"] = results
+                print(f"DEBUG: Results section has {len(results)} items")
+
+            print(f"DEBUG: Final sections_data: {list(sections_data.keys())}")
+
+            # Update the parameter tree with sections
+            print("DEBUG: Calling update_tree_with_sections")
+            self.param_tree.update_tree_with_sections(combined_data, sections_data)
+            self.param_tree.expandAll()
+            self.param_tree.updateGeometry()
+            self.param_tree.viewport().update()
+            self.param_tree.repaint()
+
+            # Store combined data for retrieval
+            self.current_combined_data = combined_data
+            print("DEBUG: Finished updating tree")
 
     def _load_data_file(self, file_path):
         """
@@ -631,112 +684,114 @@ class MainWindow(QMainWindow):
 
                 print(f"DEBUG: Found {len(csv_files)} CSV files in zip archive")
 
-                for csv_name in csv_files:
-                    try:
-                        # Extract base name without path and extension
-                        base_name = os.path.basename(csv_name)
-                        name_without_ext = os.path.splitext(base_name)[0]
+                # Use wait cursor if we have many CSV files to process
+                with WaitCursorContext(len(csv_files), force=(len(csv_files) > 50)):
+                    for csv_name in csv_files:
+                        try:
+                            # Extract base name without path and extension
+                            base_name = os.path.basename(csv_name)
+                            name_without_ext = os.path.splitext(base_name)[0]
 
-                        # Read CSV into DataFrame
-                        with zf.open(csv_name) as csv_file:
-                            df = pd.read_csv(csv_file)
+                            # Read CSV into DataFrame
+                            with zf.open(csv_name) as csv_file:
+                                df = pd.read_csv(csv_file)
 
-                        if df.empty:
-                            print(f"DEBUG: Skipping empty file: {csv_name}")
-                            continue
+                            if df.empty:
+                                print(f"DEBUG: Skipping empty file: {csv_name}")
+                                continue
 
-                        # Categorize by prefix
-                        if name_without_ext.lower().startswith('set_'):
-                            # Extract set name (remove 'set_' prefix)
-                            set_name = name_without_ext[4:]
+                            # Categorize by prefix
+                            if name_without_ext.lower().startswith('set_'):
+                                # Extract set name (remove 'set_' prefix)
+                                set_name = name_without_ext[4:]
 
-                            # Check for existing set
-                            if existing_scenario and set_name in existing_scenario.sets:
-                                replaced_items.append(('set', set_name))
+                                # Check for existing set
+                                if existing_scenario and set_name in existing_scenario.sets:
+                                    replaced_items.append(('set', set_name))
 
-                            # Store set - use first column as the set values
-                            if len(df.columns) == 1:
-                                scenario_data.sets[set_name] = df.iloc[:, 0]
+                                # Store set - use first column as the set values
+                                if len(df.columns) == 1:
+                                    scenario_data.sets[set_name] = df.iloc[:, 0]
+                                else:
+                                    # Multi-column set - store as DataFrame or use first col
+                                    scenario_data.sets[set_name] = df.iloc[:, 0]
+
+                                print(f"DEBUG: Loaded set '{set_name}' with {len(df)} values")
+
+                            elif name_without_ext.lower().startswith('par_'):
+                                # Extract parameter name (remove 'par_' prefix)
+                                param_name = name_without_ext[4:]
+
+                                # Check for existing parameter
+                                if existing_scenario and existing_scenario.get_parameter(param_name):
+                                    replaced_items.append(('parameter', param_name))
+
+                                # Determine dimensions (exclude value/unit columns)
+                                dims = list(df.columns)
+                                for col in ['value', 'unit']:
+                                    if col in dims:
+                                        dims.remove(col)
+
+                                metadata = {
+                                    'dims': dims,
+                                    'units': df['unit'].iloc[0] if 'unit' in df.columns and len(df) > 0 else 'unknown',
+                                    'result_type': None  # Input parameter
+                                }
+
+                                param = Parameter(name=param_name, df=df, metadata=metadata)
+                                scenario_data.add_parameter(param, mark_modified=False, add_to_history=False)
+
+                                print(f"DEBUG: Loaded parameter '{param_name}' with {len(df)} rows")
+
+                            elif name_without_ext.lower().startswith('var_'):
+                                # Extract variable name (remove 'var_' prefix)
+                                var_name = name_without_ext[4:]
+
+                                # Determine dimensions (exclude level/marginal/unit columns)
+                                dims = list(df.columns)
+                                for col in ['lvl', 'mrg', 'level', 'marginal', 'unit']:
+                                    if col in dims:
+                                        dims.remove(col)
+
+                                metadata = {
+                                    'dims': dims,
+                                    'units': df['unit'].iloc[0] if 'unit' in df.columns and len(df) > 0 else 'unknown',
+                                    'result_type': 'variable'
+                                }
+
+                                param = Parameter(name=var_name, df=df, metadata=metadata)
+                                scenario_data.add_parameter(param, mark_modified=False, add_to_history=False)
+
+                                print(f"DEBUG: Loaded variable '{var_name}' with {len(df)} rows")
+
+                            elif name_without_ext.lower().startswith('equ_'):
+                                # Extract equation name (remove 'equ_' prefix)
+                                equ_name = name_without_ext[4:]
+
+                                # Determine dimensions
+                                dims = list(df.columns)
+                                for col in ['lvl', 'mrg', 'level', 'marginal', 'unit']:
+                                    if col in dims:
+                                        dims.remove(col)
+
+                                metadata = {
+                                    'dims': dims,
+                                    'units': 'unknown',
+                                    'result_type': 'equation'
+                                }
+
+                                param = Parameter(name=equ_name, df=df, metadata=metadata)
+                                scenario_data.add_parameter(param, mark_modified=False, add_to_history=False)
+
+                                print(f"DEBUG: Loaded equation '{equ_name}' with {len(df)} rows")
                             else:
-                                # Multi-column set - store as DataFrame or use first col
-                                scenario_data.sets[set_name] = df.iloc[:, 0]
+                                # Unknown prefix - treat as generic data
+                                print(f"DEBUG: Skipping file with unknown prefix: {csv_name}")
 
-                            print(f"DEBUG: Loaded set '{set_name}' with {len(df)} values")
-
-                        elif name_without_ext.lower().startswith('par_'):
-                            # Extract parameter name (remove 'par_' prefix)
-                            param_name = name_without_ext[4:]
-
-                            # Check for existing parameter
-                            if existing_scenario and existing_scenario.get_parameter(param_name):
-                                replaced_items.append(('parameter', param_name))
-
-                            # Determine dimensions (exclude value/unit columns)
-                            dims = list(df.columns)
-                            for col in ['value', 'unit']:
-                                if col in dims:
-                                    dims.remove(col)
-
-                            metadata = {
-                                'dims': dims,
-                                'units': df['unit'].iloc[0] if 'unit' in df.columns and len(df) > 0 else 'unknown',
-                                'result_type': None  # Input parameter
-                            }
-
-                            param = Parameter(name=param_name, df=df, metadata=metadata)
-                            scenario_data.add_parameter(param, mark_modified=False, add_to_history=False)
-
-                            print(f"DEBUG: Loaded parameter '{param_name}' with {len(df)} rows")
-
-                        elif name_without_ext.lower().startswith('var_'):
-                            # Extract variable name (remove 'var_' prefix)
-                            var_name = name_without_ext[4:]
-
-                            # Determine dimensions (exclude level/marginal/unit columns)
-                            dims = list(df.columns)
-                            for col in ['lvl', 'mrg', 'level', 'marginal', 'unit']:
-                                if col in dims:
-                                    dims.remove(col)
-
-                            metadata = {
-                                'dims': dims,
-                                'units': df['unit'].iloc[0] if 'unit' in df.columns and len(df) > 0 else 'unknown',
-                                'result_type': 'variable'
-                            }
-
-                            param = Parameter(name=var_name, df=df, metadata=metadata)
-                            scenario_data.add_parameter(param, mark_modified=False, add_to_history=False)
-
-                            print(f"DEBUG: Loaded variable '{var_name}' with {len(df)} rows")
-
-                        elif name_without_ext.lower().startswith('equ_'):
-                            # Extract equation name (remove 'equ_' prefix)
-                            equ_name = name_without_ext[4:]
-
-                            # Determine dimensions
-                            dims = list(df.columns)
-                            for col in ['lvl', 'mrg', 'level', 'marginal', 'unit']:
-                                if col in dims:
-                                    dims.remove(col)
-
-                            metadata = {
-                                'dims': dims,
-                                'units': 'unknown',
-                                'result_type': 'equation'
-                            }
-
-                            param = Parameter(name=equ_name, df=df, metadata=metadata)
-                            scenario_data.add_parameter(param, mark_modified=False, add_to_history=False)
-
-                            print(f"DEBUG: Loaded equation '{equ_name}' with {len(df)} rows")
-                        else:
-                            # Unknown prefix - treat as generic data
-                            print(f"DEBUG: Skipping file with unknown prefix: {csv_name}")
-
-                    except Exception as e:
-                        print(f"ERROR loading CSV {csv_name}: {e}")
-                        self._append_to_console(f"Error loading {csv_name}: {e}")
-                        logging_manager.log('ERROR', 'DATA_LOAD', f"Error loading CSV {csv_name}", {'file_path': file_path, 'csv_name': csv_name, 'error': str(e)})
+                        except Exception as e:
+                            print(f"ERROR loading CSV {csv_name}: {e}")
+                            self._append_to_console(f"Error loading {csv_name}: {e}")
+                            logging_manager.log('ERROR', 'DATA_LOAD', f"Error loading CSV {csv_name}", {'file_path': file_path, 'csv_name': csv_name, 'error': str(e)})
 
         except zipfile.BadZipFile:
             print(f"ERROR: {file_path} is not a valid zip file")
@@ -840,20 +895,23 @@ class MainWindow(QMainWindow):
             if scenario:
                 parameter = scenario.get_parameter(parameter_name)
                 if parameter:
-                    # Display data using the data display component
-                    self.data_display.display_parameter_data(parameter, is_results)
+                    # Use wait cursor for large datasets
+                    row_count = len(parameter.df) if parameter.df is not None else 0
+                    with WaitCursorContext(row_count):
+                        # Display data using the data display component
+                        self.data_display.display_parameter_data(parameter, is_results)
 
-                    # Update chart with transformed data for display
-                    scenario = self._get_current_scenario(is_results)
-                    filters = self.data_display._get_current_filters() if hasattr(self.data_display, '_get_current_filters') else {}
-                    chart_df = DataTransformer.prepare_chart_data(
-                        parameter, is_results=is_results,
-                        scenario_options=scenario.options if scenario else None,
-                        filters=filters, hide_empty=False
-                    )
+                        # Update chart with transformed data for display
+                        scenario = self._get_current_scenario(is_results)
+                        filters = self.data_display._get_current_filters() if hasattr(self.data_display, '_get_current_filters') else {}
+                        chart_df = DataTransformer.prepare_chart_data(
+                            parameter, is_results=is_results,
+                            scenario_options=scenario.options if scenario else None,
+                            filters=filters, hide_empty=False
+                        )
 
-                    if chart_df is not None:
-                        self.chart_widget.update_chart(chart_df, parameter.name, is_results)
+                        if chart_df is not None:
+                            self.chart_widget.update_chart(chart_df, parameter.name, is_results)
         except Exception as e:
             print(f"ERROR in parameter selection: {e}")
             import traceback
@@ -919,13 +977,16 @@ class MainWindow(QMainWindow):
             filters = self.data_display._get_current_filters() if hasattr(self.data_display, '_get_current_filters') else {}
             parameter = scenario.get_parameter(param_name) if scenario else None
             if parameter:
-                chart_df = DataTransformer.prepare_chart_data(
-                    parameter, is_results=self.current_view == "results",
-                    scenario_options=scenario.options if scenario else None,
-                    filters=filters, hide_empty=False
-                )
-                if chart_df is not None:
-                    self.chart_widget.update_chart(chart_df, parameter.name, self.current_view == "results")
+                # Use wait cursor for large datasets
+                row_count = len(parameter.df) if parameter.df is not None else 0
+                with WaitCursorContext(row_count):
+                    chart_df = DataTransformer.prepare_chart_data(
+                        parameter, is_results=self.current_view == "results",
+                        scenario_options=scenario.options if scenario else None,
+                        filters=filters, hide_empty=False
+                    )
+                    if chart_df is not None:
+                        self.chart_widget.update_chart(chart_df, parameter.name, self.current_view == "results")
 
             # Refresh the display to show the updated pivoted data (for advanced mode)
             if mode == "advanced":
@@ -954,40 +1015,44 @@ class MainWindow(QMainWindow):
         if not parameter:
             return
 
-        # Create the paste command
-        from managers.commands import PasteColumnCommand
-        command = PasteColumnCommand(scenario, param_name, column_name, row_changes)
+        # Use wait cursor for large paste operations
+        row_count = len(row_changes)
+        with WaitCursorContext(row_count):
+            # Create the paste command
+            from managers.commands import PasteColumnCommand
+            command = PasteColumnCommand(scenario, param_name, column_name, row_changes)
 
-        # Execute the command
-        success = self.undo_manager.execute(command)
+            # Execute the command
+            success = self.undo_manager.execute(command)
 
-        if success:
-            # Update UI elements
-            self._update_undo_redo_ui()
+            if success:
+                # Update UI elements
+                self._update_undo_redo_ui()
 
-            # Update status bar
-            self.statusbar.showMessage(f"Modified {param_name} - unsaved changes")
+                # Update status bar
+                self.statusbar.showMessage(f"Modified {param_name} - unsaved changes")
 
-            # Mark parameter as modified
-            scenario.mark_modified(param_name)
+                # Mark parameter as modified
+                scenario.mark_modified(param_name)
 
-            # Update chart immediately with the new data
-            scenario = self._get_current_scenario(self.current_view == "results")
-            filters = self.data_display._get_current_filters() if hasattr(self.data_display, '_get_current_filters') else {}
-            chart_df = DataTransformer.prepare_chart_data(
-                parameter, is_results=self.current_view == "results",
-                scenario_options=scenario.options if scenario else None,
-                filters=filters, hide_empty=False
-            )
-            self.chart_widget.update_chart(chart_df, parameter.name, self.current_view == "results")
+                # Update chart immediately with the new data
+                scenario = self._get_current_scenario(self.current_view == "results")
+                filters = self.data_display._get_current_filters() if hasattr(self.data_display, '_get_current_filters') else {}
+                chart_df = DataTransformer.prepare_chart_data(
+                    parameter, is_results=self.current_view == "results",
+                    scenario_options=scenario.options if scenario else None,
+                    filters=filters, hide_empty=False
+                )
+                if chart_df is not None:
+                    self.chart_widget.update_chart(chart_df, parameter.name, self.current_view == "results")
 
-            # Refresh the display to show the updated data
-            self._refresh_current_display()
+                # Refresh the display to show the updated data
+                self._refresh_current_display()
 
-            # Log the change
-            self._append_to_console(f"Pasted {len(row_changes)} values into column '{column_name}' ({param_name})")
-        else:
-            self._append_to_console("Paste operation failed")
+                # Log the change
+                self._append_to_console(f"Pasted {len(row_changes)} values into column '{column_name}' ({param_name})")
+            else:
+                self._append_to_console("Paste operation failed")
 
     def _on_chart_update_needed(self):
         """Update chart when data changes without refreshing the table"""
@@ -1017,19 +1082,22 @@ class MainWindow(QMainWindow):
 
             print(f"DEBUG: Updating chart for parameter {param_name} with {len(parameter.df)} rows")
 
-            # Update chart with current data (which includes our changes)
-            scenario = self._get_current_scenario(self.current_view == "results")
-            filters = self.data_display._get_current_filters() if hasattr(self.data_display, '_get_current_filters') else {}
-            chart_df = DataTransformer.prepare_chart_data(
-                parameter, is_results=self.current_view == "results",
-                scenario_options=scenario.options if scenario else None,
-                filters=filters, hide_empty=False
-            )
-            if chart_df is not None:
-                print(f"DEBUG: Chart data has {len(chart_df)} rows, {len(chart_df.columns)} columns")
-                self.chart_widget.update_chart(chart_df, parameter.name, self.current_view == "results")
-            else:
-                print("DEBUG: Chart data is None")
+            # Use wait cursor for large datasets
+            row_count = len(parameter.df) if parameter.df is not None else 0
+            with WaitCursorContext(row_count):
+                # Update chart with current data (which includes our changes)
+                scenario = self._get_current_scenario(self.current_view == "results")
+                filters = self.data_display._get_current_filters() if hasattr(self.data_display, '_get_current_filters') else {}
+                chart_df = DataTransformer.prepare_chart_data(
+                    parameter, is_results=self.current_view == "results",
+                    scenario_options=scenario.options if scenario else None,
+                    filters=filters, hide_empty=False
+                )
+                if chart_df is not None:
+                    print(f"DEBUG: Chart data has {len(chart_df)} rows, {len(chart_df.columns)} columns")
+                    self.chart_widget.update_chart(chart_df, parameter.name, self.current_view == "results")
+                else:
+                    print("DEBUG: Chart data is None")
 
         except Exception as e:
             print(f"ERROR in _on_chart_update_needed: {e}")
