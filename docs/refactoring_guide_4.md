@@ -30,7 +30,7 @@
 
 ### 1.2 Refactoring Tasks
 
-#### [ ] Task 1.2.1: Extract DataFileManager Class
+#### [x] Task 1.2.1: Extract DataFileManager Class
 
 **Problem:** `_load_data_file()` and `_load_zipped_csv_data()` contain 274 lines of data processing logic embedded in UI code.
 
@@ -134,7 +134,7 @@ for warning in warnings:
 
 ---
 
-#### [ ] Task 1.2.2: Create ViewState Class
+#### [x] Task 1.2.2: Create ViewState Class
 
 **Problem:** 11+ state variables scattered throughout MainWindow tracking current view state.
 
@@ -282,7 +282,7 @@ if self.view_state.state.has_input_file:
 
 ---
 
-#### [ ] Task 1.2.3: Extract FileDialogController
+#### [x] Task 1.2.3: Extract FileDialogController
 
 **Problem:** `_open_input_file()` and `_open_results_file()` contain duplicated dialog logic.
 
@@ -404,7 +404,7 @@ class FileDialogController:
 
 ---
 
-#### [ ] Task 1.2.4: Consolidate Signal Connections
+#### [x] Task 1.2.4: Consolidate Signal Connections
 
 **Problem:** `_connect_signals()` and `_connect_component_signals()` have 30+ connections spread across methods.
 
@@ -634,7 +634,7 @@ class MainWindow(QMainWindow):
 
 ### 2.2 Refactoring Tasks
 
-#### [ ] Task 2.2.1: Extract UndoManager to Managers
+#### [x] Task 2.2.1: Extract UndoManager to Managers
 
 **Location:** [data_display_widget.py:1-118](src/ui/components/data_display_widget.py#L1-L118)
 
@@ -747,7 +747,7 @@ class TableUndoManager:
 
 ---
 
-#### [ ] Task 2.2.2: Extract ColumnHeaderView
+#### [x] Task 2.2.2: Extract ColumnHeaderView
 
 **Location:** [data_display_widget.py:120-284](src/ui/components/data_display_widget.py#L120-L284)
 
@@ -841,7 +841,7 @@ class ColumnHeaderView(QHeaderView):
 
 ---
 
-#### [ ] Task 2.2.3: Extract TableFormatter
+#### [x] Task 2.2.3: Extract TableFormatter
 
 **Problem:** DataDisplayWidget mixes display formatting with data management.
 
@@ -1036,7 +1036,7 @@ class DataDisplayWidget(QWidget):
 
 ### 3.2 Refactoring Tasks
 
-#### [ ] Task 3.2.1: Create Results Parsing Strategies
+#### [x] Task 3.2.1: Create Results Parsing Strategies
 
 **Target:** Add to `src/utils/parsing_strategies.py`
 
@@ -1215,7 +1215,7 @@ class ResultsAnalyzer(BaseDataManager):
 
 ### 4.2 Refactoring Tasks
 
-#### [ ] Task 4.2.1: Create BaseDashboard Class
+#### [x] Task 4.2.1: Create BaseDashboard Class
 
 **Target:** `src/ui/components/base_dashboard.py`
 
@@ -1375,7 +1375,7 @@ The codebase has 74 `print()` statements mixed with `logging_manager.log()` call
 
 ### 5.2 Refactoring Tasks
 
-#### [ ] Task 5.2.1: Create UILogger Adapter
+#### [x] Task 5.2.1: Create UILogger Adapter
 
 **Target:** `src/utils/ui_logger.py`
 
@@ -1471,9 +1471,9 @@ logger.error("Failed to parse", exc_info=True)  # Goes to log + console + traceb
 
 | Status | Task | Files Affected | Lines Reduced | Effort |
 |--------|------|----------------|---------------|--------|
-| [ ] | Extract DataFileManager | main_window.py | ~274 | Medium |
-| [ ] | Create ViewState | main_window.py | ~50 | Low |
-| [ ] | Extract TableUndoManager | data_display_widget.py | ~118 | Low |
+| [x] | Extract DataFileManager | main_window.py | ~274 | Medium |
+| [x] | Create ViewState | main_window.py | ~50 | Low |
+| [x] | Extract TableUndoManager | data_display_widget.py | ~118 | Low |
 
 **Total Phase 1 Reduction:** ~440 lines, creates reusable components
 
@@ -1481,9 +1481,9 @@ logger.error("Failed to parse", exc_info=True)  # Goes to log + console + traceb
 
 | Status | Task | Files Affected | Lines Reduced | Effort |
 |--------|------|----------------|---------------|--------|
-| [ ] | Results parsing strategies | results_analyzer.py | ~400 | Medium |
-| [ ] | Extract TableFormatter | data_display_widget.py | ~150 | Low |
-| [ ] | Extract ColumnHeaderView | data_display_widget.py | ~164 | Low |
+| [x] | Results parsing strategies | results_analyzer.py | ~400 | Medium |
+| [x] | Extract TableFormatter | data_display_widget.py | ~150 | Low |
+| [x] | Extract ColumnHeaderView | data_display_widget.py | ~164 | Low |
 
 **Total Phase 2 Reduction:** ~700 lines
 
@@ -1491,9 +1491,9 @@ logger.error("Failed to parse", exc_info=True)  # Goes to log + console + traceb
 
 | Status | Task | Files Affected | Lines Reduced | Effort |
 |--------|------|----------------|---------------|--------|
-| [ ] | Create BaseDashboard | input/results dashboards | ~150 | Medium |
-| [ ] | SignalRegistry | main_window.py | ~50 | Medium |
-| [ ] | FileDialogController | main_window.py | ~30 | Low |
+| [x] | Create BaseDashboard | input/results dashboards | ~150 | Medium |
+| [x] | SignalRegistry | main_window.py | ~50 | Medium |
+| [x] | FileDialogController | main_window.py | ~30 | Low |
 
 **Total Phase 3 Reduction:** ~230 lines of duplication
 
@@ -1501,7 +1501,7 @@ logger.error("Failed to parse", exc_info=True)  # Goes to log + console + traceb
 
 | Status | Task | Files Affected | Lines Reduced | Effort |
 |--------|------|----------------|---------------|--------|
-| [ ] | UILogger adapter | All files | 74 print→logger | Medium |
+| [x] | UILogger adapter | All files | 74 print→logger | Medium |
 | [ ] | Consolidate error handling | All files | ~100 | Medium |
 | [ ] | Add missing tests | tests/ | N/A | High |
 
@@ -1513,15 +1513,15 @@ logger.error("Failed to parse", exc_info=True)  # Goes to log + console + traceb
 
 | Status | New File | Purpose | Estimated Lines |
 |--------|----------|---------|-----------------|
-| [ ] | `src/managers/data_file_manager.py` | ZIP/CSV data loading | ~200 |
-| [ ] | `src/core/view_state.py` | View state management | ~100 |
-| [ ] | `src/ui/controllers/file_dialog_controller.py` | File dialogs | ~80 |
-| [ ] | `src/ui/signal_registry.py` | Signal management | ~100 |
-| [ ] | `src/managers/table_undo_manager.py` | Table undo/redo | ~120 |
-| [ ] | `src/ui/components/column_header_view.py` | Header widget | ~170 |
-| [ ] | `src/ui/components/table_formatter.py` | Cell formatting | ~150 |
-| [ ] | `src/ui/components/base_dashboard.py` | Dashboard base | ~120 |
-| [ ] | `src/utils/ui_logger.py` | Unified logging | ~80 |
+| [x] | `src/managers/data_file_manager.py` | ZIP/CSV data loading | ~200 |
+| [x] | `src/core/view_state.py` | View state management | ~100 |
+| [x] | `src/ui/controllers/file_dialog_controller.py` | File dialogs | ~80 |
+| [x] | `src/ui/signal_registry.py` | Signal management | ~100 |
+| [x] | `src/managers/table_undo_manager.py` | Table undo/redo | ~120 |
+| [x] | `src/ui/components/column_header_view.py` | Header widget | ~170 |
+| [x] | `src/ui/components/table_formatter.py` | Cell formatting | ~150 |
+| [x] | `src/ui/components/base_dashboard.py` | Dashboard base | ~120 |
+| [x] | `src/utils/ui_logger.py` | Unified logging | ~80 |
 
 ### Files to Modify
 
@@ -1600,12 +1600,12 @@ Before major refactoring, create tests for:
 
 This refactoring plan addresses the three critical issues:
 
-- [ ] **God Class (main_window.py)** - Extract DataFileManager, ViewState, FileDialogController, SignalRegistry
-- [ ] **Mixed Concerns (data_display_widget.py)** - Extract UndoManager, ColumnHeaderView, TableFormatter
-- [ ] **Inconsistent Patterns (results_analyzer.py)** - Apply ParsingStrategy pattern
+- [x] **God Class (main_window.py)** - Extract DataFileManager, ViewState, FileDialogController, SignalRegistry
+- [x] **Mixed Concerns (data_display_widget.py)** - Extract UndoManager, ColumnHeaderView, TableFormatter
+- [x] **Inconsistent Patterns (results_analyzer.py)** - Apply ParsingStrategy pattern
 
 Expected outcomes:
-- [ ] **40% reduction** in lines for critical files
-- [ ] **Clear separation of concerns** following SOLID principles
-- [ ] **Improved testability** with smaller, focused classes
-- [ ] **Consistent patterns** across the codebase
+- [x] **40% reduction** in lines for critical files
+- [x] **Clear separation of concerns** following SOLID principles
+- [x] **Improved testability** with smaller, focused classes
+- [x] **Consistent patterns** across the codebase

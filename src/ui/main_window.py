@@ -31,6 +31,7 @@ from managers.input_manager import InputManager
 from managers.solver_manager import SolverManager
 from managers.results_analyzer import ResultsAnalyzer
 from managers.data_export_manager import DataExportManager
+from managers.data_file_manager import DataFileManager
 from managers.logging_manager import logging_manager
 from managers.commands import EditCellCommand, EditPivotCommand, PasteColumnCommand
 from managers.parameter_manager import ParameterManager
@@ -122,6 +123,13 @@ class MainWindow(QMainWindow):
 
         # Load technology descriptions from CSV
         self.tech_descriptions = self._load_tech_descriptions()
+
+        # Initialize data file manager (uses tech_descriptions for filtering)
+        self.data_file_manager = DataFileManager(
+            tech_descriptions=self.tech_descriptions,
+            console_callback=lambda msg: self._append_to_console(msg) if hasattr(self, 'console') else print(msg),
+            log_callback=lambda level, module, msg, extra: logging_manager.log(level, module, msg, extra)
+        )
 
         # Initialize dashboard
         self.dashboard: ResultsDashboard = ResultsDashboard(self.results_analyzer)
@@ -599,41 +607,37 @@ class MainWindow(QMainWindow):
 
         If sets/parameters already exist (loaded from input file), they are
         replaced and the conflict is logged.
+
+        Delegates to DataFileManager for actual loading logic.
         """
         if file_path in self.loaded_data_files:
             return
 
         print(f"DEBUG: Loading data file: {file_path}")
+
         try:
-            import pandas as pd
-            import zipfile
-            from core.data_models import ScenarioData, Parameter
+            # Get existing scenario data for conflict detection
+            existing_scenario = None
+            if self.selected_scenario and self.selected_scenario.input_file:
+                existing_scenario = self.input_manager.get_scenario_by_file_path(
+                    self.selected_scenario.input_file
+                )
 
-            scenario_data = ScenarioData()
-            replaced_items = []  # Track items that were replaced
-
-            # Determine file type by extension
-            file_ext = os.path.splitext(file_path)[1].lower()
-            assert(file_ext in ['.zip']), "Unsupported data file format"
-
-            # Load from zipped CSV files
-            scenario_data, replaced_items = self._load_zipped_csv_data(file_path)
+            # Use DataFileManager to load the file
+            scenario_data, replaced_items = self.data_file_manager.load_data_file(
+                file_path, existing_scenario
+            )
 
             if scenario_data is None:
+                self._remove_failed_data_file(file_path)
                 return
 
             self.loaded_data_files[file_path] = scenario_data
 
             # Log summary
-            num_sets = len(scenario_data.sets)
-            num_params = len([p for p in scenario_data.parameters.values()
-                            if not p.metadata.get('result_type')])
-            num_vars = len([p for p in scenario_data.parameters.values()
-                          if p.metadata.get('result_type') == 'variable'])
-
+            summary = self.data_file_manager.get_load_summary(scenario_data)
             self._append_to_console(
-                f"Loaded data file: {os.path.basename(file_path)} "
-                f"({num_sets} sets, {num_params} parameters, {num_vars} variables)"
+                f"Loaded data file: {os.path.basename(file_path)} ({summary})"
             )
 
             # Log any replacements
@@ -641,228 +645,22 @@ class MainWindow(QMainWindow):
                 for item_type, item_name in replaced_items:
                     msg = f"WARNING: Replaced existing {item_type} '{item_name}' with data from {os.path.basename(file_path)}"
                     self._append_to_console(msg)
-                    logging_manager.log('WARNING', 'DATA_LOAD', msg, {'file_path': file_path, 'item_type': item_type, 'item_name': item_name})
+                    logging_manager.log('WARNING', 'DATA_LOAD', msg, {
+                        'file_path': file_path,
+                        'item_type': item_type,
+                        'item_name': item_name
+                    })
 
         except Exception as e:
             print(f"ERROR loading data file: {e}")
             self._append_to_console(f"Error loading data file: {e}")
-            logging_manager.log('ERROR', 'DATA_LOAD', f"Error loading data file: {e}", {'file_path': file_path, 'error': str(e)})
+            logging_manager.log('ERROR', 'DATA_LOAD', f"Error loading data file: {e}", {
+                'file_path': file_path,
+                'error': str(e)
+            })
             self._remove_failed_data_file(file_path)
             import traceback
             traceback.print_exc()
-
-    def _load_zipped_csv_data(self, file_path: str):
-        """
-        Load message data from a zipped archive containing CSV files.
-
-        Expected file naming convention:
-        - set_xxx.csv: message sets (input)
-        - par_xxx.csv: message parameters (input)
-        - var_xxx.csv: message variables (output)
-
-        Args:
-            file_path: Path to the zip file
-
-        Returns:
-            Tuple of (ScenarioData, list of replaced items)
-        """
-        import zipfile
-        import pandas as pd
-        from core.data_models import ScenarioData, Parameter
-
-        scenario_data = ScenarioData()
-        replaced_items = []
-
-        # Get existing data from input file if available (for conflict detection)
-        existing_scenario = None
-        if self.selected_scenario and self.selected_scenario.input_file:
-            existing_scenario = self.input_manager.get_scenario_by_file_path(
-                self.selected_scenario.input_file
-            )
-
-        try:
-            with zipfile.ZipFile(file_path, 'r') as zf:
-                # Get list of CSV files in the archive
-                csv_files = [f for f in zf.namelist() if f.lower().endswith('.csv')]
-
-                print(f"DEBUG: Found {len(csv_files)} CSV files in zip archive")
-
-                # First pass: collect electricity-generating technologies from par_output
-                electricity_technologies = set()
-                for csv_name in csv_files:
-                    base_name = os.path.basename(csv_name)
-                    name_without_ext = os.path.splitext(base_name)[0]
-                    if name_without_ext.lower() == 'par_output':
-                        with zf.open(csv_name) as csv_file:
-                            output_df = pd.read_csv(csv_file)
-                        # Find technologies that output 'electr' commodity with value > 0
-                        if 'commodity' in output_df.columns and 'value' in output_df.columns:
-                            tec_col = 'technology' if 'technology' in output_df.columns else 'tec' if 'tec' in output_df.columns else None
-                            if tec_col:
-                                electr_mask = (output_df['commodity'] == 'electr') & (output_df['value'] > 0)
-                                electricity_technologies = set(output_df.loc[electr_mask, tec_col].unique())
-                                print(f"DEBUG: Found {len(electricity_technologies)} electricity-generating technologies")
-                        break
-
-                # Use wait cursor if we have many CSV files to process
-                with WaitCursorContext(len(csv_files), force=(len(csv_files) > 50)):
-                    for csv_name in csv_files:
-                        try:
-                            # Extract base name without path and extension
-                            base_name = os.path.basename(csv_name)
-                            name_without_ext = os.path.splitext(base_name)[0]
-
-                            # Read CSV into DataFrame
-                            with zf.open(csv_name) as csv_file:
-                                df = pd.read_csv(csv_file)
-
-                            if df.empty:
-                                print(f"DEBUG: Skipping empty file: {csv_name}")
-                                continue
-
-                            # Categorize by prefix
-                            if name_without_ext.lower().startswith('set_'):
-                                # Extract set name (remove 'set_' prefix)
-                                set_name = name_without_ext[4:]
-
-                                # Check for existing set
-                                if existing_scenario and set_name in existing_scenario.sets:
-                                    replaced_items.append(('set', set_name))
-
-                                # Store set - use first column as the set values
-                                if len(df.columns) == 1:
-                                    scenario_data.sets[set_name] = df.iloc[:, 0]
-                                else:
-                                    # Multi-column set - store as DataFrame or use first col
-                                    scenario_data.sets[set_name] = df.iloc[:, 0]
-
-                                print(f"DEBUG: Loaded set '{set_name}' with {len(df)} values")
-
-                            elif name_without_ext.lower().startswith('par_'):
-                                # Extract parameter name (remove 'par_' prefix)
-                                param_name = name_without_ext[4:]
-
-                                # Check for existing parameter
-                                if existing_scenario and existing_scenario.get_parameter(param_name):
-                                    replaced_items.append(('parameter', param_name))
-
-                                # Determine dimensions (exclude value/unit columns)
-                                dims = list(df.columns)
-                                for col in ['value', 'unit']:
-                                    if col in dims:
-                                        dims.remove(col)
-
-                                metadata = {
-                                    'dims': dims,
-                                    'units': df['unit'].iloc[0] if 'unit' in df.columns and len(df) > 0 else 'unknown',
-                                    'result_type': None  # Input parameter
-                                }
-
-                                param = Parameter(name=param_name, df=df, metadata=metadata)
-                                scenario_data.add_parameter(param, mark_modified=False, add_to_history=False)
-
-                                print(f"DEBUG: Loaded parameter '{param_name}' with {len(df)} rows")
-
-                            elif name_without_ext.lower().startswith('var_'):
-                                # Extract variable name (remove 'var_' prefix)
-                                var_name = name_without_ext[4:]
-
-                                # Filter to only electricity-generating technologies
-                                tec_col = 'technology' if 'technology' in df.columns else 'tec' if 'tec' in df.columns else None
-                                if tec_col and electricity_technologies:
-                                    rows_before = len(df)
-                                    df = df[df[tec_col].isin(electricity_technologies)]
-                                    rows_filtered = rows_before - len(df)
-                                    if rows_filtered > 0:
-                                        print(f"DEBUG: Filtered to electricity technologies in {var_name}: {rows_before} -> {len(df)} rows")
-
-                                # Also filter out internal solver rows (_res#, _ref#, _cv#, _hist_####)
-                                if tec_col and len(df) > 0:
-                                    rows_before = len(df)
-                                    mask = ~df[tec_col].astype(str).str.match(r'.*_((res|ref|cv)\d|hist_\d+)$')
-                                    df = df[mask]
-                                    rows_filtered = rows_before - len(df)
-                                    if rows_filtered > 0:
-                                        print(f"DEBUG: Filtered out {rows_filtered} internal solver rows from {var_name}")
-
-                                # Determine dimensions (exclude level/marginal/unit columns)
-                                dims = list(df.columns)
-                                for col in ['lvl', 'mrg', 'level', 'marginal', 'unit']:
-                                    if col in dims:
-                                        dims.remove(col)
-
-                                metadata = {
-                                    'dims': dims,
-                                    'units': df['unit'].iloc[0] if 'unit' in df.columns and len(df) > 0 else 'unknown',
-                                    'result_type': 'variable'
-                                }
-
-                                param = Parameter(name=var_name, df=df, metadata=metadata)
-                                scenario_data.add_parameter(param, mark_modified=False, add_to_history=False)
-
-                                print(f"DEBUG: Loaded variable '{var_name}' with {len(df)} rows")
-
-                            elif name_without_ext.lower().startswith('equ_'):
-                                # Extract equation name (remove 'equ_' prefix)
-                                equ_name = name_without_ext[4:]
-
-                                # Filter to only electricity-generating technologies
-                                tec_col = 'technology' if 'technology' in df.columns else 'tec' if 'tec' in df.columns else None
-                                if tec_col and electricity_technologies:
-                                    rows_before = len(df)
-                                    df = df[df[tec_col].isin(electricity_technologies)]
-                                    rows_filtered = rows_before - len(df)
-                                    if rows_filtered > 0:
-                                        print(f"DEBUG: Filtered to electricity technologies in {equ_name}: {rows_before} -> {len(df)} rows")
-
-                                # Also filter out internal solver rows (_res#, _ref#, _cv#, _hist_####)
-                                if tec_col and len(df) > 0:
-                                    rows_before = len(df)
-                                    mask = ~df[tec_col].astype(str).str.match(r'.*_((res|ref|cv)\d|hist_\d+)$')
-                                    df = df[mask]
-                                    rows_filtered = rows_before - len(df)
-                                    if rows_filtered > 0:
-                                        print(f"DEBUG: Filtered out {rows_filtered} internal solver rows from {equ_name}")
-
-                                # Determine dimensions
-                                dims = list(df.columns)
-                                for col in ['lvl', 'mrg', 'level', 'marginal', 'unit']:
-                                    if col in dims:
-                                        dims.remove(col)
-
-                                metadata = {
-                                    'dims': dims,
-                                    'units': 'unknown',
-                                    'result_type': 'equation'
-                                }
-
-                                param = Parameter(name=equ_name, df=df, metadata=metadata)
-                                scenario_data.add_parameter(param, mark_modified=False, add_to_history=False)
-
-                                print(f"DEBUG: Loaded equation '{equ_name}' with {len(df)} rows")
-                            else:
-                                # Unknown prefix - treat as generic data
-                                print(f"DEBUG: Skipping file with unknown prefix: {csv_name}")
-
-                        except Exception as e:
-                            print(f"ERROR loading CSV {csv_name}: {e}")
-                            self._append_to_console(f"Error loading {csv_name}: {e}")
-                            logging_manager.log('ERROR', 'DATA_LOAD', f"Error loading CSV {csv_name}", {'file_path': file_path, 'csv_name': csv_name, 'error': str(e)})
-
-        except zipfile.BadZipFile:
-            print(f"ERROR: {file_path} is not a valid zip file")
-            self._append_to_console(f"Error: {os.path.basename(file_path)} is not a valid zip file")
-            logging_manager.log('ERROR', 'DATA_LOAD', "Bad zip file", {'file_path': file_path})
-            self._remove_failed_data_file(file_path)
-            return None, []
-        except Exception as e:
-            print(f"ERROR opening zip file {file_path}: {e}")
-            self._append_to_console(f"Error opening zip file: {e}")
-            logging_manager.log('ERROR', 'DATA_LOAD', "Error opening zip file", {'file_path': file_path, 'error': str(e)})
-            self._remove_failed_data_file(file_path)
-            return None, []
-
-        return scenario_data, replaced_items
 
     def _remove_failed_data_file(self, file_path: str):
         """
