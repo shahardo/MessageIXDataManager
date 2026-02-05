@@ -1558,7 +1558,6 @@ class MainWindow(QMainWindow):
     def _on_file_removed(self, file_path: str, file_type: str):
         """Handle file removal from navigator"""
         removed = False
-        should_clear_display = False
 
         if file_type == "input":
             removed = self.input_manager.remove_file(file_path)
@@ -1573,10 +1572,6 @@ class MainWindow(QMainWindow):
                 if self.selected_input_file == file_path:
                     self.selected_input_file = None
 
-                # Clear display if viewing a parameter from this file (input = not results)
-                if self.current_displayed_parameter and not self.current_displayed_is_results:
-                    should_clear_display = True
-
         elif file_type == "results":
             removed = self.results_analyzer.remove_file(file_path)
             if removed:
@@ -1589,10 +1584,6 @@ class MainWindow(QMainWindow):
                 # Clear selection if this was the selected file
                 if self.selected_results_file == file_path:
                     self.selected_results_file = None
-
-                # Clear display if viewing a result from this file (results = is_results)
-                if self.current_displayed_parameter and self.current_displayed_is_results:
-                    should_clear_display = True
 
         elif file_type == "data":
             # Handle data/zip files
@@ -1607,19 +1598,16 @@ class MainWindow(QMainWindow):
                 if self.selected_scenario and self.selected_scenario.message_scenario_file == file_path:
                     self.selected_scenario.message_scenario_file = None
 
-                # Clear display if viewing a variable from this file (data files contain var_ parameters)
-                if self.current_displayed_parameter and self.current_displayed_parameter.startswith("var_"):
-                    should_clear_display = True
-
         if removed:
+            # Always clear data/chart display when a file is removed to prevent stale data
+            if self.current_displayed_parameter:
+                self.current_displayed_parameter = None
+                self.current_displayed_is_results = False
+                self._clear_data_display()
+
             # Refresh the parameter tree to remove parameters from the closed file
             if self.selected_scenario:
                 self._switch_to_multi_section_view(self.selected_scenario)
-
-            # Clear data/chart display if needed
-            if should_clear_display:
-                self.current_displayed_parameter = None
-                self._clear_data_display()
 
             self.statusbar.showMessage(f"Removed {file_type} file: {os.path.basename(file_path)}")
         else:
