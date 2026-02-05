@@ -12,6 +12,7 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import QSettings, QPoint
 from PyQt5 import uic
 import os
+import re
 import pandas as pd
 from typing import Optional, List, Dict, Any
 
@@ -686,6 +687,23 @@ class MainWindow(QMainWindow):
 
                 print(f"DEBUG: Found {len(csv_files)} CSV files in zip archive")
 
+                # First pass: collect electricity-generating technologies from par_output
+                electricity_technologies = set()
+                for csv_name in csv_files:
+                    base_name = os.path.basename(csv_name)
+                    name_without_ext = os.path.splitext(base_name)[0]
+                    if name_without_ext.lower() == 'par_output':
+                        with zf.open(csv_name) as csv_file:
+                            output_df = pd.read_csv(csv_file)
+                        # Find technologies that output 'electr' commodity with value > 0
+                        if 'commodity' in output_df.columns and 'value' in output_df.columns:
+                            tec_col = 'technology' if 'technology' in output_df.columns else 'tec' if 'tec' in output_df.columns else None
+                            if tec_col:
+                                electr_mask = (output_df['commodity'] == 'electr') & (output_df['value'] > 0)
+                                electricity_technologies = set(output_df.loc[electr_mask, tec_col].unique())
+                                print(f"DEBUG: Found {len(electricity_technologies)} electricity-generating technologies")
+                        break
+
                 # Use wait cursor if we have many CSV files to process
                 with WaitCursorContext(len(csv_files), force=(len(csv_files) > 50)):
                     for csv_name in csv_files:
@@ -749,6 +767,24 @@ class MainWindow(QMainWindow):
                                 # Extract variable name (remove 'var_' prefix)
                                 var_name = name_without_ext[4:]
 
+                                # Filter to only electricity-generating technologies
+                                tec_col = 'technology' if 'technology' in df.columns else 'tec' if 'tec' in df.columns else None
+                                if tec_col and electricity_technologies:
+                                    rows_before = len(df)
+                                    df = df[df[tec_col].isin(electricity_technologies)]
+                                    rows_filtered = rows_before - len(df)
+                                    if rows_filtered > 0:
+                                        print(f"DEBUG: Filtered to electricity technologies in {var_name}: {rows_before} -> {len(df)} rows")
+
+                                # Also filter out internal solver rows (_res#, _ref#, _cv#, _hist_####)
+                                if tec_col and len(df) > 0:
+                                    rows_before = len(df)
+                                    mask = ~df[tec_col].astype(str).str.match(r'.*_((res|ref|cv)\d|hist_\d+)$')
+                                    df = df[mask]
+                                    rows_filtered = rows_before - len(df)
+                                    if rows_filtered > 0:
+                                        print(f"DEBUG: Filtered out {rows_filtered} internal solver rows from {var_name}")
+
                                 # Determine dimensions (exclude level/marginal/unit columns)
                                 dims = list(df.columns)
                                 for col in ['lvl', 'mrg', 'level', 'marginal', 'unit']:
@@ -769,6 +805,24 @@ class MainWindow(QMainWindow):
                             elif name_without_ext.lower().startswith('equ_'):
                                 # Extract equation name (remove 'equ_' prefix)
                                 equ_name = name_without_ext[4:]
+
+                                # Filter to only electricity-generating technologies
+                                tec_col = 'technology' if 'technology' in df.columns else 'tec' if 'tec' in df.columns else None
+                                if tec_col and electricity_technologies:
+                                    rows_before = len(df)
+                                    df = df[df[tec_col].isin(electricity_technologies)]
+                                    rows_filtered = rows_before - len(df)
+                                    if rows_filtered > 0:
+                                        print(f"DEBUG: Filtered to electricity technologies in {equ_name}: {rows_before} -> {len(df)} rows")
+
+                                # Also filter out internal solver rows (_res#, _ref#, _cv#, _hist_####)
+                                if tec_col and len(df) > 0:
+                                    rows_before = len(df)
+                                    mask = ~df[tec_col].astype(str).str.match(r'.*_((res|ref|cv)\d|hist_\d+)$')
+                                    df = df[mask]
+                                    rows_filtered = rows_before - len(df)
+                                    if rows_filtered > 0:
+                                        print(f"DEBUG: Filtered out {rows_filtered} internal solver rows from {equ_name}")
 
                                 # Determine dimensions
                                 dims = list(df.columns)
