@@ -819,7 +819,7 @@ class DataDisplayWidget(QWidget):
                 return df
 
             if hide_empty is None:
-                hide_empty = self.hide_empty_columns if not for_chart else False  # Charts typically don't hide empty columns
+                hide_empty = self.hide_empty_columns  # Use the checkbox setting for both table and chart
 
             # Identify column types (pass is_results to correctly identify value column for variables)
             column_info = self._identify_columns(df, is_results)

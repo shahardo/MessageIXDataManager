@@ -665,19 +665,27 @@ class FileNavigatorWidget(QWidget):
 
     def _remove_scenario_file(self, scenario, file_type):
         """Remove a file from a scenario"""
-        # Clear the file path
+        # Store the file path before clearing
+        file_path = None
         if file_type == "input":
+            file_path = scenario.input_file
             scenario.input_file = None
         elif file_type == "data":
+            file_path = scenario.message_scenario_file
             scenario.message_scenario_file = None
         elif file_type == "results":
+            file_path = scenario.results_file
             scenario.results_file = None
-        
+
         # Update session manager
         self.session_manager.add_scenario(scenario)
-        
+
         # Refresh the display
         self.update_scenarios(self.current_scenarios)
+
+        # Emit signal to notify main window of file removal
+        if file_path:
+            self.file_removed.emit(file_path, file_type)
 
     def refresh(self):
         """Refresh the navigator display"""

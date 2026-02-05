@@ -964,7 +964,7 @@ class MainWindow(QMainWindow):
                         chart_df = DataTransformer.prepare_chart_data(
                             parameter, is_results=is_results,
                             scenario_options=scenario.options if scenario else None,
-                            filters=filters, hide_empty=False
+                            filters=filters, hide_empty=self.data_display.hide_empty_columns
                         )
 
                         if chart_df is not None:
@@ -1040,7 +1040,7 @@ class MainWindow(QMainWindow):
                     chart_df = DataTransformer.prepare_chart_data(
                         parameter, is_results=self.current_displayed_is_results,
                         scenario_options=scenario.options if scenario else None,
-                        filters=filters, hide_empty=False
+                        filters=filters, hide_empty=self.data_display.hide_empty_columns
                     )
                     if chart_df is not None:
                         self.chart_widget.update_chart(chart_df, parameter.name, self.current_displayed_is_results)
@@ -1098,7 +1098,7 @@ class MainWindow(QMainWindow):
                 chart_df = DataTransformer.prepare_chart_data(
                     parameter, is_results=self.current_displayed_is_results,
                     scenario_options=scenario.options if scenario else None,
-                    filters=filters, hide_empty=False
+                    filters=filters, hide_empty=self.data_display.hide_empty_columns
                 )
                 if chart_df is not None:
                     self.chart_widget.update_chart(chart_df, parameter.name, self.current_displayed_is_results)
@@ -1148,7 +1148,7 @@ class MainWindow(QMainWindow):
                 chart_df = DataTransformer.prepare_chart_data(
                     parameter, is_results=self.current_displayed_is_results,
                     scenario_options=scenario.options if scenario else None,
-                    filters=filters, hide_empty=False
+                    filters=filters, hide_empty=self.data_display.hide_empty_columns
                 )
                 if chart_df is not None:
                     print(f"DEBUG: Chart data has {len(chart_df)} rows, {len(chart_df.columns)} columns")
@@ -1558,6 +1558,8 @@ class MainWindow(QMainWindow):
     def _on_file_removed(self, file_path: str, file_type: str):
         """Handle file removal from navigator"""
         removed = False
+        should_clear_display = False
+
         if file_type == "input":
             removed = self.input_manager.remove_file(file_path)
             if removed:
@@ -1570,7 +1572,10 @@ class MainWindow(QMainWindow):
                 # Clear selection if this was the selected file
                 if self.selected_input_file == file_path:
                     self.selected_input_file = None
-                    self._clear_data_display()
+
+                # Clear display if viewing a parameter from this file (input = not results)
+                if self.current_displayed_parameter and not self.current_displayed_is_results:
+                    should_clear_display = True
 
         elif file_type == "results":
             removed = self.results_analyzer.remove_file(file_path)
@@ -1584,9 +1589,38 @@ class MainWindow(QMainWindow):
                 # Clear selection if this was the selected file
                 if self.selected_results_file == file_path:
                     self.selected_results_file = None
-                    self._clear_data_display()
+
+                # Clear display if viewing a result from this file (results = is_results)
+                if self.current_displayed_parameter and self.current_displayed_is_results:
+                    should_clear_display = True
+
+        elif file_type == "data":
+            # Handle data/zip files
+            if file_path in self.loaded_data_files:
+                del self.loaded_data_files[file_path]
+                removed = True
+
+                # Remove from settings
+                self._remove_last_opened_file(file_path, file_type)
+
+                # Update scenario to clear the data file reference
+                if self.selected_scenario and self.selected_scenario.message_scenario_file == file_path:
+                    self.selected_scenario.message_scenario_file = None
+
+                # Clear display if viewing a variable from this file (data files contain var_ parameters)
+                if self.current_displayed_parameter and self.current_displayed_parameter.startswith("var_"):
+                    should_clear_display = True
 
         if removed:
+            # Refresh the parameter tree to remove parameters from the closed file
+            if self.selected_scenario:
+                self._switch_to_multi_section_view(self.selected_scenario)
+
+            # Clear data/chart display if needed
+            if should_clear_display:
+                self.current_displayed_parameter = None
+                self._clear_data_display()
+
             self.statusbar.showMessage(f"Removed {file_type} file: {os.path.basename(file_path)}")
         else:
             self.statusbar.showMessage(f"Failed to remove {file_type} file: {os.path.basename(file_path)}")

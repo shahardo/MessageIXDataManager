@@ -150,7 +150,7 @@ class DataTransformer:
 
             # For advanced mode or results data, transform structure
             if hide_empty is None:
-                hide_empty = False if for_chart else True  # Charts typically don't hide empty columns
+                hide_empty = False  # Default to not hiding if not specified
 
             # Identify column types (pass is_results to correctly identify value column for variables)
             column_info = DataTransformer._identify_columns(df, is_results)
