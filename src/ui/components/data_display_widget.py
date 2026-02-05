@@ -421,51 +421,37 @@ class DataDisplayWidget(QWidget):
             self._clear_table_display()
             return
 
-        # Handle view mode (raw vs advanced)
+        # Handle view mode (raw vs advanced) - applies to both input and results data
         display_df = df  # Default fallback
         try:
-            if is_results:
-                # For results data, always show transformed data (years as indices, year column hidden)
+            if self.table_display_mode == "advanced":
+                # Advanced view: transform data for both input and results
                 try:
                     display_df = self.transform_to_display_format(
                         df,
-                        is_results=True,
+                        is_results=is_results,
                         current_filters=self._get_current_filters(),
                         hide_empty=self.hide_empty_columns,
                         for_chart=True
                     )
                 except Exception as e:
-                    print(f"Transformation failed for results: {e}")
+                    print(f"Transformation failed for advanced view: {e}")
                     display_df = df
-                self._setup_property_selectors(df, is_results=True)
+                self._setup_property_selectors(df, is_results=is_results)
             else:
-                # For input data, use raw/advanced modes
-                if self.table_display_mode == "advanced":
-                    try:
-                        display_df = self.transform_to_display_format(
-                            df,
-                            is_results=False,
-                            current_filters=self._get_current_filters(),
-                            hide_empty=self.hide_empty_columns,
-                            for_chart=True
-                        )
-                    except Exception as e:
-                        print(f"Transformation failed for advanced: {e}")
-                        display_df = df
-                    self._setup_property_selectors(df, is_results=False)
-                else:
-                    display_df = df
+                # Raw view: show data as-is
+                display_df = df
         except Exception as e:
             print(f"Error in display_data_table view mode handling: {e}")
             display_df = df
 
-        # Show property selectors when data is transformed
-        show_selectors = is_results or (not is_results and self.table_display_mode == "advanced")
+        # Show property selectors only in advanced mode
+        show_selectors = self.table_display_mode == "advanced"
         self.selector_container.setVisible(show_selectors)
 
         try:
             # Set up table dimensions and headers
-            self._configure_table(display_df, is_results)
+            self._configure_table(display_df)
 
             # Format and populate table data
             self._populate_table(display_df, data)
@@ -476,7 +462,7 @@ class DataDisplayWidget(QWidget):
             print(f"Error in table display setup: {e}")
             # Try to show a basic table with the original data as fallback
             try:
-                self._configure_table(df, is_results)
+                self._configure_table(df)
                 self._populate_table(df, data)
                 self._finalize_display(df, data, title_prefix, is_results)
             except Exception as fallback_e:
@@ -523,18 +509,17 @@ class DataDisplayWidget(QWidget):
         # Emit signal to refresh display (will be connected by parent)
         self.display_mode_changed.emit()
 
-    def _configure_table(self, df: pd.DataFrame, is_results: bool):
+    def _configure_table(self, df: pd.DataFrame):
         """Configure table dimensions and headers"""
         self.param_table.setRowCount(len(df))
+        self.param_table.setColumnCount(len(df.columns))
 
-        # Set column count and vertical headers based on display mode or results type
-        if self.table_display_mode == "advanced" or is_results:
-            self.param_table.setColumnCount(len(df.columns))
-            # Set vertical header labels to show years (for advanced view or results)
+        # Set vertical headers based on display mode
+        if self.table_display_mode == "advanced":
+            # Set vertical header labels to show years (for advanced view)
             year_labels = [str(year) for year in df.index]
             self.param_table.setVerticalHeaderLabels(year_labels)
         else:
-            self.param_table.setColumnCount(len(df.columns))
             # Set vertical headers to show row numbers starting from 1 (for raw data)
             row_labels = [str(i + 1) for i in range(len(df))]
             self.param_table.setVerticalHeaderLabels(row_labels)
