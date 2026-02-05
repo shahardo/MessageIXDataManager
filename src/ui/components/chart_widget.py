@@ -155,6 +155,10 @@ class ChartWidget(QWidget):
                 col_data = col_data.iloc[:, 0]
             values = col_data.fillna(0).tolist()
 
+            # Skip columns that are entirely empty (all zeros)
+            if all(v == 0 for v in values):
+                continue
+
             # Use display name for the trace name
             display_name = self.DIMENSION_DISPLAY_NAMES.get(str(col_name), str(col_name))
 
