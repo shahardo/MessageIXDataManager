@@ -78,27 +78,25 @@
                    </widget>
                   </item>
                   <item>
-                   <widget class="QPushButton" name="view_toggle_button">
-                    <property name="text">
-                     <string>Raw Display</string>
+                   <spacer name="titleSpacer">
+                    <property name="orientation">
+                     <enum>Qt::Horizontal</enum>
                     </property>
-                    <property name="checkable">
-                     <bool>true</bool>
+                    <property name="sizeHint" stdset="0">
+                     <size>
+                      <width>40</width>
+                      <height>20</height>
+                     </size>
+                    </property>
+                   </spacer>
+                  </item>
+                  <item>
+                   <widget class="QCheckBox" name="view_toggle_button">
+                    <property name="text">
+                     <string>Advanced Display</string>
                     </property>
                     <property name="styleSheet">
-                     <string>font-size: 11px; padding: 3px 8px; background-color: #e0e0e0; border: 1px solid #ccc; border-radius: 3px;</string>
-                    </property>
-                    <property name="minimumSize">
-                     <size>
-                      <width>120</width>
-                      <height>0</height>
-                     </size>
-                    </property>
-                   <property name="maximumSize">
-                     <size>
-                      <width>120</width>
-                      <height>30</height>
-                     </size>
+                     <string>font-size: 11px; padding: 3px 8px;</string>
                     </property>
                     </widget>
                   </item>

@@ -371,7 +371,7 @@ class DataDisplayWidget(QWidget):
 
         # Widgets will be assigned externally from .ui file
         self.param_title: QLabel
-        self.view_toggle_button: QPushButton
+        self.view_toggle_button: QCheckBox
         self.param_table: QTableWidget
         self.selector_container: QWidget
 
@@ -511,17 +511,13 @@ class DataDisplayWidget(QWidget):
                 self.param_table.setColumnWidth(col_idx, 200)
 
     def _toggle_display_mode(self):
-        """Toggle between raw and advanced display modes"""
-        # Toggle the display mode
-        if self.table_display_mode == "raw":
+        """Toggle between raw and advanced display modes based on checkbox state"""
+        # Set display mode based on checkbox state
+        if self.view_toggle_button.isChecked():
             self.table_display_mode = "advanced"
-            self.view_toggle_button.setChecked(True)
-            self.view_toggle_button.setText("Advanced Display")
             self.selector_container.setVisible(True)
         else:
             self.table_display_mode = "raw"
-            self.view_toggle_button.setChecked(False)
-            self.view_toggle_button.setText("Raw Display")
             self.selector_container.setVisible(False)
 
         # Emit signal to refresh display (will be connected by parent)
