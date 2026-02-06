@@ -187,14 +187,15 @@ class DataTransformer:
             elif col_lower == 'lvl' and is_results:
                 # For result variables/equations, 'lvl' (level) is the value column
                 value_col = col
-            elif col_lower in ['year_vtg', 'year_act', 'year', 'period', 'year_vintage', 'year_active']:
+            elif col_lower in ['year_vtg', 'year_act', 'year', 'period', 'year_vintage', 'year_rel', 'year_active']:
                 year_cols.append(col)
             elif col_lower in ['time', 'unit', 'units', 'mrg']:
                 # Ignore these columns completely (mrg is marginal for results)
                 ignored_cols.append(col)
-            elif col_lower in ['commodity', 'technology', 'type', 'tec', 'category']:
+            elif col_lower in ['commodity', 'technology', 'type', 'tec', 'category', 'relation']:
                 # These become pivot table column headers
                 # 'category' is used by postprocessed results (e.g., technology types, fuel types)
+                # 'relation' is used by REL variable
                 pivot_cols.append(col)
             elif col_lower in ['region', 'node', 'node_loc', 'node_rel', 'node_dest', 'node_origin',
                               'mode', 'level', 'grade', 'fuel', 'sector', 'subcategory']:

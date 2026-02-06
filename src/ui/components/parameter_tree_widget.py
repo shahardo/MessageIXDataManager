@@ -110,12 +110,11 @@ class ParameterTreeWidget(QTreeWidget):
                     category = self._categorize_parameter(item_name, item)
                 elif section_type == "variables":
                     category = self._categorize_variable(item_name, item)
+                elif section_type == "postprocessing":
+                    # Postprocessed results have their own categorization
+                    category = self._categorize_postprocessed(item_name, item)
                 elif section_type == "results":
-                    # Use postprocessed categorization for postprocessed results
-                    if item.metadata.get('result_type') == 'postprocessed':
-                        category = self._categorize_postprocessed(item_name, item)
-                    else:
-                        category = self._categorize_result(item_name, item)
+                    category = self._categorize_result(item_name, item)
                 else:
                     category = "Other"
 
@@ -140,6 +139,10 @@ class ParameterTreeWidget(QTreeWidget):
                     if section_type in ["parameters", "variables"]:
                         dims_info = f"Dimensions: {', '.join(item.metadata.get('dims', []))}" if item.metadata.get('dims') else "No dimensions"
                         tooltip = f"{section_type.title()[:-1]}: {item_name}\n{dims_info}"
+                    elif section_type == "postprocessing":
+                        dims_info = f"Dimensions: {', '.join(item.metadata.get('dims', []))}" if item.metadata.get('dims') else "No dimensions"
+                        units_info = f"Units: {item.metadata.get('units', 'N/A')}"
+                        tooltip = f"Postprocessed: {item_name}\n{dims_info}\n{units_info}"
                     else:  # results
                         dims_info = f"Dimensions: {', '.join(item.metadata.get('dims', []))}" if item.metadata.get('dims') else "No dimensions"
                         shape_info = f"Shape: {item.metadata.get('shape', ('?', '?'))}"
@@ -493,7 +496,8 @@ class ParameterTreeWidget(QTreeWidget):
             parent = selected_item.parent()
             while parent:
                 if isinstance(parent, SectionTreeItem):
-                    if parent.section_type in ["variables", "results"]:
+                    # Postprocessing, variables, and results sections are all results data
+                    if parent.section_type in ["variables", "results", "postprocessing"]:
                         is_results = True
                     break
                 parent = parent.parent()
