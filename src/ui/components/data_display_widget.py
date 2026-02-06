@@ -349,14 +349,22 @@ class DataDisplayWidget(QWidget):
     cell_value_changed = pyqtSignal(str, object, object, object)  # mode, row_or_year, col_or_tech, new_value
     column_paste_requested = pyqtSignal(str, str, dict)  # column_name, paste_data_format, row_changes_dict
     chart_update_needed = pyqtSignal()  # Signal to update chart without refreshing table
+    options_changed = pyqtSignal()  # Signal emitted when year options are modified
 
     def __init__(self, parent=None, tech_descriptions=None):
         super().__init__(parent)
         self.table_display_mode = "raw"  # "raw" or "advanced"
-        self.hide_empty_columns = False  # Whether to hide empty columns in advanced view
+        self.hide_empty_columns = True  # Whether to hide empty columns in advanced view (default: on)
         self.property_selectors = {}
         self.hide_empty_checkbox = None
+        self.years_limit_checkbox = None
+        self.options_button = None
         self.tech_descriptions = tech_descriptions or {}
+
+        # Year limit settings (stored locally, synced with scenario options)
+        self.years_limit_enabled = True  # Whether to apply year filtering to table (default: on)
+        self.min_year = 2020
+        self.max_year = 2050
 
         # Clipboard operations
         self.clipboard_delimiter = '\t'  # Default delimiter for clipboard operations
@@ -627,10 +635,16 @@ class DataDisplayWidget(QWidget):
             selector.setParent(None)
         self.property_selectors.clear()
 
-        # Remove existing checkbox if it exists
+        # Remove existing checkboxes and options button if they exist
         if self.hide_empty_checkbox:
             self.hide_empty_checkbox.setParent(None)
             self.hide_empty_checkbox = None
+        if self.years_limit_checkbox:
+            self.years_limit_checkbox.setParent(None)
+            self.years_limit_checkbox = None
+        if self.options_button:
+            self.options_button.setParent(None)
+            self.options_button = None
 
         # Get column info to identify which columns should have selectors
         column_info = self._identify_columns(df, is_results)
@@ -661,6 +675,15 @@ class DataDisplayWidget(QWidget):
         self.hide_empty_checkbox.blockSignals(False)
         self.hide_empty_checkbox.stateChanged.connect(self._on_hide_empty_changed)
         selector_layout.addWidget(self.hide_empty_checkbox)
+
+        # Add checkbox for years limit
+        self.years_limit_checkbox = QCheckBox("Years Limit")
+        UIStyler.setup_checkbox(self.years_limit_checkbox)
+        self.years_limit_checkbox.blockSignals(True)
+        self.years_limit_checkbox.setChecked(self.years_limit_enabled)
+        self.years_limit_checkbox.blockSignals(False)
+        self.years_limit_checkbox.stateChanged.connect(self._on_years_limit_changed)
+        selector_layout.addWidget(self.years_limit_checkbox)
 
         for col in filter_columns:
             # Skip the value column - we don't want to filter by values
@@ -698,8 +721,28 @@ class DataDisplayWidget(QWidget):
             selector_layout.addWidget(combo)
             self.property_selectors[col] = combo
 
-        # Add stretch at the end
+        # Add stretch before the options button
         selector_layout.addStretch()
+
+        # Add options button (sprocket) at the far right
+        self.options_button = QPushButton("⚙")
+        self.options_button.setToolTip("Year Range Options")
+        self.options_button.setFixedSize(28, 24)
+        self.options_button.setStyleSheet("""
+            QPushButton {
+                font-size: 14px;
+                padding: 0px;
+                margin: 0px;
+                border: 1px solid #ccc;
+                border-radius: 3px;
+                background: #f5f5f5;
+            }
+            QPushButton:hover {
+                background: #e0e0e0;
+            }
+        """)
+        self.options_button.clicked.connect(self._show_year_options_dialog)
+        selector_layout.addWidget(self.options_button)
 
     def _on_selector_changed(self):
         """Handle selector value changes - refresh the table display with debouncing"""
@@ -735,6 +778,89 @@ class DataDisplayWidget(QWidget):
         self.hide_empty_columns = self.hide_empty_checkbox.isChecked()
         # Emit signal to refresh display (will be connected by parent)
         self.display_mode_changed.emit()
+
+    def _on_years_limit_changed(self):
+        """Handle years limit checkbox state change"""
+        self.years_limit_enabled = self.years_limit_checkbox.isChecked()
+        # Emit signal to refresh display with new year limits
+        self.display_mode_changed.emit()
+        # Also notify that options have changed (for chart updates)
+        self.options_changed.emit()
+
+    def _show_year_options_dialog(self):
+        """Show the year range options dialog"""
+        from PyQt5.QtWidgets import QDialog, QVBoxLayout, QFormLayout, QLineEdit, QDialogButtonBox
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Year Range Options")
+        dialog.setModal(True)
+
+        layout = QVBoxLayout(dialog)
+
+        # Create form layout for options
+        form_layout = QFormLayout()
+        layout.addLayout(form_layout)
+
+        # MinYear field
+        min_year_edit = QLineEdit(str(self.min_year))
+        form_layout.addRow("Min Year:", min_year_edit)
+
+        # MaxYear field
+        max_year_edit = QLineEdit(str(self.max_year))
+        form_layout.addRow("Max Year:", max_year_edit)
+
+        # Add save and cancel buttons
+        button_box = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
+        button_box.accepted.connect(lambda: self._save_year_options(dialog, min_year_edit, max_year_edit))
+        button_box.rejected.connect(dialog.reject)
+        layout.addWidget(button_box)
+
+        dialog.resize(250, 120)
+        dialog.exec_()
+
+    def _save_year_options(self, dialog, min_year_edit, max_year_edit):
+        """Save the year options"""
+        try:
+            min_year = int(min_year_edit.text())
+            max_year = int(max_year_edit.text())
+
+            if min_year >= max_year:
+                QMessageBox.warning(self, "Invalid Input", "Min Year must be less than Max Year.")
+                return
+
+            self.min_year = min_year
+            self.max_year = max_year
+
+            # Emit signal to refresh display if years limit is enabled
+            if self.years_limit_enabled:
+                self.display_mode_changed.emit()
+                self.options_changed.emit()
+
+            dialog.accept()
+        except ValueError:
+            QMessageBox.warning(self, "Invalid Input", "Please enter valid integer values for years.")
+
+    def get_year_options(self) -> dict:
+        """Get current year options as a dictionary"""
+        return {
+            'YearsLimitEnabled': self.years_limit_enabled,
+            'MinYear': self.min_year,
+            'MaxYear': self.max_year
+        }
+
+    def set_year_options(self, options: dict):
+        """Set year options from a dictionary (e.g., from scenario options)"""
+        if 'YearsLimitEnabled' in options:
+            self.years_limit_enabled = options['YearsLimitEnabled']
+        if 'MinYear' in options:
+            self.min_year = options['MinYear']
+        if 'MaxYear' in options:
+            self.max_year = options['MaxYear']
+        # Update checkbox if it exists
+        if self.years_limit_checkbox:
+            self.years_limit_checkbox.blockSignals(True)
+            self.years_limit_checkbox.setChecked(self.years_limit_enabled)
+            self.years_limit_checkbox.blockSignals(False)
 
     def _on_cell_changed(self, row: int, col: int):
         """Handle cell value changes in editable table"""
@@ -821,11 +947,16 @@ class DataDisplayWidget(QWidget):
             if hide_empty is None:
                 hide_empty = self.hide_empty_columns  # Use the checkbox setting for both table and chart
 
+            # Apply year filtering if enabled (before transformation)
+            working_df = df
+            if getattr(self, 'years_limit_enabled', False):
+                working_df = self._apply_year_filtering(df)
+
             # Identify column types (pass is_results to correctly identify value column for variables)
-            column_info = self._identify_columns(df, is_results)
+            column_info = self._identify_columns(working_df, is_results)
 
             # Apply filters
-            filtered_df = self._apply_filters(df, current_filters, column_info)
+            filtered_df = self._apply_filters(working_df, current_filters, column_info)
 
             # Transform data structure
             transformed_df = self._transform_data_structure(filtered_df, column_info, is_results, for_chart)
@@ -844,6 +975,59 @@ class DataDisplayWidget(QWidget):
                                    is_results: bool = False, hide_empty: bool = None) -> pd.DataFrame:
         """Transform data to advanced 2D view format - now uses common method"""
         return self.transform_to_display_format(df, is_results, current_filters, hide_empty, for_chart=False)
+
+    def _apply_year_filtering(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Apply year filtering to DataFrame based on min_year and max_year settings.
+        Filters on ALL year columns found (year, year_act, year_vtg) to ensure
+        the filtered data is consistent regardless of which column the pivot uses.
+
+        Args:
+            df: DataFrame to filter
+
+        Returns:
+            Filtered DataFrame
+        """
+        if df.empty:
+            return df
+
+        result_df = df.copy()
+        filtered_any = False
+
+        # Filter on ALL year columns found in the DataFrame
+        year_col_names = ['year', 'year_act', 'year_vtg']
+        for year_col in year_col_names:
+            if year_col in result_df.columns:
+                try:
+                    year_values = pd.to_numeric(result_df[year_col], errors='coerce')
+                    mask = (year_values >= self.min_year) & (year_values <= self.max_year)
+                    result_df = result_df[mask]
+                    filtered_any = True
+                except (TypeError, ValueError):
+                    pass  # Skip if conversion fails
+
+        if filtered_any:
+            return result_df
+
+        # If no column filtering happened, check for year in index
+        if isinstance(df.index, pd.MultiIndex):
+            for year_level in year_col_names:
+                if year_level in df.index.names:
+                    try:
+                        year_values = pd.to_numeric(df.index.get_level_values(year_level), errors='coerce')
+                        mask = (year_values >= self.min_year) & (year_values <= self.max_year)
+                        return df[mask].copy()
+                    except (TypeError, ValueError):
+                        pass
+        elif hasattr(df.index, 'name') and df.index.name in year_col_names:
+            try:
+                year_values = pd.to_numeric(pd.Series(df.index), errors='coerce')
+                mask = (year_values >= self.min_year) & (year_values <= self.max_year)
+                return df[mask.values].copy()
+            except (TypeError, ValueError):
+                pass
+
+        return result_df
 
     def _identify_columns(self, df: pd.DataFrame, is_results: bool = False) -> Dict[str, Union[List[str], Optional[str]]]:
         """
@@ -882,8 +1066,6 @@ class DataDisplayWidget(QWidget):
         # If no value column found for results, try 'lvl' as fallback
         if value_col is None and is_results and 'lvl' in df.columns:
             value_col = 'lvl'
-
-        print(f"DEBUG: _identify_columns(is_results={is_results}): year_cols={year_cols}, pivot_cols={pivot_cols}, value_col={value_col}, filter_cols={filter_cols}")
 
         return {
             'year_cols': year_cols,
@@ -941,8 +1123,6 @@ class DataDisplayWidget(QWidget):
             year_cols = column_info.get('year_cols', [])
             pivot_cols = column_info.get('pivot_cols', [])
             value_col = column_info.get('value_col')
-
-            print(f"DEBUG: _perform_pivot called with year_cols={year_cols}, pivot_cols={pivot_cols}, value_col={value_col}")
 
             if not (year_cols and pivot_cols and value_col):
                 print("DEBUG: Missing required columns for pivot, returning original df")

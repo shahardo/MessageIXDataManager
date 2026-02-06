@@ -62,6 +62,8 @@ class DataTransformer:
     def apply_year_filtering(df: pd.DataFrame, scenario_options: Dict[str, Any]) -> pd.DataFrame:
         """
         Apply year filtering to DataFrame based on scenario options.
+        Filters on ALL year columns found (year, year_act, year_vtg) to ensure
+        the filtered data is consistent regardless of which column the pivot uses.
 
         Args:
             df: DataFrame to filter
@@ -76,50 +78,43 @@ class DataTransformer:
         min_year = scenario_options.get('MinYear', 2020)
         max_year = scenario_options.get('MaxYear', 2050)
 
-        # Check for year column (could be 'year' or 'year_act')
-        year_col = None
-        for y in ['year', 'year_act']:
-            if y in df.columns:
-                year_col = y
-                break
+        result_df = df.copy()
+        filtered_any = False
 
-        if year_col:
-            # Filter by year column - ensure numeric comparison
-            try:
-                year_values = pd.to_numeric(df[year_col], errors='coerce')
-                mask = (year_values >= min_year) & (year_values <= max_year)
-                df = df[mask]
-            except (TypeError, ValueError):
-                # If conversion fails, skip filtering
-                pass
-        elif isinstance(df.index, pd.MultiIndex):
-            # Check for year in MultiIndex (could be 'year' or 'year_act')
-            year_level = None
-            for y in ['year', 'year_act']:
-                if y in df.index.names:
-                    year_level = y
-                    break
-
-            if year_level:
-                # Filter by year in MultiIndex - ensure numeric comparison
+        # Filter on ALL year columns found in the DataFrame
+        year_col_names = ['year', 'year_act', 'year_vtg']
+        for year_col in year_col_names:
+            if year_col in result_df.columns:
                 try:
-                    year_values = pd.to_numeric(df.index.get_level_values(year_level), errors='coerce')
+                    year_values = pd.to_numeric(result_df[year_col], errors='coerce')
                     mask = (year_values >= min_year) & (year_values <= max_year)
-                    df = df[mask]
+                    result_df = result_df[mask]
+                    filtered_any = True
                 except (TypeError, ValueError):
-                    # If conversion fails, skip filtering
-                    pass
-        elif hasattr(df.index, 'name') and df.index.name in ['year', 'year_act']:
-            # Filter by year index - ensure numeric comparison
+                    pass  # Skip if conversion fails
+
+        if filtered_any:
+            return result_df
+
+        # If no column filtering happened, check for year in index
+        if isinstance(df.index, pd.MultiIndex):
+            for year_level in year_col_names:
+                if year_level in df.index.names:
+                    try:
+                        year_values = pd.to_numeric(df.index.get_level_values(year_level), errors='coerce')
+                        mask = (year_values >= min_year) & (year_values <= max_year)
+                        return df[mask].copy()
+                    except (TypeError, ValueError):
+                        pass
+        elif hasattr(df.index, 'name') and df.index.name in year_col_names:
             try:
-                year_values = pd.to_numeric(df.index, errors='coerce')
+                year_values = pd.to_numeric(pd.Series(df.index), errors='coerce')
                 mask = (year_values >= min_year) & (year_values <= max_year)
-                df = df[mask]
+                return df[mask.values].copy()
             except (TypeError, ValueError):
-                # If conversion fails, skip filtering
                 pass
 
-        return df
+        return result_df
 
     @staticmethod
     def transform_for_display(df: pd.DataFrame, is_results: bool = False,

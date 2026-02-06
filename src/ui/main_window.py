@@ -305,6 +305,7 @@ class MainWindow(QMainWindow):
         self.data_display.cell_value_changed.connect(self._on_cell_value_changed)
         self.data_display.column_paste_requested.connect(self._on_column_paste_requested)
         self.data_display.chart_update_needed.connect(self._on_chart_update_needed)
+        self.data_display.options_changed.connect(self._on_options_changed)
 
         # Chart widget signals
         self.chart_widget.chart_type_changed.connect(self._on_chart_type_changed)
@@ -757,11 +758,12 @@ class MainWindow(QMainWindow):
                         self.data_display.display_parameter_data(parameter, is_results)
 
                         # Update chart with transformed data for display
-                        scenario = self._get_current_scenario(is_results)
+                        # Use year options from data_display widget
                         filters = self.data_display._get_current_filters() if hasattr(self.data_display, '_get_current_filters') else {}
+                        year_options = self.data_display.get_year_options()
                         chart_df = DataTransformer.prepare_chart_data(
                             parameter, is_results=is_results,
-                            scenario_options=scenario.options if scenario else None,
+                            scenario_options=year_options,
                             filters=filters, hide_empty=self.data_display.hide_empty_columns
                         )
 
@@ -835,9 +837,10 @@ class MainWindow(QMainWindow):
                 # Use wait cursor for large datasets
                 row_count = len(parameter.df) if parameter.df is not None else 0
                 with WaitCursorContext(row_count):
+                    year_options = self.data_display.get_year_options()
                     chart_df = DataTransformer.prepare_chart_data(
                         parameter, is_results=self.current_displayed_is_results,
-                        scenario_options=scenario.options if scenario else None,
+                        scenario_options=year_options,
                         filters=filters, hide_empty=self.data_display.hide_empty_columns
                     )
                     if chart_df is not None:
@@ -891,11 +894,11 @@ class MainWindow(QMainWindow):
                 scenario.mark_modified(param_name)
 
                 # Update chart immediately with the new data
-                scenario = self._get_current_scenario(self.current_displayed_is_results)
                 filters = self.data_display._get_current_filters() if hasattr(self.data_display, '_get_current_filters') else {}
+                year_options = self.data_display.get_year_options()
                 chart_df = DataTransformer.prepare_chart_data(
                     parameter, is_results=self.current_displayed_is_results,
-                    scenario_options=scenario.options if scenario else None,
+                    scenario_options=year_options,
                     filters=filters, hide_empty=self.data_display.hide_empty_columns
                 )
                 if chart_df is not None:
@@ -941,11 +944,11 @@ class MainWindow(QMainWindow):
             row_count = len(parameter.df) if parameter.df is not None else 0
             with WaitCursorContext(row_count):
                 # Update chart with current data (which includes our changes)
-                scenario = self._get_current_scenario(self.current_displayed_is_results)
                 filters = self.data_display._get_current_filters() if hasattr(self.data_display, '_get_current_filters') else {}
+                year_options = self.data_display.get_year_options()
                 chart_df = DataTransformer.prepare_chart_data(
                     parameter, is_results=self.current_displayed_is_results,
-                    scenario_options=scenario.options if scenario else None,
+                    scenario_options=year_options,
                     filters=filters, hide_empty=self.data_display.hide_empty_columns
                 )
                 if chart_df is not None:

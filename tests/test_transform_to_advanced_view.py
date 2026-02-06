@@ -25,6 +25,11 @@ def sample_widget():
     widget.hide_empty_columns = False
     widget.property_selectors = {}
     widget.hide_empty_checkbox = None
+    widget.years_limit_checkbox = None
+    widget.options_button = None
+    widget.years_limit_enabled = False
+    widget.min_year = 2020
+    widget.max_year = 2050
 
     # Bind methods to the instance
     widget._identify_columns = DataDisplayWidget._identify_columns.__get__(widget, DataDisplayWidget)
@@ -35,6 +40,7 @@ def sample_widget():
     widget._transform_to_advanced_view = DataDisplayWidget._transform_to_advanced_view.__get__(widget, DataDisplayWidget)
     widget.transform_to_display_format = DataDisplayWidget.transform_to_display_format.__get__(widget, DataDisplayWidget)
     widget._configure_table = DataDisplayWidget._configure_table.__get__(widget, DataDisplayWidget)
+    widget._apply_year_filtering = DataDisplayWidget._apply_year_filtering.__get__(widget, DataDisplayWidget)
 
     # Mock table widget with required methods
     mock_table = type('MockTable', (), {
