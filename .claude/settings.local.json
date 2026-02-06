@@ -4,7 +4,12 @@
       "Bash(dir:*)",
       "Bash(tree:*)",
       "Bash(find:*)",
-      "Bash(grep:*)"
+      "Bash(grep:*)",
+      "Bash(envscriptsactivate)",
+      "Bash(python -m pytest:*)",
+      "Bash(./env/Scripts/python.exe -m pytest tests/ *)",
+      "Bash(timeout 150 ./env/Scripts/python.exe -m pytest:*)",
+      "Bash(echo:*)"
     ]
   }
 }
