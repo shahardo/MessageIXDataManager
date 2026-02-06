@@ -230,7 +230,6 @@ class DataFileManager:
             df = pd.read_csv(csv_file)
 
         if df.empty:
-            print(f"DEBUG: Skipping empty file: {csv_name}")
             return None
 
         # Categorize by prefix
@@ -243,7 +242,6 @@ class DataFileManager:
         elif name_without_ext.lower().startswith(self.EQU_PREFIX):
             return self._process_equation_file(name_without_ext, df, electricity_technologies)
         else:
-            print(f"DEBUG: Skipping file with unknown prefix: {csv_name}")
             return None
 
     def _process_set_file(
@@ -261,7 +259,6 @@ class DataFileManager:
             # Multi-column set - store first column
             set_data = df.iloc[:, 0]
 
-        print(f"DEBUG: Loaded set '{set_name}' with {len(df)} values")
         return ('set', set_name, set_data)
 
     def _process_parameter_file(
@@ -282,7 +279,6 @@ class DataFileManager:
         }
 
         param = Parameter(name=param_name, df=df, metadata=metadata)
-        print(f"DEBUG: Loaded parameter '{param_name}' with {len(df)} rows")
         return ('parameter', param_name, param)
 
     def _process_variable_file(
@@ -308,7 +304,6 @@ class DataFileManager:
         }
 
         param = Parameter(name=var_name, df=df, metadata=metadata)
-        print(f"DEBUG: Loaded variable '{var_name}' with {len(df)} rows")
         return ('variable', var_name, param)
 
     def _process_equation_file(
@@ -334,7 +329,6 @@ class DataFileManager:
         }
 
         param = Parameter(name=equ_name, df=df, metadata=metadata)
-        print(f"DEBUG: Loaded equation '{equ_name}' with {len(df)} rows")
         return ('equation', equ_name, param)
 
     def _filter_to_electricity_technologies(
@@ -349,8 +343,6 @@ class DataFileManager:
             rows_before = len(df)
             df = df[df[tec_col].isin(electricity_technologies)]
             rows_filtered = rows_before - len(df)
-            if rows_filtered > 0:
-                print(f"DEBUG: Filtered to electricity technologies in {name}: {rows_before} -> {len(df)} rows")
         return df
 
     def _filter_internal_solver_rows(

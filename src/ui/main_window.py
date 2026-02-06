@@ -481,14 +481,10 @@ class MainWindow(QMainWindow):
         self.current_view = "multi"
         self.param_tree.current_view = "multi"  # Sync tree widget's view mode
 
-        print("DEBUG: Switching to multi-section view - clearing and updating tree")
-
         # Clear the existing tree
         self.param_tree.clear()
         self.param_tree.current_scenario = None
         self.param_tree.sections = {}
-
-        print("DEBUG: Tree cleared, now updating tree")
 
         # Create a combined scenario data object for the tree
         from core.data_models import ScenarioData
@@ -514,10 +510,8 @@ class MainWindow(QMainWindow):
             # Load data from both input and results sources into combined data
             if scenario.input_file:
                 input_scenario = self.input_manager.get_scenario_by_file_path(scenario.input_file)
-                print(f"DEBUG: Input scenario from manager: {input_scenario is not None}")
                 if input_scenario:
                     param_names = input_scenario.get_parameter_names()
-                    print(f"DEBUG: Input scenario has {len(param_names)} parameters")
                     combined_data.options = input_scenario.options
                     # Copy input parameters to combined data
                     for param_name in param_names:
@@ -527,10 +521,8 @@ class MainWindow(QMainWindow):
 
             if scenario.results_file:
                 results_scenario = self.results_analyzer.get_results_by_file_path(scenario.results_file)
-                print(f"DEBUG: Results scenario from manager: {results_scenario is not None}")
                 if results_scenario:
                     param_names = results_scenario.get_parameter_names()
-                    print(f"DEBUG: Results scenario has {len(param_names)} parameters")
                     # Copy results to combined data
                     for param_name in param_names:
                         param = results_scenario.get_parameter(param_name)
@@ -543,13 +535,10 @@ class MainWindow(QMainWindow):
 
                 data_scenario = self.loaded_data_files.get(scenario.message_scenario_file)
                 if data_scenario:
-                    print(f"DEBUG: Data file has {len(data_scenario.get_parameter_names())} items")
                     for param_name in data_scenario.get_parameter_names():
                         param = data_scenario.get_parameter(param_name)
                         if param:
                             combined_data.add_parameter(param)
-
-            print(f"DEBUG: Combined data has {len(combined_data.get_parameter_names())} parameters")
 
             # Organize data into sections
             sections_data = {}
@@ -562,7 +551,6 @@ class MainWindow(QMainWindow):
                     parameters.append((param_name, param))
             if parameters:
                 sections_data["parameters"] = parameters
-                print(f"DEBUG: Parameters section has {len(parameters)} items")
 
             # Variables and Results sections (from results data)
             variables = []
@@ -578,15 +566,11 @@ class MainWindow(QMainWindow):
 
             if variables:
                 sections_data["variables"] = variables
-                print(f"DEBUG: Variables section has {len(variables)} items")
             if results:
                 sections_data["results"] = results
-                print(f"DEBUG: Results section has {len(results)} items")
 
-            print(f"DEBUG: Final sections_data: {list(sections_data.keys())}")
 
             # Update the parameter tree with sections
-            print("DEBUG: Calling update_tree_with_sections")
             self.param_tree.update_tree_with_sections(combined_data, sections_data)
             self.param_tree.expandAll()
             self.param_tree.updateGeometry()
@@ -595,7 +579,6 @@ class MainWindow(QMainWindow):
 
             # Store combined data for retrieval
             self.current_combined_data = combined_data
-            print("DEBUG: Finished updating tree")
 
     def _load_data_file(self, file_path):
         """
@@ -952,13 +935,9 @@ class MainWindow(QMainWindow):
                     filters=filters, hide_empty=self.data_display.hide_empty_columns
                 )
                 if chart_df is not None:
-                    print(f"DEBUG: Chart data has {len(chart_df)} rows, {len(chart_df.columns)} columns")
                     self.chart_widget.update_chart(chart_df, parameter.name, self.current_displayed_is_results)
-                else:
-                    print("DEBUG: Chart data is None")
 
         except Exception as e:
-            print(f"ERROR in _on_chart_update_needed: {e}")
             import traceback
             traceback.print_exc()
 
@@ -979,10 +958,7 @@ class MainWindow(QMainWindow):
         # This would be called when display mode or chart type changes
         # Use the stored current parameter instead of tree selection (which may be cleared)
         if self.current_displayed_parameter:
-            print(f"DEBUG: Refreshing display for parameter: {self.current_displayed_parameter} (is_results={self.current_displayed_is_results})")
             self._on_parameter_selected(self.current_displayed_parameter, self.current_displayed_is_results)
-        else:
-            print("DEBUG: No current displayed parameter to refresh")
 
     def _auto_select_parameter_if_exists(self, parameter_name: str, is_results: bool):
         """Auto-select a parameter in the tree if it exists in the current scenario"""
