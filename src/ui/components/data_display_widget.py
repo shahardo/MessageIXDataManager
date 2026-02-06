@@ -1055,11 +1055,12 @@ class DataDisplayWidget(QWidget):
             elif col_lower in ['time', 'unit', 'units', 'mrg']:
                 # Ignore these columns completely (mrg = marginal for results)
                 ignored_cols.append(col)
-            elif col_lower in ['commodity', 'technology', 'type', 'tec']:
+            elif col_lower in ['commodity', 'technology', 'type', 'tec', 'category']:
                 # These become pivot table column headers
+                # 'category' is used by postprocessed results (e.g., technology types, fuel types)
                 pivot_cols.append(col)
             elif col_lower in ['region', 'node', 'node_loc', 'node_rel', 'node_dest', 'node_origin',
-                              'mode', 'level', 'grade', 'fuel', 'sector', 'category', 'subcategory']:
+                              'mode', 'level', 'grade', 'fuel', 'sector', 'subcategory']:
                 # These are used for filtering
                 filter_cols.append(col)
 

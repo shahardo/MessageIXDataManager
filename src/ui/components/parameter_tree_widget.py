@@ -111,7 +111,11 @@ class ParameterTreeWidget(QTreeWidget):
                 elif section_type == "variables":
                     category = self._categorize_variable(item_name, item)
                 elif section_type == "results":
-                    category = self._categorize_result(item_name, item)
+                    # Use postprocessed categorization for postprocessed results
+                    if item.metadata.get('result_type') == 'postprocessed':
+                        category = self._categorize_postprocessed(item_name, item)
+                    else:
+                        category = self._categorize_result(item_name, item)
                 else:
                     category = "Other"
 
@@ -227,33 +231,76 @@ class ParameterTreeWidget(QTreeWidget):
         dashboard_item.setText(0, "Dashboard")
         dashboard_item.setToolTip(0, "Display dashboard with key metrics and charts")
 
-        # Group results by type
-        categories = {}
+        # Separate raw results from postprocessed results
+        raw_categories = {}
+        postprocessed_categories = {}
 
         for result_name in scenario.get_parameter_names():
             result = scenario.get_parameter(result_name)
             if not result:
                 continue
 
-            # Categorize by result type
             result_type = result.metadata.get('result_type', 'result')
-            if result_type == 'variable':
-                category = "Variables"
-            elif result_type == 'equation':
-                category = "Equations"
+
+            if result_type == 'postprocessed':
+                # Categorize postprocessed results by content type
+                category = self._categorize_postprocessed(result_name, result)
+                if category not in postprocessed_categories:
+                    postprocessed_categories[category] = []
+                postprocessed_categories[category].append((result_name, result))
             else:
-                category = "Results"
+                # Categorize raw results by variable/equation type
+                if result_type == 'variable':
+                    category = "Variables"
+                elif result_type == 'equation':
+                    category = "Equations"
+                else:
+                    category = "Results"
 
-            if category not in categories:
-                categories[category] = []
-            categories[category].append((result_name, result))
+                if category not in raw_categories:
+                    raw_categories[category] = []
+                raw_categories[category].append((result_name, result))
 
-        # Sort categories
-        sorted_categories = sorted(categories.keys())
+        # Create Postprocessed Results section first (if any)
+        if postprocessed_categories:
+            total_postprocessed = sum(len(items) for items in postprocessed_categories.values())
+            postprocessed_section = QTreeWidgetItem(self)
+            postprocessed_section.setText(0, f"Postprocessed Results ({total_postprocessed})")
+            postprocessed_section.setToolTip(0, "Derived metrics calculated from raw results")
+            # Style the section header
+            postprocessed_section.setBackground(0, QColor(230, 245, 255))  # Light blue
+            font = postprocessed_section.font(0)
+            font.setBold(True)
+            postprocessed_section.setFont(0, font)
 
-        # Create tree items
+            # Add subcategories for postprocessed results
+            for category in sorted(postprocessed_categories.keys()):
+                results_list = postprocessed_categories[category]
+                category_item = QTreeWidgetItem(postprocessed_section)
+                category_item.setText(0, f"{category} ({len(results_list)})")
+
+                # Sort results within category
+                results_list.sort(key=lambda x: x[0])
+
+                for result_name, result in results_list:
+                    result_item = QTreeWidgetItem(category_item)
+                    result_item.setText(0, result_name)
+
+                    # Add metadata to tooltip
+                    dims_info = f"Dimensions: {', '.join(result.metadata.get('dims', []))}" if result.metadata.get('dims') else "No dimensions"
+                    units_info = f"Units: {result.metadata.get('units', 'N/A')}"
+                    tooltip = f"Postprocessed: {result_name}\n{dims_info}\n{units_info}"
+                    result_item.setToolTip(0, tooltip)
+
+                category_item.setExpanded(True)
+
+            postprocessed_section.setExpanded(True)
+
+        # Create raw results sections
+        sorted_categories = sorted(raw_categories.keys())
+
         for category in sorted_categories:
-            results_list = categories[category]
+            results_list = raw_categories[category]
             category_item = QTreeWidgetItem(self)
             category_item.setText(0, f"{category} ({len(results_list)} results)")
 
@@ -369,6 +416,42 @@ class ParameterTreeWidget(QTreeWidget):
         # Emission results
         elif any(keyword in name_lower for keyword in ['emission', 'emiss']):
             return "Emissions"
+
+        # Default category
+        else:
+            return "Other"
+
+    def _categorize_postprocessed(self, result_name: str, result) -> str:
+        """Categorize a postprocessed result based on its name"""
+        name_lower = result_name.lower()
+
+        # Electricity/Power sector
+        if any(keyword in name_lower for keyword in ['electricity', 'power plant', 'elec']):
+            return "Electricity"
+
+        # Prices
+        elif 'price' in name_lower:
+            return "Prices"
+
+        # Emissions
+        elif any(keyword in name_lower for keyword in ['emission', 'ghg', 'co2']):
+            return "Emissions"
+
+        # Energy balances (primary, final, useful)
+        elif any(keyword in name_lower for keyword in ['primary energy', 'final energy', 'useful energy']):
+            return "Energy Balances"
+
+        # Trade (imports/exports)
+        elif any(keyword in name_lower for keyword in ['import', 'export', 'trade']):
+            return "Trade"
+
+        # Sectoral energy use
+        elif any(keyword in name_lower for keyword in ['transport', 'industry', 'buildings', 'feedstock']):
+            return "Sectoral Use"
+
+        # Fuel supply and utilization
+        elif any(keyword in name_lower for keyword in ['gas', 'coal', 'oil', 'biomass']):
+            return "Fuels"
 
         # Default category
         else:

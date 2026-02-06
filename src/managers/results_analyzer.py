@@ -11,6 +11,7 @@ from typing import Dict, List, Optional, Any, Callable
 from core.data_models import ScenarioData, Parameter
 from managers.base_data_manager import BaseDataManager
 from utils.parsing_strategies import ExcelParser, ResultParsingStrategy
+from managers.results_postprocessor import add_postprocessed_results
 
 
 class ResultsAnalyzer(BaseDataManager):
@@ -27,7 +28,7 @@ class ResultsAnalyzer(BaseDataManager):
         summary_stats: Dictionary containing summary statistics of loaded results
     """
 
-    def __init__(self, main_window=None) -> None:
+    def __init__(self, main_window=None, auto_postprocess: bool = True) -> None:
         """
         Initialize the ResultsAnalyzer.
 
@@ -35,10 +36,12 @@ class ResultsAnalyzer(BaseDataManager):
 
         Args:
             main_window: Reference to the main application window for accessing input scenarios
+            auto_postprocess: If True, automatically run postprocessing when results are loaded
         """
         super().__init__()
         self.main_window = main_window
         self.summary_stats: Dict[str, Any] = {}
+        self.auto_postprocess = auto_postprocess
 
     @property
     def results(self):
@@ -85,6 +88,10 @@ class ResultsAnalyzer(BaseDataManager):
         combined_results = self.get_current_scenario()
         if combined_results:
             self._calculate_summary_stats(combined_results)
+
+            # Automatically run postprocessing if enabled
+            if self.auto_postprocess:
+                self.run_postprocessing(combined_results, progress_callback)
 
         return scenario
 
@@ -142,7 +149,8 @@ class ResultsAnalyzer(BaseDataManager):
             'total_variables': 0,
             'total_equations': 0,
             'total_data_points': 0,
-            'result_sheets': []
+            'result_sheets': [],
+            'postprocessed_count': 0
         }
 
         for param in results.parameters.values():
@@ -150,10 +158,66 @@ class ResultsAnalyzer(BaseDataManager):
 
             if param.metadata.get('result_type') == 'variable':
                 self.summary_stats['total_variables'] += 1
+            elif param.metadata.get('result_type') == 'postprocessed':
+                self.summary_stats['postprocessed_count'] += 1
             else:
                 self.summary_stats['total_equations'] += 1
 
             self.summary_stats['result_sheets'].append(param.name)
+
+    def run_postprocessing(
+        self,
+        scenario: Optional[ScenarioData] = None,
+        progress_callback: Optional[Callable[[int, str], None]] = None,
+        nodeloc: Optional[str] = None,
+        plot_years: Optional[List[int]] = None
+    ) -> int:
+        """
+        Run postprocessing calculations on results and add derived parameters.
+
+        Calculates aggregated metrics like:
+        - Electricity generation by technology
+        - Primary/final energy consumption
+        - Sectoral energy use
+        - Emissions
+        - Commodity prices
+
+        Args:
+            scenario: ScenarioData to process (defaults to current combined scenario)
+            progress_callback: Optional progress callback function
+            nodeloc: Optional node location filter
+            plot_years: Optional list of years to include (default: 2020-2050 by 5)
+
+        Returns:
+            Number of postprocessed parameters added
+        """
+        if scenario is None:
+            scenario = self.get_current_scenario()
+
+        if scenario is None:
+            print("Warning: No scenario data available for postprocessing")
+            return 0
+
+        if progress_callback:
+            progress_callback(90, "Running postprocessing calculations...")
+
+        try:
+            count = add_postprocessed_results(scenario, nodeloc, plot_years)
+            print(f"Postprocessing added {count} derived parameters")
+
+            # Update summary stats
+            self.summary_stats['postprocessed_count'] = count
+
+            if progress_callback:
+                progress_callback(100, f"Postprocessing complete: {count} parameters added")
+
+            return count
+
+        except Exception as e:
+            print(f"Warning: Postprocessing failed: {e}")
+            if progress_callback:
+                progress_callback(100, f"Postprocessing failed: {e}")
+            return 0
 
     def get_summary_stats(self) -> Dict[str, Any]:
         """

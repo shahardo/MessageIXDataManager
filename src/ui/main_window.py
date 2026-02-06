@@ -540,6 +540,19 @@ class MainWindow(QMainWindow):
                         if param:
                             combined_data.add_parameter(param)
 
+            # Run postprocessing on combined data (needs both input params and result vars)
+            # This calculates derived metrics like electricity generation, emissions, etc.
+            # Check if postprocessing was already done (look for any postprocessed parameters)
+            has_postprocessed = any(
+                p.metadata.get('result_type') == 'postprocessed'
+                for p in combined_data.parameters.values()
+            )
+            if not has_postprocessed:
+                from managers.results_postprocessor import add_postprocessed_results
+                postprocessed_count = add_postprocessed_results(combined_data)
+                if postprocessed_count > 0:
+                    print(f"Added {postprocessed_count} postprocessed results to combined data")
+
             # Organize data into sections
             sections_data = {}
 
@@ -561,7 +574,7 @@ class MainWindow(QMainWindow):
                     result_type = param.metadata.get('result_type', '')
                     if result_type == 'variable':
                         variables.append((param_name, param))
-                    elif result_type and result_type in ['equation', 'result']:
+                    elif result_type and result_type in ['equation', 'result', 'postprocessed']:
                         results.append((param_name, param))
 
             if variables:

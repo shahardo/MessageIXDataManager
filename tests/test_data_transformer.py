@@ -247,6 +247,49 @@ class TestDataTransformer:
         assert 'col2' not in result.columns  # Should be hidden
         assert 'col3' not in result.columns  # Should be hidden
 
+    def test_identify_columns_postprocessed_data(self):
+        """Test column identification for postprocessed results with 'category' column"""
+        # Postprocessed data has year, category, value columns
+        df = pd.DataFrame({
+            'year': [2020, 2020, 2030, 2030],
+            'category': ['coal', 'solar', 'coal', 'solar'],
+            'value': [100, 50, 80, 120]
+        })
+
+        result = DataTransformer._identify_columns(df, is_results=True)
+
+        year_cols = result['year_cols']
+        pivot_cols = result['pivot_cols']
+        value_col = result['value_col']
+
+        # 'category' should be in pivot_cols so it becomes the column headers
+        assert 'year' in year_cols
+        assert 'category' in pivot_cols
+        assert value_col == 'value'
+
+    def test_pivot_postprocessed_data(self):
+        """Test pivoting postprocessed data with category column"""
+        df = pd.DataFrame({
+            'year': [2020, 2020, 2030, 2030],
+            'category': ['coal', 'solar', 'coal', 'solar'],
+            'value': [100, 50, 80, 120]
+        })
+
+        column_info = {
+            'year_cols': ['year'],
+            'pivot_cols': ['category'],
+            'value_col': 'value'
+        }
+
+        result = DataTransformer._perform_pivot(df, column_info)
+
+        # Should have year as index and categories as columns
+        assert result.index.name == 'year'
+        assert 'coal' in result.columns
+        assert 'solar' in result.columns
+        assert result.loc[2020, 'coal'] == 100
+        assert result.loc[2030, 'solar'] == 120
+
     def test_transform_error_handling(self):
         """Test error handling in transform methods"""
         # Test with invalid data that might cause errors
