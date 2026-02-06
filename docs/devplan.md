@@ -181,6 +181,17 @@ We will implement the ability to add and remove parameters in the active scenari
 *   Undo/Redo correctly reverses these operations.
 *   Changes are not written to disk until "Save" is clicked.
 
+## Future Development - TODO List
+
+- When openning the app, or after openning input file, select the 'parameters' line in the parameters tree and show the input dashboard
+- For postprocessing data, show the same dashboard as for output file.
+- Remove output file code, use only postprocessin.
+- Use consistend color scheme for charts.
+- Add costs chart, stacked bars by fuel source
+- Allow cleaning up input data - remove redundant years, remove un-needed parameters.
+- Allow to run the model directly from the app.
+- Unify the pivot code between the data tables and the charts
+
 ## Valid MessageIX Parameters
 
 New parameters should be taken from the canonical MESSAGEix scheme. Below is the structured list of valid parameters, grouped logically.
