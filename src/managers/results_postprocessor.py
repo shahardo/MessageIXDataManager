@@ -61,6 +61,7 @@ class ScenarioDataWrapper:
         if filters:
             for col, values in filters.items():
                 if col in df.columns:
+                    before_count = len(df)
                     if isinstance(values, (list, tuple)):
                         df = df[df[col].isin(values)]
                     else:
@@ -155,6 +156,14 @@ class ResultsPostprocessor:
             print("Warning: Scenario has no solution - cannot run postprocessing")
             return {}
 
+        # DEBUG: Check what's in ACT at the start
+        act_param = self.scenario.get_parameter("ACT")
+        if act_param is not None:
+            act_df = act_param.df
+            all_tecs = act_df['technology'].unique().tolist() if 'technology' in act_df.columns else []
+            # Check for transport technologies specifically
+            trp_tecs = [t for t in all_tecs if '_trp' in str(t)]
+
         # Get first/last model years
         try:
             yr = int(self.msg.set('cat_year', {'type_year': 'firstmodelyear'})['year'].iloc[0])
@@ -196,15 +205,37 @@ class ResultsPostprocessor:
         return 'World'  # Default fallback
 
     def _group(self, df: pd.DataFrame, groupby: List[str],
-               result: str, limit: float, lyr: Any) -> pd.DataFrame:
-        """Group dataframe and pivot."""
+               result: str, limit: float, lyr: Any,
+               keep_long: bool = False) -> pd.DataFrame:
+        """Group dataframe and optionally pivot.
+
+        Args:
+            df: DataFrame to group
+            groupby: List of columns to group by
+            result: Column name containing values to sum
+            limit: Unused (kept for compatibility)
+            lyr: Unused (kept for compatibility)
+            keep_long: If True, return long format with all groupby columns.
+                      If False (default), pivot to wide format.
+        """
         if df.empty:
             return pd.DataFrame()
-        df = df.groupby(groupby, as_index=False).sum(numeric_only=True)
-        df = pd.pivot_table(
-            df, index=groupby[0], columns=groupby[1], values=result, fill_value=0
-        )
-        return df
+
+        # Only keep groupby columns + result column to avoid summing unwanted columns
+        # (e.g., the original 'value' column from input parameters)
+        cols_to_keep = groupby + [result]
+        df = df[cols_to_keep].groupby(groupby, as_index=False).sum()
+
+        if keep_long:
+            # Return long format - rename result column to 'value'
+            df = df.rename(columns={result: 'value'})
+            return df
+        else:
+            # Pivot to wide format (original behavior)
+            df = pd.pivot_table(
+                df, index=groupby[0], columns=groupby[1], values=result, fill_value=0
+            )
+            return df
 
     def _multiply_df(self, df1: pd.DataFrame, column1: str,
                      df2: pd.DataFrame, column2: str) -> pd.DataFrame:
@@ -261,9 +292,16 @@ class ResultsPostprocessor:
 
     def _model_output(self, tecs: List[str], nodeloc: str,
                       parname: str, coms: Optional[Any] = None):
-        """Get model output by combining activity with parameters."""
-        df1 = self.msg.var("ACT", {"technology": tecs, "node_loc": nodeloc})
-        df2 = self.msg.par(parname, {"technology": tecs, "node_loc": nodeloc})
+        """Get model output by combining activity with parameters.
+
+        Note: nodeloc parameter is kept for API compatibility but NOT used for filtering.
+        Data from all nodes is aggregated together in the results.
+        """
+        # Get ACT filtered by technology only (not by node - aggregate all nodes)
+        df1 = self.msg.var("ACT", {"technology": tecs})
+
+        # Get input/output parameter filtered by technology only
+        df2 = self.msg.par(parname, {"technology": tecs})
 
         if df1.empty or df2.empty:
             return pd.DataFrame(), pd.DataFrame()
@@ -628,15 +666,29 @@ class ResultsPostprocessor:
         order = self._get_commodity_order()
 
         # Transport
+        # Step 1: Find technologies that output "transport" commodity
         output_par = self.msg.par("output", {"commodity": ["transport"]})
         if not output_par.empty:
+
+            # Step 2: Get unique technologies (e.g., loil_trp, elec_trp, etc.)
             tecs = list(set(output_par.technology))
+
+            # Step 3: Get ACT for these technologies and multiply by input coefficients
             df, df2 = self._model_output(tecs, nodeloc, "input")
+
             if not df.empty:
-                df = self._group(df, ["year_act", "commodity"], "product", 0.0, yr)
-                df_hist = self._add_history(tecs, nodeloc, df2, "commodity")
-                df = self._com_order((df_hist + df).fillna(0), order)
-                self.results["Energy use Transport (PJ)"] = df * self.UNIT_GWA_TO_PJ
+                # Step 4: Group by node, year and commodity to get energy use by fuel type
+                # Keep long format to preserve node_loc for filtering in UI
+                df = self._group(df, ["node_loc", "year_act", "commodity"], "product", 0.0, yr, keep_long=True)
+
+                # Apply unit conversion
+                df['value'] = df['value'] * self.UNIT_GWA_TO_PJ
+
+                # Rename columns for clarity
+                df = df.rename(columns={'year_act': 'year', 'commodity': 'category'})
+
+                # Store as long-format DataFrame (already has unit conversion applied)
+                self.results["Energy use Transport (PJ)"] = df
 
         # Industry
         output_par = self.msg.par("output", {"commodity": ["i_spec", "i_therm"]})
@@ -856,9 +908,33 @@ class ResultsPostprocessor:
         return parameters
 
     def _pivot_to_long(self, df: pd.DataFrame, name: str) -> pd.DataFrame:
-        """Convert pivot table (year index, categories columns) to long format."""
+        """Convert pivot table (year index, categories columns) to long format.
+
+        If the DataFrame is already in long format (has 'value' column), it is
+        returned as-is after filtering out zero values.
+        """
         if df.empty:
             return pd.DataFrame()
+
+        # Check if already in long format by looking for 'value' column
+        # and checking that the index is a simple RangeIndex (not year-based)
+        col_list = list(df.columns)
+        is_long_format = (
+            'value' in col_list and
+            isinstance(df.index, pd.RangeIndex) and
+            ('year' in col_list or 'year_act' in col_list)
+        )
+
+        if is_long_format:
+            # Already long format - filter zeros using query to handle potential duplicate columns
+            try:
+                long_df = df.query('value != 0').reset_index(drop=True)
+            except Exception:
+                # Fallback: use numpy array access
+                value_col_idx = col_list.index('value')
+                mask = df.iloc[:, value_col_idx].values != 0
+                long_df = df[mask].reset_index(drop=True)
+            return long_df
 
         # Reset index to make year a column
         df = df.reset_index()

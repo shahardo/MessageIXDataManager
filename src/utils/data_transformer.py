@@ -315,17 +315,17 @@ class DataTransformer:
         if df.empty:
             return df
 
-        # Identify columns to keep
+        # Identify column indices to keep (use iloc to handle duplicate column names)
         columns_to_keep = []
-        for col in df.columns:
-            col_data = df[col]
+        for i, col in enumerate(df.columns):
+            col_data = df.iloc[:, i]  # Use iloc to get column by position, not name
             if col_data.dtype in ['int64', 'float64']:
                 # Keep numeric columns that have at least one non-zero, non-NaN value
                 if not (col_data.dropna() == 0).all():
-                    columns_to_keep.append(col)
+                    columns_to_keep.append(i)
             else:
                 # Keep non-numeric columns that have at least one non-empty value
                 if not col_data.isna().all():
-                    columns_to_keep.append(col)
+                    columns_to_keep.append(i)
 
-        return df[columns_to_keep] if columns_to_keep else df
+        return df.iloc[:, columns_to_keep] if columns_to_keep else df

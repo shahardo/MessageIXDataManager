@@ -337,7 +337,22 @@ class DataFileManager:
         electricity_technologies: Set[str],
         name: str
     ) -> pd.DataFrame:
-        """Filter DataFrame to only electricity-generating technologies."""
+        """Filter DataFrame to only electricity-generating technologies.
+
+        Note: General result variables (ACT, CAP, CAP_NEW, EMISS, PRICE_COMMODITY, etc.)
+        are NOT filtered since they contain data for all technologies/commodities,
+        not just electricity-related ones. This is needed for postprocessing calculations
+        like transport energy use, emissions, prices, etc.
+        """
+        # Skip filtering for general result variables that need all technologies
+        SKIP_FILTER_VARS = {
+            'ACT', 'CAP', 'CAP_NEW', 'EMISS', 'PRICE_COMMODITY', 'PRICE_EMISSION',
+            'DEMAND', 'STOCK', 'LAND', 'LAND_USE', 'RELATION_ACTIVITY',
+            # Add any other general variables that shouldn't be filtered
+        }
+        if name.upper() in SKIP_FILTER_VARS:
+            return df
+
         tec_col = self._find_technology_column(df)
         if tec_col and electricity_technologies:
             rows_before = len(df)

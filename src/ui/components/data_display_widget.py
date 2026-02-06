@@ -1172,20 +1172,20 @@ class DataDisplayWidget(QWidget):
         if df.empty:
             return df
 
-        # Identify columns to keep
+        # Identify column indices to keep (use iloc to handle duplicate column names)
         columns_to_keep = []
-        for col in df.columns:
-            col_data = df[col]
+        for i, col in enumerate(df.columns):
+            col_data = df.iloc[:, i]  # Use iloc to get column by position, not name
             if col_data.dtype in ['int64', 'float64']:
                 # Keep numeric columns that have at least one non-zero, non-NaN value
                 if not (col_data.dropna() == 0).all():
-                    columns_to_keep.append(col)
+                    columns_to_keep.append(i)
             else:
                 # Keep non-numeric columns that have at least one non-empty value
                 if not col_data.isna().all():
-                    columns_to_keep.append(col)
+                    columns_to_keep.append(i)
 
-        return df[columns_to_keep] if columns_to_keep else df
+        return df.iloc[:, columns_to_keep] if columns_to_keep else df
 
     # Column operations methods (called by the custom header view)
 
@@ -1194,37 +1194,29 @@ class DataDisplayWidget(QWidget):
         print(f"DEBUG: copy_column_data called with column={column}")
         try:
             if column < 0 or column >= self.param_table.columnCount():
-                print(f"DEBUG: Invalid column {column}, table has {self.param_table.columnCount()} columns")
                 return
 
             # Get column name
             header_item = self.param_table.horizontalHeaderItem(column)
             if not header_item:
-                print(f"DEBUG: No header item for column {column}")
                 return
             column_name = header_item.text()
-            print(f"DEBUG: Column name is '{column_name}'")
 
             # Collect data from the column as a single column (one value per line)
             data_lines = []
-            print(f"DEBUG: Starting data collection, table has {self.param_table.rowCount()} rows")
 
             for row in range(self.param_table.rowCount()):
                 item = self.param_table.item(row, column)
                 if item:
                     cell_text = item.text()
                     data_lines.append(cell_text)
-                    print(f"DEBUG: Row {row}: '{cell_text}'")
                 else:
                     data_lines.append("")
-                    print(f"DEBUG: Row {row}: (empty)")
 
             # Join with newlines to create a single column format
             clipboard_text = '\n'.join(data_lines)
-            print(f"DEBUG: Clipboard text (single column format): {repr(clipboard_text)}")
             clipboard = QApplication.clipboard()
             clipboard.setText(clipboard_text)
-            print(f"DEBUG: Set clipboard text successfully")
 
         except Exception as e:
             print(f"DEBUG: Error copying column data: {e}")
@@ -1246,20 +1238,15 @@ class DataDisplayWidget(QWidget):
                 print(f"DEBUG: No header item for column {column}")
                 return
             column_name = header_item.text()
-            print(f"DEBUG: Column name is '{column_name}'")
 
             # Get clipboard text
             clipboard = QApplication.clipboard()
             clipboard_text = clipboard.text().strip()
             if not clipboard_text:
-                print("DEBUG: Clipboard is empty")
                 return
-
-            print(f"DEBUG: Clipboard text: {repr(clipboard_text)}")
 
             # Try to detect format: single column (one value per line) vs delimited format
             lines = clipboard_text.split('\n')
-            print(f"DEBUG: Split into {len(lines)} lines")
 
             # Check if this looks like single-column data (no tabs/commas in most lines)
             is_single_column = True
@@ -1268,14 +1255,11 @@ class DataDisplayWidget(QWidget):
                     is_single_column = False
                     break
 
-            print(f"DEBUG: Detected format: {'single column' if is_single_column else 'delimited'}")
-
             # Prepare data for paste operation
             paste_data = []
             if is_single_column:
                 # Single column format: just paste the values directly
                 data_lines = [line.strip() for line in lines if line.strip()]
-                print(f"DEBUG: Single column data has {len(data_lines)} values")
 
                 if not data_lines:
                     QMessageBox.warning(self, "Paste Error", "No data found in clipboard.")
@@ -1285,7 +1269,6 @@ class DataDisplayWidget(QWidget):
             else:
                 # Delimited format: expect header + data
                 data_lines = clipboard_text.split(self.clipboard_delimiter)
-                print(f"DEBUG: Delimited data split into {len(data_lines)} parts")
 
                 if len(data_lines) < 2:  # Need at least header + one data row
                     QMessageBox.warning(self, "Paste Error", "Clipboard data must contain at least a header and one data row.")
@@ -1309,7 +1292,6 @@ class DataDisplayWidget(QWidget):
             # Emit signal to MainWindow to handle the paste operation with undo support
             paste_format = "single_column" if is_single_column else "delimited"
             self.column_paste_requested.emit(column_name, paste_format, row_changes)
-            print("DEBUG: Paste operation requested successfully")
 
         except Exception as e:
             print(f"DEBUG: Error requesting paste column data: {e}")

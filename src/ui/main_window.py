@@ -41,7 +41,7 @@ from utils.error_handler import ErrorHandler, SafeOperation
 from utils.data_transformer import DataTransformer
 
 # Threshold for showing wait cursor during table operations
-NUM_ROWS_FOR_WAIT_CURSOR = 5000
+NUM_ROWS_FOR_WAIT_CURSOR = 3000
 
 
 class WaitCursorContext:
@@ -115,7 +115,8 @@ class MainWindow(QMainWindow):
         # Initialize managers
         self.input_manager: InputManager = InputManager()
         self.solver_manager: SolverManager = SolverManager()
-        self.results_analyzer: ResultsAnalyzer = ResultsAnalyzer(self)
+        # Disable auto_postprocess - postprocessing runs after combined data is assembled
+        self.results_analyzer: ResultsAnalyzer = ResultsAnalyzer(self, auto_postprocess=False)
         self.data_export_manager: DataExportManager = DataExportManager()
         self.parameter_manager: ParameterManager = ParameterManager()
         self.session_manager: SessionManager = SessionManager()
@@ -565,22 +566,27 @@ class MainWindow(QMainWindow):
             if parameters:
                 sections_data["parameters"] = parameters
 
-            # Variables and Results sections (from results data)
+            # Variables, Results, and Postprocessing sections (from results data)
             variables = []
             results = []
+            postprocessing = []
             for param_name in combined_data.get_parameter_names():
                 param = combined_data.get_parameter(param_name)
                 if param:
                     result_type = param.metadata.get('result_type', '')
                     if result_type == 'variable':
                         variables.append((param_name, param))
-                    elif result_type and result_type in ['equation', 'result', 'postprocessed']:
+                    elif result_type == 'postprocessed':
+                        postprocessing.append((param_name, param))
+                    elif result_type and result_type in ['equation', 'result']:
                         results.append((param_name, param))
 
             if variables:
                 sections_data["variables"] = variables
             if results:
                 sections_data["results"] = results
+            if postprocessing:
+                sections_data["postprocessing"] = postprocessing
 
 
             # Update the parameter tree with sections

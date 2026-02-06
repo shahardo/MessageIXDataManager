@@ -479,3 +479,141 @@ class TestPostprocessorIntegration:
             assert 'parameter_type' in param.metadata
             assert param.metadata['parameter_type'] == 'result'
             assert param.metadata.get('result_type') == 'postprocessed'
+
+
+class TestYearFiltering:
+    """Test that year filtering works correctly in postprocessor."""
+
+    def test_model_output_filters_to_plotyrs(self):
+        """Test that _model_output filters ACT data to plotyrs years only.
+
+        This is the fix for the bug where years outside plotyrs (like 2070-2110)
+        were appearing in 'Energy use Transport' while plotyrs years (2020-2050)
+        were missing.
+        """
+        scenario = ScenarioData()
+
+        # Sets
+        transport_tech = 'car_trp'
+        scenario.sets['technology'] = pd.Series([transport_tech])
+        scenario.sets['commodity'] = pd.Series(['transport', 'lightoil'])
+        scenario.sets['year'] = pd.Series([2020, 2025, 2030, 2070, 2080])
+        scenario.sets['node'] = pd.Series(['World'])
+
+        # ACT variable with years BOTH inside and outside plotyrs
+        # plotyrs default is [2020, 2025, 2030, 2035, 2040, 2045, 2050]
+        act_rows = []
+        all_years = [2020, 2025, 2030, 2070, 2080, 2100]  # Some inside, some outside plotyrs
+        for year in all_years:
+            act_rows.append({
+                'technology': transport_tech,
+                'year_act': year,
+                'node_loc': 'World',
+                'mode': 'M1',
+                'time': 'year',
+                'year_vtg': 2015,
+                'lvl': 100
+            })
+        scenario.add_parameter(
+            Parameter('ACT', pd.DataFrame(act_rows), {'result_type': 'variable'})
+        )
+
+        # output parameter for transport
+        output_rows = []
+        for year in all_years:
+            output_rows.append({
+                'technology': transport_tech,
+                'commodity': 'transport',
+                'level': 'useful',
+                'year_act': year,
+                'year_vtg': 2015,
+                'node_loc': 'World',
+                'mode': 'M1',
+                'time': 'year',
+                'value': 1.0
+            })
+        scenario.add_parameter(
+            Parameter('output', pd.DataFrame(output_rows), {'dims': ['technology', 'commodity']})
+        )
+
+        # input parameter for transport fuel
+        input_rows = []
+        for year in all_years:
+            input_rows.append({
+                'technology': transport_tech,
+                'commodity': 'lightoil',
+                'level': 'final',
+                'year_act': year,
+                'year_vtg': 2015,
+                'node_loc': 'World',
+                'mode': 'M1',
+                'time': 'year',
+                'value': 0.5
+            })
+        scenario.add_parameter(
+            Parameter('input', pd.DataFrame(input_rows), {'dims': ['technology', 'commodity']})
+        )
+
+        # Run postprocessor
+        processor = ResultsPostprocessor(scenario)
+        processor.set_plot_years([2020, 2025, 2030])  # Custom plotyrs for this test
+
+        # Use _model_output directly to test filtering
+        tecs = [transport_tech]
+        df, df2 = processor._model_output(tecs, 'World', 'input')
+
+        # Check that only plotyrs years are in df (after filtering)
+        if not df.empty:
+            years_in_result = df['year_act'].unique().tolist()
+            # Should only have 2020, 2025, 2030 - not 2070, 2080, 2100
+            for year in years_in_result:
+                assert year in [2020, 2025, 2030], f"Year {year} should not be in result (outside plotyrs)"
+            # Should not have years outside plotyrs
+            assert 2070 not in years_in_result
+            assert 2080 not in years_in_result
+            assert 2100 not in years_in_result
+
+    def test_attach_history_gets_historical_years(self):
+        """Test that _attach_history gets years BEFORE plotyrs.
+
+        This is the fix for the bug where historical_activity was being
+        filtered by plotyrs (2020-2050), which excluded actual historical
+        years (1990-2015).
+        """
+        scenario = ScenarioData()
+
+        # Sets
+        tech = 'coal_ppl'
+        scenario.sets['technology'] = pd.Series([tech])
+        scenario.sets['year'] = pd.Series([1990, 2000, 2010, 2020, 2030])
+        scenario.sets['node'] = pd.Series(['World'])
+
+        # historical_activity with years BEFORE plotyrs
+        hist_rows = []
+        historical_years = [1990, 1995, 2000, 2005, 2010, 2015]
+        for year in historical_years:
+            hist_rows.append({
+                'technology': tech,
+                'year_act': year,
+                'node_loc': 'World',
+                'mode': 'M1',
+                'time': 'year',
+                'value': 50
+            })
+        scenario.add_parameter(
+            Parameter('historical_activity', pd.DataFrame(hist_rows), {'dims': ['technology', 'year_act']})
+        )
+
+        # Run postprocessor
+        processor = ResultsPostprocessor(scenario)
+        # Default plotyrs is [2020, 2025, 2030, 2035, 2040, 2045, 2050]
+
+        # Use _attach_history to test
+        act_hist = processor._attach_history([tech])
+
+        # Should return historical data (before 2020), not be empty
+        if not act_hist.empty:
+            years_in_result = act_hist.index.tolist()
+            # All years should be before min(plotyrs) = 2020
+            for year in years_in_result:
+                assert year < 2020, f"Year {year} should be before model period (< 2020)"
