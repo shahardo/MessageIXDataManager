@@ -30,8 +30,11 @@ class DataFileManager:
     SET_PREFIX = "set_"
     EQU_PREFIX = "equ_"
 
-    # Internal solver rows to filter out (patterns like _res#, _ref#, _cv#, _hist_####)
-    INTERNAL_SOLVER_PATTERN = re.compile(r'.*_((res|ref|cv)\d|hist_\d+)$')
+    # Internal solver rows to filter out
+    # NOTE: Previous pattern r'.*_((res|ref|cv)\d|hist_\d+)$' was too aggressive
+    # and filtered out legitimate renewable technologies like solar_res1, wind_ref1, etc.
+    # Disabled for now - if internal solver rows need filtering, use a more specific pattern
+    INTERNAL_SOLVER_PATTERN = None  # Disabled
 
     def __init__(
         self,
@@ -365,7 +368,16 @@ class DataFileManager:
         df: pd.DataFrame,
         name: str
     ) -> pd.DataFrame:
-        """Filter out internal solver rows (_res#, _ref#, _cv#, _hist_####)."""
+        """Filter out internal solver rows.
+
+        Note: This filter is currently disabled because the previous pattern
+        incorrectly filtered out legitimate renewable technology names like
+        solar_res1, wind_ref1, etc.
+        """
+        # Skip filtering if pattern is disabled
+        if self.INTERNAL_SOLVER_PATTERN is None:
+            return df
+
         tec_col = self._find_technology_column(df)
         if tec_col and len(df) > 0:
             rows_before = len(df)
