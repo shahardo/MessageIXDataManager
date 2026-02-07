@@ -290,6 +290,36 @@ class ResultsPostprocessor:
         df_hist = self._group(df_hist, ["year_act", groupby], "product", 0.0, None)
         return df_hist
 
+    def _add_history_long(self, tecs: List[str], df2: pd.DataFrame,
+                          groupby: str) -> pd.DataFrame:
+        """Add historical data in long format (preserving node_loc).
+
+        Similar to _add_history but returns long format DataFrame with columns:
+        [node_loc, year_act, <groupby>, value]
+        """
+        # Get historical_activity for all nodes (not filtered)
+        df1_hist = self.msg.par("historical_activity", {"technology": tecs})
+        if df1_hist.empty:
+            return pd.DataFrame()
+
+        df1_hist = df1_hist.rename({"value": "lvl"}, axis=1)
+
+        # Average the input/output coefficients across vintages
+        groupby_cols = ["year_act", "technology", "mode", "node_loc", "commodity", "time"]
+        df2_hist = df2.groupby(groupby_cols, as_index=False).mean(numeric_only=True)
+        if 'year_vtg' in df2_hist.columns:
+            df2_hist = df2_hist.drop(["year_vtg"], axis=1)
+
+        # Multiply historical activity by input coefficients
+        df_hist = self._multiply_df(df1_hist, "lvl", df2_hist, "value")
+        if df_hist.empty:
+            return pd.DataFrame()
+
+        # Group by node_loc, year_act, and the specified groupby column (e.g., "commodity")
+        # Keep long format
+        df_hist = self._group(df_hist, ["node_loc", "year_act", groupby], "product", 0.0, None, keep_long=True)
+        return df_hist
+
     def _model_output(self, tecs: List[str], nodeloc: str,
                       parname: str, coms: Optional[Any] = None):
         """Get model output by combining activity with parameters.
@@ -676,19 +706,35 @@ class ResultsPostprocessor:
             # Step 3: Get ACT for these technologies and multiply by input coefficients
             df, df2 = self._model_output(tecs, nodeloc, "input")
 
+            # Step 4: Get historical data in long format
+            df_hist = self._add_history_long(tecs, df2, "commodity")
+
             if not df.empty:
-                # Step 4: Group by node, year and commodity to get energy use by fuel type
+                # Step 5: Group by node, year and commodity to get energy use by fuel type
                 # Keep long format to preserve node_loc for filtering in UI
                 df = self._group(df, ["node_loc", "year_act", "commodity"], "product", 0.0, yr, keep_long=True)
+
+                # Combine model output with historical data
+                if not df_hist.empty:
+                    # Rename historical columns to match
+                    df_hist = df_hist.rename(columns={'year_act': 'year', 'commodity': 'category'})
+                    df = df.rename(columns={'year_act': 'year', 'commodity': 'category'})
+                    # Concatenate and sum by group
+                    df = pd.concat([df_hist, df], ignore_index=True)
+                    df = df.groupby(['node_loc', 'year', 'category'], as_index=False).sum()
+                else:
+                    df = df.rename(columns={'year_act': 'year', 'commodity': 'category'})
 
                 # Apply unit conversion
                 df['value'] = df['value'] * self.UNIT_GWA_TO_PJ
 
-                # Rename columns for clarity
-                df = df.rename(columns={'year_act': 'year', 'commodity': 'category'})
-
                 # Store as long-format DataFrame (already has unit conversion applied)
                 self.results["Energy use Transport (PJ)"] = df
+            elif not df_hist.empty:
+                # Only historical data available (no model output)
+                df_hist = df_hist.rename(columns={'year_act': 'year', 'commodity': 'category'})
+                df_hist['value'] = df_hist['value'] * self.UNIT_GWA_TO_PJ
+                self.results["Energy use Transport (PJ)"] = df_hist
 
         # Industry
         output_par = self.msg.par("output", {"commodity": ["i_spec", "i_therm"]})
