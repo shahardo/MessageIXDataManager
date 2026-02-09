@@ -137,6 +137,11 @@ class ChartWidget(QWidget):
             import traceback
             traceback.print_exc()
             return
+        
+        # Special chart for Gas supply by source (PJ)
+        if parameter_name == "Gas supply by source (PJ)":
+            self._render_gas_supply_chart(df, parameter_name)
+            return
 
         # Create chart based on current chart type
         fig = go.Figure()
@@ -219,6 +224,120 @@ class ChartWidget(QWidget):
         )
         fig.update_yaxes(automargin=True)
 
+        # Render the chart
+        self._render_chart_to_view(fig, f"{parameter_name} Chart")
+
+    def _render_gas_supply_chart(self, df: pd.DataFrame, parameter_name: str):
+        """
+        Render special gas supply chart with:
+        - Production and imports as stacked bars
+        - Exports as overlay bar below zero
+        - Total Supply as line chart with value marks
+        """
+        # Get years from index
+        years = df.index.tolist()
+        
+        # Create figure
+        fig = go.Figure()
+        
+        # Identify columns
+        columns = df.columns.tolist()
+        
+        # Production columns (typically "Production")
+        production_cols = [col for col in columns if 'production' in str(col).lower()]
+        
+        # Import columns (typically "Imports")
+        import_cols = [col for col in columns if 'import' in str(col).lower()]
+        
+        # Export columns (typically "Exports")
+        export_cols = [col for col in columns if 'export' in str(col).lower()]
+        
+        # Total Supply column
+        total_cols = [col for col in columns if 'total' in str(col).lower()]
+        
+        # Create stacked bars for Production + Imports
+        for col in production_cols + import_cols:
+            col_data = df[col].fillna(0)
+            values = col_data.tolist()
+            
+            # Skip if all zeros
+            if all(v == 0 for v in values):
+                continue
+            
+            fig.add_trace(go.Bar(
+                x=years,
+                y=values,
+                name=str(col),
+                #marker_pattern_shape='/',
+                hovertemplate=f'{col}<br>Year: %{{x}}<br>Value: %{{y:.2f}} PJ<extra></extra>'
+            ))
+        
+        # Add Exports as bar below zero
+        for col in export_cols:
+            col_data = df[col].fillna(0)
+            values = col_data.tolist()
+            
+            # Skip if all zeros
+            if all(v == 0 for v in values):
+                continue
+            
+            fig.add_trace(go.Bar(
+                x=years,
+                y=values,
+                name=str(col),
+                #marker_color='firebrick',
+                hovertemplate=f'{col}<br>Year: %{{x}}<br>Value: %{{y:.2f}} PJ<extra></extra>'
+            ))
+        
+        # Add Total Supply as line with markers and values
+        for col in total_cols:
+            col_data = df[col].fillna(0)
+            values = col_data.tolist()
+            
+            # Skip if all zeros
+            if all(v == 0 for v in values):
+                continue
+            
+            fig.add_trace(go.Scatter(
+                x=years,
+                y=values,
+                mode='lines+markers+text',
+                name=str(col),
+                line=dict(color='darkgreen', width=3),
+                marker=dict(size=10),
+                text=[f'{v:,.0f}' for v in values],
+                textposition='top center',
+                hovertemplate=f'{col}<br>Year: %{{x}}<br>Value: %{{y:.2f}} PJ<extra></extra>'
+            ))
+        
+        # Update layout
+        fig.update_layout(
+            title=f"{parameter_name} - Gas Supply by Source",
+            xaxis_title="Year",
+            yaxis_title="PJ",
+            template='plotly_white',
+            showlegend=True,
+            legend=dict(
+                orientation="h",
+                yanchor="top",
+                y=-0.3,
+                xanchor="center",
+                x=0.5
+            ),
+            margin=dict(b=120),
+            barmode='relative'  # Allows bars above and below zero
+        )
+        
+        # Update x-axis
+        fig.update_xaxes(
+            tickmode='array',
+            tickvals=years,
+            ticktext=[str(year) for year in years]
+        )
+        
+        # Update y-axis
+        fig.update_yaxes(automargin=True)
+        
         # Render the chart
         self._render_chart_to_view(fig, f"{parameter_name} Chart")
 

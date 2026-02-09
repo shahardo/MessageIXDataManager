@@ -617,3 +617,277 @@ class TestYearFiltering:
             # All years should be before min(plotyrs) = 2020
             for year in years_in_result:
                 assert year < 2020, f"Year {year} should be before model period (< 2020)"
+
+
+class TestEnergyBalanceAnalyses:
+    """Tests for Issue 8: Energy exports/imports by fuel, feedstock, primary energy supply."""
+
+    @pytest.fixture
+    def trade_scenario(self):
+        """Create scenario with import/export technologies for trade analysis."""
+        scenario = ScenarioData()
+
+        years = [2020, 2025, 2030]
+
+        # Sets - include import/export technologies
+        all_techs = [
+            'coal_ppl', 'gas_cc', 'solar_pv',
+            'coal_exp', 'gas_exp',       # Export technologies
+            'coal_imp', 'gas_imp',       # Import technologies
+            'coal_extr',                 # Primary extraction
+        ]
+        scenario.sets['technology'] = pd.Series(all_techs)
+        scenario.sets['commodity'] = pd.Series(['electr', 'coal', 'gas'])
+        scenario.sets['year'] = pd.Series(years)
+        scenario.sets['node'] = pd.Series(['World'])
+
+        # ACT variable - activity for all technologies
+        act_rows = []
+        for year in years:
+            for tech in all_techs:
+                act_rows.append({
+                    'technology': tech,
+                    'year_act': year,
+                    'node_loc': 'World',
+                    'mode': 'M1',
+                    'time': 'year',
+                    'year_vtg': 2015,
+                    'lvl': 50.0
+                })
+        scenario.add_parameter(
+            Parameter('ACT', pd.DataFrame(act_rows), {'result_type': 'variable'})
+        )
+
+        # output parameter - defines what each technology produces
+        output_rows = []
+        # Power plants output electricity
+        for tech in ['coal_ppl', 'gas_cc', 'solar_pv']:
+            for year in years:
+                output_rows.append({
+                    'technology': tech, 'commodity': 'electr', 'level': 'secondary',
+                    'year_act': year, 'year_vtg': 2015, 'node_loc': 'World',
+                    'mode': 'M1', 'time': 'year', 'value': 0.4
+                })
+        # Export techs output their commodity
+        for tech, comm in [('coal_exp', 'coal'), ('gas_exp', 'gas')]:
+            for year in years:
+                output_rows.append({
+                    'technology': tech, 'commodity': comm, 'level': 'export',
+                    'year_act': year, 'year_vtg': 2015, 'node_loc': 'World',
+                    'mode': 'M1', 'time': 'year', 'value': 1.0
+                })
+        # Import techs output their commodity
+        for tech, comm in [('coal_imp', 'coal'), ('gas_imp', 'gas')]:
+            for year in years:
+                output_rows.append({
+                    'technology': tech, 'commodity': comm, 'level': 'secondary',
+                    'year_act': year, 'year_vtg': 2015, 'node_loc': 'World',
+                    'mode': 'M1', 'time': 'year', 'value': 1.0
+                })
+        # Extraction tech outputs at primary level
+        for year in years:
+            output_rows.append({
+                'technology': 'coal_extr', 'commodity': 'coal', 'level': 'primary',
+                'year_act': year, 'year_vtg': 2015, 'node_loc': 'World',
+                'mode': 'M1', 'time': 'year', 'value': 1.0
+            })
+        scenario.add_parameter(
+            Parameter('output', pd.DataFrame(output_rows), {'dims': ['technology', 'commodity']})
+        )
+
+        # input parameter - defines what each technology consumes
+        input_rows = []
+        # Power plants input fuel
+        for tech, comm in [('coal_ppl', 'coal'), ('gas_cc', 'gas')]:
+            for year in years:
+                input_rows.append({
+                    'technology': tech, 'commodity': comm, 'level': 'secondary',
+                    'year_act': year, 'year_vtg': 2015, 'node_loc': 'World',
+                    'mode': 'M1', 'time': 'year', 'value': 0.5
+                })
+        # Note: Export/Import techs may NOT have input parameter defined
+        # in some model configurations. This is the root cause of the bug.
+        scenario.add_parameter(
+            Parameter('input', pd.DataFrame(input_rows), {'dims': ['technology', 'commodity']})
+        )
+
+        return scenario
+
+    def test_energy_exports_by_fuel_produced(self, trade_scenario):
+        """Test that energy exports by fuel analysis is produced.
+
+        Bug: _calculate_energy_exports_by_fuel used 'input' parameter for
+        export technologies, but export techs often don't have 'input' defined.
+        Should use 'output' parameter (matching _calculate_trade).
+        """
+        processor = ResultsPostprocessor(trade_scenario)
+        processor.set_plot_years([2020, 2025, 2030])
+        results = processor.process()
+
+        assert "Energy exports by fuel (PJ)" in results, \
+            "Energy exports by fuel should appear in results"
+
+        param = results["Energy exports by fuel (PJ)"]
+        assert not param.df.empty, "Energy exports by fuel should have data"
+
+    def test_energy_imports_by_fuel_produced(self, trade_scenario):
+        """Test that energy imports by fuel analysis is produced."""
+        processor = ResultsPostprocessor(trade_scenario)
+        processor.set_plot_years([2020, 2025, 2030])
+        results = processor.process()
+
+        assert "Energy imports by fuel (PJ)" in results, \
+            "Energy imports by fuel should appear in results"
+
+        param = results["Energy imports by fuel (PJ)"]
+        assert not param.df.empty, "Energy imports by fuel should have data"
+
+    def test_primary_energy_supply_produced(self, trade_scenario):
+        """Test that primary energy supply analysis is produced."""
+        processor = ResultsPostprocessor(trade_scenario)
+        processor.set_plot_years([2020, 2025, 2030])
+        results = processor.process()
+
+        assert "Primary energy supply (PJ)" in results, \
+            "Primary energy supply should appear in results"
+
+        param = results["Primary energy supply (PJ)"]
+        assert not param.df.empty, "Primary energy supply should have data"
+
+    def test_exports_by_fuel_uses_output_parameter(self, trade_scenario):
+        """Test exports by fuel works even when export techs have no input param.
+
+        This is the core fix: export technologies often only have 'output'
+        parameter defined (what they export), not 'input' (what they consume
+        from the domestic market). The method should use 'output' to match
+        the working _calculate_trade approach.
+        """
+        processor = ResultsPostprocessor(trade_scenario)
+        processor.set_plot_years([2020, 2025, 2030])
+
+        # Call the method directly
+        processor._calculate_energy_exports_by_fuel('World', 2020)
+
+        assert "Energy exports by fuel (PJ)" in processor.results, \
+            "Export technologies with output parameter should produce results"
+        df = processor.results["Energy exports by fuel (PJ)"]
+        assert not df.empty
+
+    def test_exports_and_imports_have_correct_commodities(self, trade_scenario):
+        """Test that exports and imports show the right fuel commodities."""
+        processor = ResultsPostprocessor(trade_scenario)
+        processor.set_plot_years([2020, 2025, 2030])
+
+        processor._calculate_energy_exports_by_fuel('World', 2020)
+        processor._calculate_energy_imports_by_fuel('World', 2020)
+
+        if "Energy exports by fuel (PJ)" in processor.results:
+            df_exp = processor.results["Energy exports by fuel (PJ)"]
+            # Should have coal and gas columns (from coal_exp, gas_exp)
+            assert 'coal' in df_exp.columns or 'gas' in df_exp.columns, \
+                f"Expected coal or gas in columns, got: {df_exp.columns.tolist()}"
+
+        if "Energy imports by fuel (PJ)" in processor.results:
+            df_imp = processor.results["Energy imports by fuel (PJ)"]
+            assert 'coal' in df_imp.columns or 'gas' in df_imp.columns, \
+                f"Expected coal or gas in columns, got: {df_imp.columns.tolist()}"
+
+    def test_technology_discovery_without_set(self, trade_scenario):
+        """Test that export/import discovery works even without technology set.
+
+        If the technology set is empty (not loaded from file), the methods
+        should fall back to finding technologies from the ACT variable.
+        """
+        # Clear the technology set
+        trade_scenario.sets['technology'] = pd.Series(dtype=str)
+
+        processor = ResultsPostprocessor(trade_scenario)
+        processor.set_plot_years([2020, 2025, 2030])
+
+        processor._calculate_energy_exports_by_fuel('World', 2020)
+        processor._calculate_energy_imports_by_fuel('World', 2020)
+
+        assert "Energy exports by fuel (PJ)" in processor.results, \
+            "Should find export technologies even without technology set"
+        assert "Energy imports by fuel (PJ)" in processor.results, \
+            "Should find import technologies even without technology set"
+
+
+class TestFeedstockByFuel:
+    """Tests for feedstock by fuel calculation."""
+
+    @pytest.fixture
+    def feedstock_scenario(self):
+        """Create scenario with feedstock technologies."""
+        scenario = ScenarioData()
+
+        years = [2020, 2025, 2030]
+        scenario.sets['technology'] = pd.Series(['coal_fs', 'gas_fs', 'oil_fs'])
+        scenario.sets['commodity'] = pd.Series(['coal', 'gas', 'lightoil', 'i_feed'])
+        scenario.sets['year'] = pd.Series(years)
+        scenario.sets['node'] = pd.Series(['World'])
+
+        # ACT variable
+        act_rows = []
+        for year in years:
+            for tech in ['coal_fs', 'gas_fs', 'oil_fs']:
+                act_rows.append({
+                    'technology': tech, 'year_act': year, 'node_loc': 'World',
+                    'mode': 'M1', 'time': 'year', 'year_vtg': 2015, 'lvl': 30.0
+                })
+        scenario.add_parameter(
+            Parameter('ACT', pd.DataFrame(act_rows), {'result_type': 'variable'})
+        )
+
+        # output parameter - feedstock technologies output i_feed
+        output_rows = []
+        for tech in ['coal_fs', 'gas_fs', 'oil_fs']:
+            for year in years:
+                output_rows.append({
+                    'technology': tech, 'commodity': 'i_feed', 'level': 'useful',
+                    'year_act': year, 'year_vtg': 2015, 'node_loc': 'World',
+                    'mode': 'M1', 'time': 'year', 'value': 1.0
+                })
+        scenario.add_parameter(
+            Parameter('output', pd.DataFrame(output_rows), {'dims': ['technology', 'commodity']})
+        )
+
+        # input parameter - feedstock techs consume fuels
+        input_rows = []
+        for tech, comm in [('coal_fs', 'coal'), ('gas_fs', 'gas'), ('oil_fs', 'lightoil')]:
+            for year in years:
+                input_rows.append({
+                    'technology': tech, 'commodity': comm, 'level': 'secondary',
+                    'year_act': year, 'year_vtg': 2015, 'node_loc': 'World',
+                    'mode': 'M1', 'time': 'year', 'value': 0.8
+                })
+        scenario.add_parameter(
+            Parameter('input', pd.DataFrame(input_rows), {'dims': ['technology', 'commodity']})
+        )
+
+        return scenario
+
+    def test_feedstock_by_fuel_produced(self, feedstock_scenario):
+        """Test that feedstock by fuel analysis is produced."""
+        processor = ResultsPostprocessor(feedstock_scenario)
+        processor.set_plot_years([2020, 2025, 2030])
+        results = processor.process()
+
+        assert "Feedstock by fuel (PJ)" in results, \
+            "Feedstock by fuel should appear in results"
+
+        param = results["Feedstock by fuel (PJ)"]
+        assert not param.df.empty, "Feedstock by fuel should have data"
+
+    def test_feedstock_has_correct_fuels(self, feedstock_scenario):
+        """Test feedstock shows correct fuel commodities."""
+        processor = ResultsPostprocessor(feedstock_scenario)
+        processor.set_plot_years([2020, 2025, 2030])
+
+        processor._calculate_feedstock_by_fuel('World', 2020)
+
+        assert "Feedstock by fuel (PJ)" in processor.results
+        df = processor.results["Feedstock by fuel (PJ)"]
+        # Should have columns for coal, gas, lightoil
+        assert 'coal' in df.columns or 'gas' in df.columns, \
+            f"Expected fuel commodities in columns, got: {df.columns.tolist()}"

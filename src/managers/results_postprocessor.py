@@ -206,6 +206,7 @@ class ResultsPostprocessor:
         self._calculate_energy_imports_by_fuel(nodeloc, yr)
         self._calculate_feedstock_by_fuel(nodeloc, yr)
         self._calculate_oil_derivatives_supply(nodeloc, yr)
+        self._calculate_oil_derivatives_use(nodeloc, yr)
 
         # New calculations - Fuels
         self._calculate_gas_supply_by_source(nodeloc, yr)
@@ -1931,21 +1932,95 @@ class ResultsPostprocessor:
         self.results["Energy imports by fuel (PJ)"] = df * self.UNIT_GWA_TO_PJ
 
     def _calculate_feedstock_by_fuel(self, nodeloc: str, yr: int):
-        """Calculate non-energy feedstock consumption by fuel type."""
-        order = self._get_commodity_order()
+        """
+        Calculate non-energy feedstock consumption by fuel type.
+        
+        Output: "Feedstock by fuel (PJ)"
+        
+        Calculation:
+        1. Get technologies from `output` where `commodity = "i_feed"` (industrial feedstock)
+        2. These are technologies using fuels for non-energy purposes (petrochemicals, etc.)
+        3. Get `ACT` for these technologies
+        4. Multiply by `input` parameter to get fuel consumption for feedstock
+        5. Group by input commodity (fuel type)
+        
+        **Implementation Details:**
+        - Uses `_model_output()` to get activity * input coefficients
+        - Groups by input commodity to show fuel type breakdown
+        - Adds historical data via `_add_history()`
+        - Unit conversion: 31.536 (GWa → PJ)
+        """
+        print("\n=== FEEDSTOCK DEBUG ===")
+        print(f"nodeloc={nodeloc}, yr={yr}")
+        
+        # Get technologies that output feedstock commodity
         output_par = self.msg.par("output", {"commodity": ["i_feed"]})
+        print(f"Output parameter shape: {output_par.shape if not output_par.empty else 'empty'}")
+        
         if output_par.empty:
+            print("No output data for 'i_feed' commodity")
+            # Try without filter to see what commodities exist
+            all_output = self.msg.par("output")
+            if not all_output.empty:
+                print(f"All output commodities: {all_output['commodity'].unique().tolist()}")
+            print("=== END FEEDSTOCK DEBUG ===\n")
             return
-
+        
         tecs = list(set(output_par.technology))
-        df, df2 = self._model_output(tecs, nodeloc, "input")
-        if df.empty:
+        print(f"Technologies outputting 'i_feed': {tecs}")
+        
+        if not tecs:
+            print("No technologies found")
+            print("=== END FEEDSTOCK DEBUG ===\n")
             return
-
+        
+        # Get ACT for these technologies
+        act_data = self.msg.var("ACT", {"technology": tecs})
+        print(f"ACT data shape: {act_data.shape if not act_data.empty else 'empty'}")
+        
+        # Get INPUT parameter for these technologies
+        input_par = self.msg.par("input", {"technology": tecs})
+        print(f"Input parameter shape: {input_par.shape if not input_par.empty else 'empty'}")
+        
+        if not input_par.empty:
+            print(f"Input commodities for feedstock techs: {input_par['commodity'].unique().tolist()}")
+        
+        # Get model output (ACT * input coefficient) for feedstock technologies
+        df, df2 = self._model_output(tecs, nodeloc, "input")
+        print(f"Model output df shape: {df.shape if not df.empty else 'empty'}")
+        print(f"Model output df2 shape: {df2.shape if not df2.empty else 'empty'}")
+        
+        if df.empty:
+            print("Model output is empty - no data to process")
+            print("=== END FEEDSTOCK DEBUG ===\n")
+            return
+        
+        print(f"Model output columns: {df.columns.tolist()}")
+        
+        # Group by year and input commodity (fuel type)
         df = self._group(df, ["year_act", "commodity"], "product", 0.0, yr)
+        print(f"After grouping: {df.shape if not df.empty else 'empty'}")
+        
+        # Add historical data
         df_hist = self._add_history(tecs, nodeloc, df2, "commodity")
-        df = self._com_order((df_hist + df).fillna(0), order)
+        print(f"Historical data shape: {df_hist.shape if not df_hist.empty else 'empty'}")
+        
+        # Combine historical and model results
+        if not df_hist.empty:
+            df = (df_hist + df).fillna(0)
+        
+        # Get commodity order
+        order = self._get_commodity_order()
+        df = self._com_order(df, order)
+        
+        print(f"Final result shape: {df.shape if not df.empty else 'empty'}")
+        if not df.empty:
+            print(f"Final result columns: {df.columns.tolist()}")
+            print(f"Final result:\n{df}")
+        
+        # Convert to PJ
         self.results["Feedstock by fuel (PJ)"] = df * self.UNIT_GWA_TO_PJ
+        print("=== END FEEDSTOCK DEBUG ===\n")
 
     def _calculate_oil_derivatives_supply(self, nodeloc: str, yr: int):
         """Calculate oil derivatives production and supply."""
@@ -1971,82 +2046,508 @@ class ResultsPostprocessor:
 
         self.results["Oil derivatives supply (PJ)"] = df * self.UNIT_GWA_TO_PJ
 
+    def _calculate_oil_derivatives_use(self, nodeloc: str, yr: int):
+        """
+        Calculate oil derivatives consumption by sector.
+        
+        Output: "Oil derivatives use by sector (PJ)"
+        
+        Calculation:
+        1. Get technologies that input oil products: `input` where commodity in oil_products
+        2. Map to sectors using `output` parameter:
+           - Power generation: output "electr"
+           - Industry: output "i_spec", "i_therm"
+           - Buildings: output "rc_spec", "rc_therm"
+           - Transport: output "transport"
+           - Other: remaining technologies
+        3. Get `ACT` for these technologies
+        4. Multiply by `input` parameter value
+        5. Group by sector and oil product type
+        
+        **Implementation Details:**
+        - Uses `_map_technologies_to_sectors()` for sector mapping
+        - Filters out refinery technologies (they produce, not consume)
+        - Handles column name variations (technology vs tec)
+        - Unit conversion: 31.536 (GWa → PJ)
+        """
+        # Oil product commodities
+        oil_products = ["lightoil", "loil_rc", "loil_i", "fueloil", "foil_rc", "foil_i",
+                        "diesel", "gasoline", "kerosene", "naphtha", "lpg"]
+        
+        # Get technologies that input oil products
+        input_par = self.msg.par("input", {"commodity": oil_products})
+        if input_par.empty:
+            return
+        
+        all_oil_tecs = list(set(input_par['technology']))
+        if not all_oil_tecs:
+            return
+        
+        # Get refinery technologies (output oil products) - EXCLUDE these as they produce, not consume
+        output_par = self.msg.par("output", {"commodity": oil_products})
+        refinery_tecs = list(set(output_par['technology'])) if not output_par.empty else []
+        
+        # Filter out refinery technologies from consumption analysis
+        consumer_tecs = [t for t in all_oil_tecs if t not in refinery_tecs]
+        
+        if not consumer_tecs:
+            return
+        
+        # Map technologies to sectors
+        sector_tecs = self._map_technologies_to_sectors(consumer_tecs)
+        
+        # Remove exports from sectors (handle separately)
+        export_tecs = [t for t in consumer_tecs if '_exp' in str(t).lower() or 'export' in str(t).lower()]
+        for sector in list(sector_tecs.keys()):
+            sector_tecs[sector] = [t for t in sector_tecs.get(sector, []) if t not in export_tecs]
+        
+        # Add exports as a separate category
+        if export_tecs:
+            sector_tecs["Exports"] = export_tecs
+        
+        # DEBUG: Print sector mapping
+        print("\n=== OIL DERIVATIVES USE SECTOR MAPPING ===")
+        for sector, tecs in sector_tecs.items():
+            if tecs:
+                print(f"{sector}: {tecs}")
+        print("=== END SECTOR MAPPING ===\n")
+        
+        # Helper function to calculate oil use from technologies
+        def calculate_oil_use_from_tecs(tecs, commodity_filter=None):
+            """Calculate oil use from a list of technologies."""
+            if not tecs:
+                return pd.Series(dtype=float)
+            
+            # Get activity data
+            df_act = self.msg.var("ACT", {"technology": tecs})
+            if df_act.empty:
+                return pd.Series(dtype=float)
+            
+            # Get input parameter data
+            filters = {"technology": tecs}
+            if commodity_filter:
+                filters["commodity"] = commodity_filter
+            
+            df_par = self.msg.par("input", filters)
+            if df_par.empty:
+                return pd.Series(dtype=float)
+            
+            # Determine technology column name
+            tec_col = 'technology' if 'technology' in df_act.columns else 'tec'
+            
+            # Determine commodity column name
+            com_col = 'commodity' if 'commodity' in df_par.columns else None
+            
+            # Aggregate parameter values by technology (and commodity if present)
+            if com_col:
+                df_par_agg = df_par.groupby([tec_col, com_col], as_index=False)['value'].mean()
+            else:
+                df_par_agg = df_par.groupby([tec_col], as_index=False)['value'].mean()
+            
+            # Merge activity with parameter
+            df_merge = df_act.merge(df_par_agg, how="left", left_on=tec_col, right_on=tec_col)
+            
+            # Calculate product (activity * coefficient)
+            if 'lvl' in df_merge.columns and 'value' in df_merge.columns:
+                df_merge['product'] = df_merge['lvl'] * df_merge['value']
+            elif 'value' in df_merge.columns:
+                df_merge['product'] = df_merge['value']
+            else:
+                return pd.Series(dtype=float)
+            
+            # Determine year column
+            year_col = 'year_act' if 'year_act' in df_merge.columns else 'year_vtg'
+            
+            # Group by year and sum
+            if com_col and 'commodity' in df_merge.columns:
+                result = df_merge.groupby([year_col, 'commodity'])['product'].sum().reset_index()
+                return result
+            else:
+                result = df_merge.groupby(year_col)['product'].sum()
+                return result
+        
+        # Calculate oil use by sector
+        sector_results = {}
+        domestic_sectors = ["Power", "Industry", "Buildings", "Transport", "Other"]
+        
+        for sector in domestic_sectors:
+            tecs = sector_tecs.get(sector, [])
+            if not tecs:
+                continue
+            
+            oil_result = calculate_oil_use_from_tecs(tecs, commodity_filter=oil_products)
+            
+            if isinstance(oil_result, pd.DataFrame) and not oil_result.empty:
+                yearly = oil_result.groupby('year_act')['product'].sum()
+                sector_results[sector] = yearly
+            elif isinstance(oil_result, pd.Series) and not oil_result.empty:
+                sector_results[sector] = oil_result
+        
+        # Calculate exports separately
+        if export_tecs:
+            export_result = calculate_oil_use_from_tecs(export_tecs, commodity_filter=oil_products)
+            
+            if isinstance(export_result, pd.DataFrame) and not export_result.empty:
+                yearly = export_result.groupby('year_act')['product'].sum()
+                sector_results["Exports"] = yearly
+            elif isinstance(export_result, pd.Series) and not export_result.empty:
+                sector_results["Exports"] = export_result
+        
+        if sector_results:
+            # Align all series to the same index (years)
+            all_years = set()
+            for series in sector_results.values():
+                if isinstance(series, pd.Series):
+                    all_years.update(series.index.tolist())
+            
+            if all_years:
+                aligned_results = {}
+                for name, series in sector_results.items():
+                    if isinstance(series, pd.Series):
+                        aligned_results[name] = series.reindex(sorted(all_years), fill_value=0)
+                
+                result_df = pd.DataFrame(aligned_results)
+                
+                # Convert from GWa to PJ (1 GWa = 31.536 PJ)
+                self.results["Oil derivatives use by sector (PJ)"] = result_df * 31.536
+
     # =========================================================================
     # Fuels Analyses
     # =========================================================================
 
     def _calculate_gas_supply_by_source(self, nodeloc: str, yr: int):
-        """Calculate gas supply by source (production, imports, exports)."""
-        gas_commodities = ["gas", "gas_rc", "gas_i", "natural_gas"]
+        """
+        Calculate gas supply by source (production, imports, exports).
+        
+        Output: "Gas supply by source (PJ)"
+        
+        Calculation:
+        1. Domestic production: output where commodity = "gas" and level = "primary"
+        2. Imports: Gas import technologies ("gas_imp" or similar)
+        3. Exports: Gas export technologies ("gas_exp" or similar)
+        4. Get ACT for all these technologies
+        5. Multiply by relevant parameter values
+        6. Present as: Production + Imports - Exports = Total Supply
+        """
+        gas_commodities = ["gas"]
         results = {}
-
-        # Domestic production - technologies outputting gas at primary level
+        
+        # Helper function to calculate gas supply from technologies
+        def calculate_gas_supply_from_tecs(tecs, par_name,
+                                           commodity_filter=None,
+                                           level_filter=None):
+            """Calculate gas supply from a list of technologies."""
+            if not tecs:
+                return pd.Series(dtype=float)
+            
+            # Get activity data
+            df_act = self.msg.var("ACT", {"technology": tecs})
+            if df_act.empty:
+                return pd.Series(dtype=float)
+            
+            # Get parameter data
+            filters = {"technology": tecs}
+            if commodity_filter:
+                filters["commodity"] = commodity_filter
+            if level_filter:
+                filters["level"] = level_filter
+            
+            df_par = self.msg.par(par_name, filters)
+            if df_par.empty:
+                return pd.Series(dtype=float)
+            
+            # Determine technology column name
+            tec_col = 'technology' if 'technology' in df_act.columns else 'tec'
+            
+            # Determine commodity column name
+            com_col = 'commodity' if 'commodity' in df_par.columns else None
+            
+            # Aggregate parameter values by technology (and commodity if present)
+            if com_col:
+                df_par_agg = df_par.groupby([tec_col, com_col], as_index=False)['value'].mean()
+            else:
+                df_par_agg = df_par.groupby([tec_col], as_index=False)['value'].mean()
+            
+            # Merge activity with parameter
+            df_merge = df_act.merge(df_par_agg, how="left", left_on=tec_col, right_on=tec_col)
+            
+            # Calculate product (activity * coefficient)
+            if 'lvl' in df_merge.columns and 'value' in df_merge.columns:
+                df_merge['product'] = df_merge['lvl'] * df_merge['value']
+            elif 'value' in df_merge.columns:
+                df_merge['product'] = df_merge['value']
+            else:
+                return pd.Series(dtype=float)
+            
+            # Determine year column
+            year_col = 'year_act' if 'year_act' in df_merge.columns else 'year_vtg'
+            
+            # Group by year and sum
+            if com_col and 'commodity' in df_merge.columns:
+                # Include commodity in grouping
+                result = df_merge.groupby([year_col, 'commodity'])['product'].sum().reset_index()
+                return result
+            else:
+                result = df_merge.groupby([year_col])['product'].sum()
+                return result
+        
+        # 1. Domestic production - technologies outputting gas at primary level
         prod_par = self.msg.par("output", {"commodity": gas_commodities, "level": ["primary"]})
         if not prod_par.empty:
-            prod_tecs = list(set(prod_par.technology))
-            df_prod, _ = self._model_output(prod_tecs, nodeloc, "output")
-            if not df_prod.empty:
-                df_prod = self._group(df_prod, ["year_act", "commodity"], "product", 0.0, yr)
-                if isinstance(df_prod, pd.DataFrame) and not df_prod.empty:
-                    results["Production"] = df_prod.sum(axis=1)
-
-        # Imports
-        gas_imp_tecs = [x for x in self.msg.set("technology")
-                        if "gas" in str(x).lower() and "_imp" in str(x)]
+            prod_tecs = list(set(prod_par['technology'])) if 'technology' in prod_par.columns else []
+            if prod_tecs:
+                prod_result = calculate_gas_supply_from_tecs(prod_tecs, "output",
+                                                             commodity_filter=gas_commodities,
+                                                             level_filter="primary")
+                if isinstance(prod_result, pd.DataFrame) and not prod_result.empty:
+                    # Aggregate by year only
+                    prod_yearly = prod_result.groupby('year_act')['product'].sum()
+                    results["Production"] = prod_yearly
+                elif isinstance(prod_result, pd.Series) and not prod_result.empty:
+                    results["Production"] = prod_result
+        
+        # 2. Imports - technologies with "gas" and "_imp" in name
+        all_tecs = list(self.msg.set("technology"))
+        if hasattr(all_tecs, '__iter__'):
+            gas_imp_tecs = [x for x in all_tecs if "gas" in str(x).lower() and "_imp" in str(x).lower()]
+        else:
+            gas_imp_tecs = []
+        
+        # Also try to find import technologies from input parameter
+        input_par = self.msg.par("input")
+        if not input_par.empty:
+            if 'commodity' in input_par.columns:
+                imp_from_input = input_par[input_par['commodity'].isin(gas_commodities)]['technology'].unique().tolist()
+                gas_imp_tecs.extend([t for t in imp_from_input if t not in gas_imp_tecs])
+        
         if gas_imp_tecs:
-            df_imp, _ = self._model_output(gas_imp_tecs, nodeloc, "output")
-            if not df_imp.empty:
-                df_imp = self._group(df_imp, ["year_act", "commodity"], "product", 0.0, yr)
-                if isinstance(df_imp, pd.DataFrame) and not df_imp.empty:
-                    results["Imports"] = df_imp.sum(axis=1)
-
-        # Exports
-        gas_exp_tecs = [x for x in self.msg.set("technology")
-                        if "gas" in str(x).lower() and "_exp" in str(x)]
+            # Get output parameter for imports (imported gas comes in via output)
+            imp_result = calculate_gas_supply_from_tecs(gas_imp_tecs, "output")
+            if isinstance(imp_result, pd.DataFrame) and not imp_result.empty:
+                imp_yearly = imp_result.groupby('year_act')['product'].sum()
+                results["Imports"] = imp_yearly
+            elif isinstance(imp_result, pd.Series) and not imp_result.empty:
+                results["Imports"] = imp_result
+        
+        # 3. Exports - technologies with "gas" and "_exp" in name
+        gas_exp_tecs = [x for x in all_tecs if "gas" in str(x).lower() and "_exp" in str(x).lower()] if hasattr(all_tecs, '__iter__') else []
+        
+        # Also try to find export technologies from output parameter
+        output_par = self.msg.par("output")
+        if not output_par.empty:
+            if 'commodity' in output_par.columns:
+                exp_from_output = output_par[output_par['commodity'].isin(gas_commodities)]['technology'].unique().tolist()
+                gas_exp_tecs.extend([t for t in exp_from_output if t not in gas_exp_tecs])
+        
         if gas_exp_tecs:
-            df_exp, _ = self._model_output(gas_exp_tecs, nodeloc, "input")
-            if not df_exp.empty:
-                df_exp = self._group(df_exp, ["year_act", "commodity"], "product", 0.0, yr)
-                if isinstance(df_exp, pd.DataFrame) and not df_exp.empty:
-                    results["Exports"] = -df_exp.sum(axis=1)  # Negative for exports
-
+            # Get input parameter for exports (gas exported is consumed from the system)
+            exp_result = calculate_gas_supply_from_tecs(gas_exp_tecs, "input",
+                                                        commodity_filter=gas_commodities)
+            if isinstance(exp_result, pd.DataFrame) and not exp_result.empty:
+                exp_yearly = exp_result.groupby('year_act')['product'].sum()
+                results["Exports"] = -exp_yearly  # Negative for exports
+            elif isinstance(exp_result, pd.Series) and not exp_result.empty:
+                results["Exports"] = -exp_result
+        
         if results:
-            result_df = pd.DataFrame(results)
-            self.results["Gas supply by source (PJ)"] = result_df * self.UNIT_GWA_TO_PJ
+            # Align all series to the same index (years)
+            all_years = set()
+            for series in results.values():
+                if isinstance(series, pd.Series):
+                    all_years.update(series.index.tolist())
+            
+            if all_years:
+                aligned_results = {}
+                for name, series in results.items():
+                    if isinstance(series, pd.Series):
+                        aligned_results[name] = series.reindex(sorted(all_years), fill_value=0)
+                
+                result_df = pd.DataFrame(aligned_results)
+                
+                # Calculate total supply
+                result_df["Total Supply"] = result_df.get("Production", 0) + \
+                                             result_df.get("Imports", 0) + \
+                                             result_df.get("Exports", 0)
+                
+                # Convert from GWa to PJ (1 GWa = 31.536 PJ)
+                # This is: 1 GWa * 8760 hours/GWa * 3600 sec/hour * 1 MJ/3.6MJ * 1 PJ/10^6 MJ
+                # = 8760 * 3600 / 3.6 / 10^6 = 31.536
+                self.results["Gas supply by source (PJ)"] = result_df * 31.536
 
+    
     def _calculate_gas_utilization_by_sector(self, nodeloc: str, yr: int):
-        """Calculate gas consumption by sector."""
-        gas_commodities = ["gas", "gas_rc", "gas_i", "natural_gas"]
-
+        """
+        Calculate gas consumption by sector.
+        
+        Output: "Gas use by sector (PJ)"
+        
+        Calculation:
+        1. Get technologies that input gas: `input` where `commodity = "gas"`
+        2. Map to sectors using `output` parameter:
+           - Power generation: output "electr"
+           - Industry: output "i_spec", "i_therm"
+           - Buildings: output "rc_spec", "rc_therm"
+           - Transport: output "transport"
+           - Exports: technology names containing "_exp" or "export"
+        3. Get `ACT` for these technologies
+        4. Multiply by `input` parameter value
+        5. Group by sector
+        
+        **Implementation Details:**
+        - Simplified commodity filter to ["gas"]
+        - Added export detection via technology naming conventions
+        - Uses `_map_technologies_to_sectors()` for sector mapping
+        - Handles column name variations (technology vs tec)
+        - Unit conversion: 31.536 (GWa → PJ)
+        - Removes empty "Other" column from results
+        """
+        gas_commodities = ["gas"]
+        sector_results = {}
+        
         # Get technologies that input gas
         input_par = self.msg.par("input", {"commodity": gas_commodities})
         if input_par.empty:
             return
-
-        all_gas_tecs = list(set(input_par.technology))
+        
+        # Get all unique technologies that input gas
+        all_gas_tecs = list(set(input_par['technology'])) if 'technology' in input_par.columns else []
+        
+        if not all_gas_tecs:
+            return
+        
+        # Map technologies to sectors (excluding exports)
         sector_tecs = self._map_technologies_to_sectors(all_gas_tecs)
-
-        sector_results = {}
+        
+        # Identify export technologies separately
+        export_tecs = [t for t in all_gas_tecs if '_exp' in str(t).lower() or 'export' in str(t).lower()]
+        
+        # Remove exports from "Other" and any other sector
+        for sector in list(sector_tecs.keys()):
+            sector_tecs[sector] = [t for t in sector_tecs.get(sector, []) if t not in export_tecs]
+        
+        # Get "Other" technologies that don't map to standard sectors
+        other_tecs = sector_tecs.get("Other", [])
+        
+        # Remove "Other" from sector_tecs temporarily
+        del sector_tecs["Other"]
+        
+        # Filter out balance/virtual technologies from "Other"
+        balance_patterns = ['_bal', 'balance', 'bal_', 'gas_bal', 'dummy', '虚拟']
+        filtered_other = [t for t in other_tecs if not any(p in str(t).lower() for p in balance_patterns)]
+        
+        # Put remaining "Other" technologies back into sector_tecs to be summed
+        if filtered_other:
+            sector_tecs["Other"] = filtered_other
+        
+        # Add exports as a separate category
+        if export_tecs:
+            sector_tecs["Exports"] = export_tecs
+        
+        # DEBUG: Print sector mapping
+        print("\n=== GAS UTILIZATION SECTOR MAPPING ===")
         for sector, tecs in sector_tecs.items():
+            print(f"{sector}: {tecs}")
+        if other_tecs != filtered_other:
+            print(f"Filtered out (balance/virtual): {[t for t in other_tecs if t not in filtered_other]}")
+        print("=== END SECTOR MAPPING ===\n")
+        
+        # Helper function to calculate gas use for a list of technologies
+        def calculate_gas_use_from_tecs(tecs, commodity_filter=None):
+            """Calculate gas use from a list of technologies."""
+            if not tecs:
+                return pd.Series(dtype=float)
+            
+            # Get activity data
+            df_act = self.msg.var("ACT", {"technology": tecs})
+            if df_act.empty:
+                return pd.Series(dtype=float)
+            
+            # Get input parameter data
+            filters = {"technology": tecs}
+            if commodity_filter:
+                filters["commodity"] = commodity_filter
+            
+            df_par = self.msg.par("input", filters)
+            if df_par.empty:
+                return pd.Series(dtype=float)
+            
+            # Determine technology column name
+            tec_col = 'technology' if 'technology' in df_act.columns else 'tec'
+            
+            # Determine commodity column name
+            com_col = 'commodity' if 'commodity' in df_par.columns else None
+            
+            # Aggregate parameter values by technology (and commodity if present)
+            if com_col:
+                df_par_agg = df_par.groupby([tec_col, com_col], as_index=False)['value'].mean()
+            else:
+                df_par_agg = df_par.groupby([tec_col], as_index=False)['value'].mean()
+            
+            # Merge activity with parameter
+            df_merge = df_act.merge(df_par_agg, how="left", left_on=tec_col, right_on=tec_col)
+            
+            # Calculate product (activity * coefficient)
+            if 'lvl' in df_merge.columns and 'value' in df_merge.columns:
+                df_merge['product'] = df_merge['lvl'] * df_merge['value']
+            elif 'value' in df_merge.columns:
+                df_merge['product'] = df_merge['value']
+            else:
+                return pd.Series(dtype=float)
+            
+            # Determine year column
+            year_col = 'year_act' if 'year_act' in df_merge.columns else 'year_vtg'
+            
+            # Group by year and sum
+            if com_col and 'commodity' in df_merge.columns:
+                result = df_merge.groupby([year_col, 'commodity'])['product'].sum().reset_index()
+                return result
+            else:
+                result = df_merge.groupby([year_col])['product'].sum()
+                return result
+        
+        # Calculate gas use by standard sectors (including filtered "Other")
+        domestic_sectors = ["Power", "Industry", "Buildings", "Transport", "Other"]
+        for sector in domestic_sectors:
+            tecs = sector_tecs.get(sector, [])
             if not tecs:
                 continue
-
-            df, df2 = self._model_output(tecs, nodeloc, "input")
-            if df.empty:
-                continue
-
-            # Filter to gas commodities only
-            df_filtered = df[df['commodity'].isin(gas_commodities)] if 'commodity' in df.columns else df
-            if df_filtered.empty:
-                continue
-
-            df_grouped = self._group(df_filtered, ["year_act", "commodity"], "product", 0.0, yr)
-            if isinstance(df_grouped, pd.DataFrame) and not df_grouped.empty:
-                sector_results[sector] = df_grouped.sum(axis=1)
-
+            
+            gas_result = calculate_gas_use_from_tecs(tecs, commodity_filter=gas_commodities)
+            
+            if isinstance(gas_result, pd.DataFrame) and not gas_result.empty:
+                yearly = gas_result.groupby('year_act')['product'].sum()
+                sector_results[sector] = yearly
+            elif isinstance(gas_result, pd.Series) and not gas_result.empty:
+                sector_results[sector] = gas_result
+        
+        # Calculate exports separately
+        if export_tecs:
+            export_result = calculate_gas_use_from_tecs(export_tecs, commodity_filter=gas_commodities)
+            
+            if isinstance(export_result, pd.DataFrame) and not export_result.empty:
+                yearly = export_result.groupby('year_act')['product'].sum()
+                sector_results["Exports"] = yearly
+            elif isinstance(export_result, pd.Series) and not export_result.empty:
+                sector_results["Exports"] = export_result
+        
         if sector_results:
-            result_df = pd.DataFrame(sector_results)
-            self.results["Gas use by sector (PJ)"] = result_df * self.UNIT_GWA_TO_PJ
+            # Align all series to the same index (years)
+            all_years = set()
+            for series in sector_results.values():
+                if isinstance(series, pd.Series):
+                    all_years.update(series.index.tolist())
+            
+            if all_years:
+                aligned_results = {}
+                for name, series in sector_results.items():
+                    if isinstance(series, pd.Series):
+                        aligned_results[name] = series.reindex(sorted(all_years), fill_value=0)
+                
+                result_df = pd.DataFrame(aligned_results)
+                
+                # Convert from GWa to PJ (1 GWa = 31.536 PJ)
+                self.results["Gas use by sector (PJ)"] = result_df * 31.536
+
 
     # =========================================================================
     # Sectoral Use Analyses

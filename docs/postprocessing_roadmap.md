@@ -155,17 +155,23 @@ This document describes the calculations needed for each postprocessing analysis
 
 ---
 
-### 3.3 Feedstock by Fuel [MISSING - #8]
+### 3.3 Feedstock by Fuel [DONE]
 
 **Implementation:** `_calculate_feedstock_by_fuel()`
 **Output:** "Feedstock by fuel (PJ)"
 
 **Calculation:**
 1. Get technologies from `output` where `commodity = "i_feed"` (industrial feedstock)
-2. Get `ACT` for these technologies
-3. Multiply by `input` parameter to get fuel consumption for feedstock
-4. Group by input commodity (fuel type)
-5. Convert to PJ
+2. These are technologies using fuels for non-energy purposes (petrochemicals, etc.)
+3. Get `ACT` for these technologies
+4. Multiply by `input` parameter to get fuel consumption for feedstock
+5. Group by input commodity (fuel type)
+
+**Implementation Details:**
+- Uses `_model_output()` to get activity * input coefficients
+- Groups by input commodity to show fuel type breakdown (coal, gas, oil, biomass)
+- Adds historical data via `_add_history()`
+- Unit conversion: 31.536 (GWa → PJ)
 
 **Data sources:**
 - `ACT` variable
@@ -193,6 +199,37 @@ This document describes the calculations needed for each postprocessing analysis
 
 ---
 
+### 3.6 Oil Derivatives Use [DONE]
+
+**Implementation:** `_calculate_oil_derivatives_use()`
+**Output:** "Oil derivatives use by sector (PJ)"
+
+**Calculation:**
+1. Get technologies that input oil products: `input` where commodity in oil_products
+2. Filter out refinery technologies (they produce, not consume)
+3. Map to sectors using `output` parameter:
+   - Power generation: output "electr"
+   - Industry: output "i_spec", "i_therm"
+   - Buildings: output "rc_spec", "rc_therm"
+   - Transport: output "transport"
+   - Other: remaining technologies
+4. Get `ACT` for these technologies
+5. Multiply by `input` parameter value
+6. Group by sector
+
+**Implementation Details:**
+- Oil products tracked: lightoil, loil_rc, loil_i, fueloil, foil_rc, foil_i, diesel, gasoline, kerosene, naphtha, lpg
+- Uses `_map_technologies_to_sectors()` for sector mapping
+- Excludes refinery technologies (identified by output of oil products)
+- Exports tracked separately via technology naming conventions
+- Unit conversion: 31.536 (GWa → PJ)
+
+**Data sources:**
+- `ACT` variable
+- `input` parameter - oil product consumption
+- `output` parameter - for sector mapping and to identify refineries
+
+
 ### 3.5 Primary Energy Supply [PARTIAL]
 
 **Implementation:** `_calculate_energy_balances()` (existing)
@@ -216,7 +253,7 @@ This document describes the calculations needed for each postprocessing analysis
 
 ## 4. Fuels
 
-### 4.1 Gas Supply by Source [BROKEN - #9]
+### 4.1 Gas Supply by Source [DONE]
 
 **Implementation:** `_calculate_gas_supply_by_source()`
 **Output:** "Gas supply by source (PJ)"
@@ -225,19 +262,35 @@ This document describes the calculations needed for each postprocessing analysis
 1. **Domestic production:** Technologies that output gas at primary level
    - `output` where `commodity = "gas"` and `level = "primary"`
 2. **Imports:** Gas import technologies ("gas_imp" or similar)
+   - Searches technology names for case-insensitive "_imp" suffix
+   - Also discovers from input parameter data
 3. **Exports:** Gas export technologies ("gas_exp" or similar)
+   - Searches technology names for case-insensitive "_exp" suffix
+   - Also discovers from output parameter data
 4. Get `ACT` for all these technologies
-5. Multiply by relevant parameter values
+5. Multiply by relevant parameter values (activity × coefficient)
 6. Present as: Production + Imports - Exports = Total Supply
+
+**Implementation Details:**
+- Uses helper function `calculate_gas_supply_from_tecs()` for clean data processing
+- Handles column name variations (technology vs tec)
+- Aligns results by year index for proper DataFrame construction
+- Unit conversion: 31.536 (GWa → PJ)
+
+**Visualization:**
+- Production + Imports: Stacked bars above zero
+- Exports: Red bars below zero (barmode='relative')
+- Total Supply: Green line with markers and value labels
 
 **Data sources:**
 - `ACT` variable
 - `output` parameter for production
-- Import/export technology naming
+- `input` parameter for exports
+- Import/export technology naming conventions
 
 ---
 
-### 4.2 Gas Utilization by Sector [MISSING - #10]
+### 4.2 Gas Utilization by Sector [DONE]
 
 **Implementation:** `_calculate_gas_utilization_by_sector()`
 **Output:** "Gas use by sector (PJ)"
@@ -249,9 +302,18 @@ This document describes the calculations needed for each postprocessing analysis
    - Industry: output "i_spec", "i_therm"
    - Buildings: output "rc_spec", "rc_therm"
    - Transport: output "transport"
+   - Exports: technology names containing "_exp" or "export"
 3. Get `ACT` for these technologies
 4. Multiply by `input` parameter value
 5. Group by sector
+
+**Implementation Details:**
+- Simplified commodity filter to ["gas"]
+- Added export detection via technology naming conventions
+- Uses `_map_technologies_to_sectors()` for sector mapping
+- Handles column name variations (technology vs tec)
+- Unit conversion: 31.536 (GWa → PJ)
+- Removes empty "Other" column from results
 
 **Data sources:**
 - `ACT` variable
@@ -463,12 +525,12 @@ For each electricity-generating technology, calculate LCOE components:
 | Energy Balance | Final Energy Consumption | DONE | `_calculate_energy_balances()` | #7 (fixed) |
 | Energy Balance | Exports by Fuel | MISSING | `_calculate_energy_exports_by_fuel()` | #8 |
 | Energy Balance | Imports by Fuel | MISSING | `_calculate_energy_imports_by_fuel()` | #8 |
-| Energy Balance | Feedstock by Fuel | MISSING | `_calculate_feedstock_by_fuel()` | #8 |
+| Energy Balance | Feedstock by Fuel | DONE | `_calculate_feedstock_by_fuel()` | - |
 | Energy Balance | Oil Derivatives Supply | DONE | `_calculate_oil_derivatives_supply()` | - |
-| Energy Balance | Oil Derivatives Use | [ ] | - | #11 |
+| Energy Balance | Oil Derivatives Use | DONE | `_calculate_oil_derivatives_use()` | #11 (fixed) |
 | Energy Balance | Primary Supply | MISSING | `_calculate_energy_balances()` | #8 |
-| Fuels | Gas Supply | BROKEN | `_calculate_gas_supply_by_source()` | #9 |
-| Fuels | Gas Utilization | MISSING | `_calculate_gas_utilization_by_sector()` | #10 |
+| Fuels | Gas Supply | DONE | `_calculate_gas_supply_by_source()` | - |
+| Fuels | Gas Utilization | DONE | `_calculate_gas_utilization_by_sector()` | - |
 | Sectoral | Buildings by Fuel | MISSING | `_calculate_buildings_by_fuel()` | #15 |
 | Sectoral | Industry by Fuel | MISSING | `_calculate_industry_by_fuel()` | #15 |
 | Prices | By Sector | DONE | `_calculate_prices_by_sector()` | - |
@@ -686,17 +748,18 @@ This section documents identified problems with the current postprocessing imple
 
 ---
 
-### Issue 11: Oil Derivatives Use - No Such Analysis
+### Issue 11: Oil Derivatives Use - FIXED
 
-**Problem:** "Oil derivatives use" is expected but doesn't exist. Current implementation has "Oil derivatives supply" which calculates refinery output.
+**Status:** Implemented `_calculate_oil_derivatives_use()`
 
-**Suggested Fix:**
-1. Create new calculation `_calculate_oil_derivatives_use()` that tracks consumption of oil products by sector
-2. Similar to gas utilization: find technologies with `input` commodity in (lightoil, fueloil, diesel, gasoline)
-3. Map to sectors using `output` commodity
-4. Multiply ACT by input coefficient
+**Solution:**
+1. Created new calculation `_calculate_oil_derivatives_use()` that tracks consumption of oil products by sector
+2. Finds technologies with `input` commodity in oil products list
+3. Maps to sectors using `output` commodity
+4. Excludes refinery technologies (they produce, not consume)
+5. Multiplies ACT by input coefficient
+6. Results in "Oil derivatives use by sector (PJ)"
 
----
 
 ### Issue 12: Power Capacity with Renewables is Redundant
 
