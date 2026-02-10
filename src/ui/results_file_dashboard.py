@@ -231,12 +231,19 @@ class ResultsFileDashboard(QWidget):
         df = param.df
         year_col = 'year' if 'year' in df.columns else 'year_act'
 
-        # render stacked bar chart with 'year_act' as years, and the rest of the columns as data
-        years = df[year_col].unique().tolist()
-        data_dict = {}
-        for col in df.columns:
-            if col != year_col and col != 'value':
-                data_dict[col] = df.groupby(year_col)[col].sum().tolist()
+        # Detect long format (year, category, value) vs wide format (year + category columns)
+        if 'category' in df.columns and 'value' in df.columns:
+            # Long format: pivot to wide for charting
+            wide_df = df.pivot_table(index=year_col, columns='category', values='value', aggfunc='sum').fillna(0)
+            years = wide_df.index.tolist()
+            data_dict = {col: wide_df[col].tolist() for col in wide_df.columns}
+        else:
+            # Wide format: each non-year column is a data series
+            years = df[year_col].unique().tolist()
+            data_dict = {}
+            for col in df.columns:
+                if col != year_col and col != 'value':
+                    data_dict[col] = df.groupby(year_col)[col].sum().tolist()
 
         self._render_stacked_bar_chart(
             chart_view,
@@ -260,11 +267,19 @@ class ResultsFileDashboard(QWidget):
 
         # Sum values for each source in 2050
         data_dict = {}
-        for col in df_2050.columns:
-            if col != year_col and col != 'value':
-                total = df_2050[col].sum()
-                if total > 0:  # Only include positive values
-                    data_dict[col] = total
+        if 'category' in df_2050.columns and 'value' in df_2050.columns:
+            # Long format: group by category and sum values
+            grouped = df_2050.groupby('category')['value'].sum()
+            for category, total in grouped.items():
+                if total > 0:
+                    data_dict[category] = total
+        else:
+            # Wide format: each non-year column is a data series
+            for col in df_2050.columns:
+                if col != year_col and col != 'value':
+                    total = df_2050[col].sum()
+                    if total > 0:  # Only include positive values
+                        data_dict[col] = total
 
         if not data_dict:
             self._show_chart_placeholder(chart_view, "No positive values for year 2050")
