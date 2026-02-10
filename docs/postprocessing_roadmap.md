@@ -117,7 +117,7 @@ This document describes the calculations needed for each postprocessing analysis
 
 ## 3. Energy Balance
 
-### 3.1 Energy Export by Fuel [MISSING - #8]
+### 3.1 Energy Export by Fuel [DONE - #8 fixed]
 
 **Implementation:** `_calculate_energy_exports_by_fuel()`
 **Output:** "Energy exports by fuel (PJ)"
@@ -136,7 +136,7 @@ This document describes the calculations needed for each postprocessing analysis
 
 ---
 
-### 3.2 Energy Import by Fuel [MISSING - #8]
+### 3.2 Energy Import by Fuel [DONE - #8 fixed]
 
 **Implementation:** `_calculate_energy_imports_by_fuel()`
 **Output:** "Energy imports by fuel (PJ)"
@@ -230,7 +230,7 @@ This document describes the calculations needed for each postprocessing analysis
 - `output` parameter - for sector mapping and to identify refineries
 
 
-### 3.5 Primary Energy Supply [PARTIAL]
+### 3.5 Primary Energy Supply [DONE - #8 fixed]
 
 **Implementation:** `_calculate_energy_balances()` (existing)
 **Output:** "Primary energy supply (PJ)"
@@ -523,16 +523,16 @@ For each electricity-generating technology, calculate LCOE components:
 | Emissions | By Sector | DONE | `_calculate_emissions_by_sector()` | #6 (fixed) |
 | Emissions | By Fuel | DONE | `_calculate_emissions_by_fuel()` | #6 (fixed) |
 | Energy Balance | Final Energy Consumption | DONE | `_calculate_energy_balances()` | #7 (fixed) |
-| Energy Balance | Exports by Fuel | MISSING | `_calculate_energy_exports_by_fuel()` | #8 |
-| Energy Balance | Imports by Fuel | MISSING | `_calculate_energy_imports_by_fuel()` | #8 |
+| Energy Balance | Exports by Fuel | DONE | `_calculate_energy_exports_by_fuel()` | #8 (fixed) |
+| Energy Balance | Imports by Fuel | DONE | `_calculate_energy_imports_by_fuel()` | #8 (fixed) |
 | Energy Balance | Feedstock by Fuel | DONE | `_calculate_feedstock_by_fuel()` | - |
 | Energy Balance | Oil Derivatives Supply | DONE | `_calculate_oil_derivatives_supply()` | - |
 | Energy Balance | Oil Derivatives Use | DONE | `_calculate_oil_derivatives_use()` | #11 (fixed) |
-| Energy Balance | Primary Supply | MISSING | `_calculate_energy_balances()` | #8 |
+| Energy Balance | Primary Supply | DONE | `_calculate_energy_balances()` | #8 (fixed) |
 | Fuels | Gas Supply | DONE | `_calculate_gas_supply_by_source()` | - |
 | Fuels | Gas Utilization | DONE | `_calculate_gas_utilization_by_sector()` | - |
-| Sectoral | Buildings by Fuel | MISSING | `_calculate_buildings_by_fuel()` | #15 |
-| Sectoral | Industry by Fuel | MISSING | `_calculate_industry_by_fuel()` | #15 |
+| Sectoral | Buildings by Fuel | DONE | `_calculate_buildings_by_fuel()` | #15 (fixed by #8 DataFrame fix) |
+| Sectoral | Industry by Fuel | DONE | `_calculate_industry_by_fuel()` | #15 (fixed by #8 DataFrame fix) |
 | Prices | By Sector | DONE | `_calculate_prices_by_sector()` | - |
 | Prices | By Fuel | BROKEN | `_calculate_prices_by_fuel()` | #13 |
 | Prices | Primary Prices | MISSING | `_calculate_prices()` | #14 |
@@ -714,15 +714,26 @@ This section documents identified problems with the current postprocessing imple
 
 ---
 
-### Issue 8: Missing - Energy Export/Import by Fuel, Feedstock by Fuel, Primary Energy Supply
+### Issue 8: Missing - Energy Export/Import by Fuel, Feedstock by Fuel, Primary Energy Supply [FIXED]
 
 **Problem:** These analyses are documented as [DONE] or [PARTIAL] but are not appearing in the UI.
 
-**Suggested Fix:**
-1. Verify the corresponding methods exist and are called
-2. Register these calculations in the postprocessor's analysis list
-3. For imports/exports: verify technology name pattern matching (`_imp`, `_exp` suffixes)
-4. For primary energy supply: complete the [PARTIAL] implementation
+**Root Causes (discovered via debug):**
+1. **Pandas DataFrame addition bug:** When `_add_history()` returns a DataFrame with index but no columns (no historical data), the pattern `(df_hist + df).fillna(0)` zeros out ALL values. Pandas treats missing columns in the addition as NaN, and fillna(0) replaces them with 0 instead of preserving the original data. This affected ALL calculations that combine model data with historical data, not just Issue 8.
+2. **Export parameter mismatch:** `_calculate_energy_exports_by_fuel()` used `"input"` parameter for export technologies, but export techs often don't have `input` defined. Should use `"output"` (matching the working `_calculate_trade()` method).
+3. **Technology set dependency:** Methods relied solely on `self.msg.set("technology")` which may be empty if the technology set wasn't loaded.
+
+**Fix Applied (2026-02-10):**
+1. **Core fix - DataFrame addition:** Replaced all 22 instances of `(df_hist + df).fillna(0)` and `(df + df_hist).fillna(0)` with `df.add(df_hist, fill_value=0)`. The `.add(fill_value=0)` method correctly preserves values when one DataFrame has no columns.
+2. **Export parameter fix:** Changed `_calculate_energy_exports_by_fuel()` to use `"output"` parameter instead of `"input"` for export technologies.
+3. **Robust technology discovery:** Added `_get_all_technology_names()` helper that falls back to extracting technology names from the ACT variable when the technology set is empty.
+
+**Changes made to `results_postprocessor.py`:**
+- Added `_get_all_technology_names()` helper method
+- Changed `_calculate_energy_exports_by_fuel()` to use `"output"` and `_get_all_technology_names()`
+- Changed `_calculate_energy_imports_by_fuel()` to use `_get_all_technology_names()`
+- Replaced 22 instances of buggy DataFrame addition pattern across the file
+- Removed redundant guard check in `_calculate_energy_balances()` final energy section
 
 ---
 
@@ -813,7 +824,7 @@ This section documents identified problems with the current postprocessing imple
 
 | Priority | Issue | Complexity | Impact |
 |----------|-------|------------|--------|
-| 1 | Issue 8: Missing energy balance analyses | Medium | High - core functionality |
+| 1 | Issue 8: Missing energy balance analyses | Medium | DONE |
 | 2 | Issue 7: Final energy consumption incomplete | Medium | DONE |
 | 3 | Issue 3/4: Renewables missing from capacity | Low | High - key data missing |
 | 4 | Issue 6: Missing emissions analyses | Low | DONE |
@@ -833,8 +844,9 @@ This section documents identified problems with the current postprocessing imple
 
 ### Common Root Causes
 
-1. **Methods exist but not registered** - Many calculations are implemented but not added to the postprocessor's analysis list that populates the UI
-2. **Technology name matching too restrictive** - Patterns like `_imp`, `_exp` may not match all variations
-3. **Renewable technologies not included** - Need to check `input.level = "renewable"` in addition to `output.commodity = "electr"`
-4. **Historical vs model years not combined** - Need to merge `historical_activity` with `ACT` variable
-5. **Unit conversion errors** - Verify GWa to PJ (×31.536) and GWa to TWh (×8.76) conversions
+1. **DataFrame addition bug (FIXED)** - `(df_hist + df).fillna(0)` zeros out all values when `_add_history()` returns DataFrame with no columns. Fixed by using `df.add(df_hist, fill_value=0)` everywhere.
+2. **Methods exist but not registered** - Many calculations are implemented but not added to the postprocessor's analysis list that populates the UI
+3. **Technology name matching too restrictive** - Patterns like `_imp`, `_exp` may not match all variations
+4. **Renewable technologies not included** - Need to check `input.level = "renewable"` in addition to `output.commodity = "electr"`
+5. **Historical vs model years not combined** - Need to merge `historical_activity` with `ACT` variable
+6. **Unit conversion errors** - Verify GWa to PJ (×31.536) and GWa to TWh (×8.76) conversions

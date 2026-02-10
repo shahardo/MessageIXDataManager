@@ -225,6 +225,24 @@ class ResultsPostprocessor:
         # Convert results to Parameters
         return self._create_parameters()
 
+    def _get_all_technology_names(self) -> List[str]:
+        """Get all technology names, falling back to ACT variable if set is empty.
+
+        The technology set may not be loaded (e.g., when only ZIP data files
+        are available). In that case, extract unique technology names from
+        the ACT variable.
+        """
+        techs = self.msg.set('technology')
+        if len(techs) > 0:
+            return techs.tolist()
+
+        # Fallback: get from ACT variable
+        act = self.msg.var('ACT')
+        if not act.empty and 'technology' in act.columns:
+            return act['technology'].unique().tolist()
+
+        return []
+
     def _detect_node_location(self) -> str:
         """Auto-detect the node location from the data."""
         # Try to get from sets
@@ -619,7 +637,7 @@ class ResultsPostprocessor:
 
         # Add historical data
         df_hist = self._add_history(tecs, nodeloc, df2, "technology")
-        df = (df_hist + df).fillna(0)
+        df = df.add(df_hist, fill_value=0)
 
         # Rename sectors
         rename_map = {
@@ -642,7 +660,7 @@ class ResultsPostprocessor:
             if not df.empty:
                 df = self._group(df, ["year_act", "technology"], "product", 0.0, yr)
                 df_hist = self._add_history(tecs, nodeloc, df2, "technology")
-                df = (df_hist + df).fillna(0)
+                df = df.add(df_hist, fill_value=0)
                 self.results["Gas supply (PJ)"] = self._mappings(df) * self.UNIT_GWA_TO_PJ
 
         # Gas usage
@@ -653,7 +671,7 @@ class ResultsPostprocessor:
             if not df.empty:
                 df = self._group(df, ["year_act", "technology"], "product", 0.0, yr)
                 df_hist = self._add_history(tecs, nodeloc, df2, "technology")
-                df = (df_hist + df).fillna(0)
+                df = df.add(df_hist, fill_value=0)
                 self.results["Gas utilization (PJ)"] = self._mappings(df) * self.UNIT_GWA_TO_PJ
 
     def _calculate_coal_results(self, nodeloc: str, yr: int):
@@ -667,7 +685,7 @@ class ResultsPostprocessor:
             if not df.empty:
                 df = self._group(df, ["year_act", "technology"], "product", 0.0, yr)
                 df_hist = self._add_history(tecs, nodeloc, df2, "technology")
-                df = (df + df_hist).fillna(0)
+                df = df.add(df_hist, fill_value=0)
                 self.results["Coal supply (PJ)"] = self._mappings(df) * self.UNIT_GWA_TO_PJ
 
         # Coal usage
@@ -679,7 +697,7 @@ class ResultsPostprocessor:
             if not df.empty:
                 df = self._group(df, ["year_act", "technology"], "product", 0.0, yr)
                 df_hist = self._add_history(tecs, nodeloc, df2, "technology")
-                df = (df + df_hist).fillna(0)
+                df = df.add(df_hist, fill_value=0)
                 self.results["Coal utilization (PJ)"] = self._mappings(df) * self.UNIT_GWA_TO_PJ
 
     def _calculate_oil_results(self, nodeloc: str, yr: int):
@@ -692,7 +710,7 @@ class ResultsPostprocessor:
             if not df.empty:
                 df = self._group(df, ["year_act", "technology"], "product", 0.0, yr)
                 df_hist = self._add_history(tecs, nodeloc, df2, "technology")
-                df = (df + df_hist).fillna(0)
+                df = df.add(df_hist, fill_value=0)
                 self.results["Oil derivative supply (PJ)"] = self._mappings(df) * self.UNIT_GWA_TO_PJ
 
         # Oil derivatives use
@@ -703,7 +721,7 @@ class ResultsPostprocessor:
             if not df.empty:
                 df = self._group(df, ["year_act", "technology"], "product", 0.0, yr)
                 df_hist = self._add_history(tecs, nodeloc, df2, "technology")
-                df = (df + df_hist).fillna(0)
+                df = df.add(df_hist, fill_value=0)
                 self.results["Oil derivative use (PJ)"] = self._mappings(df) * self.UNIT_GWA_TO_PJ
 
         # Oil supply
@@ -714,7 +732,7 @@ class ResultsPostprocessor:
             if not df.empty:
                 df = self._group(df, ["year_act", "technology"], "product", 0.0, yr)
                 df_hist = self._add_history(tecs, nodeloc, df2, "technology")
-                df = (df + df_hist).fillna(0)
+                df = df.add(df_hist, fill_value=0)
                 self.results["Oil supply (PJ)"] = self._mappings(df) * self.UNIT_GWA_TO_PJ
 
     def _calculate_biomass_results(self, nodeloc: str, yr: int):
@@ -727,7 +745,7 @@ class ResultsPostprocessor:
             if not df.empty:
                 df = self._group(df, ["year_act", "technology"], "product", 0.0, yr)
                 df_hist = self._add_history(tecs, nodeloc, df2, "technology")
-                df = (df + df_hist).fillna(0)
+                df = df.add(df_hist, fill_value=0)
                 self.results["Biomass supply (PJ)"] = self._mappings(df) * self.UNIT_GWA_TO_PJ
 
         # Biomass use
@@ -738,7 +756,7 @@ class ResultsPostprocessor:
             if not df.empty:
                 df = self._group(df, ["year_act", "technology"], "product", 0.0, yr)
                 df_hist = self._add_history(tecs, nodeloc, df2, "technology")
-                df = (df + df_hist).fillna(0)
+                df = df.add(df_hist, fill_value=0)
                 self.results["Biomass utilization (PJ)"] = self._mappings(df) * self.UNIT_GWA_TO_PJ
 
     def _calculate_sector_results(self, nodeloc: str, yr: int):
@@ -778,7 +796,7 @@ class ResultsPostprocessor:
             if not df.empty:
                 df = self._group(df, ["year_act", "commodity"], "product", 0.0, yr)
                 df_hist = self._add_history(tecs, nodeloc, df2, "commodity")
-                df = self._com_order((df_hist + df).fillna(0), order)
+                df = self._com_order(df.add(df_hist, fill_value=0), order)
                 self.results["Energy use Industry (PJ)"] = df * self.UNIT_GWA_TO_PJ
 
         # Non-energy feedstock
@@ -789,7 +807,7 @@ class ResultsPostprocessor:
             if not df.empty:
                 df = self._group(df, ["year_act", "commodity"], "product", 0.0, yr)
                 df_hist = self._add_history(tecs, nodeloc, df2, "commodity")
-                df = self._com_order((df_hist + df).fillna(0), order)
+                df = self._com_order(df.add(df_hist, fill_value=0), order)
                 self.results["Non-energy use Feedstock (PJ)"] = df * self.UNIT_GWA_TO_PJ
 
         # Buildings
@@ -800,7 +818,7 @@ class ResultsPostprocessor:
             if not df.empty:
                 df = self._group(df, ["year_act", "technology"], "product", 0.0, yr)
                 df_hist = self._add_history(tecs, nodeloc, df2, "technology")
-                df = self._com_order((df_hist + df).fillna(0), order)
+                df = self._com_order(df.add(df_hist, fill_value=0), order)
                 self.results["Energy use Buildings (PJ)"] = df * self.UNIT_GWA_TO_PJ
 
     def _calculate_energy_balances(self, nodeloc: str, yr: int):
@@ -815,7 +833,7 @@ class ResultsPostprocessor:
             if not df.empty:
                 df = self._group(df, ["year_act", "commodity"], "product", 0.0, yr)
                 df_hist = self._add_history(tecs, nodeloc, df2, "commodity")
-                df = self._com_order((df_hist + df).fillna(0), order)
+                df = self._com_order(df.add(df_hist, fill_value=0), order)
 
                 # Add renewables
                 input_par = self.msg.par("input", {"level": ["renewable"]})
@@ -825,25 +843,25 @@ class ResultsPostprocessor:
                     if not df_re.empty:
                         df_re = self._group(df_re, ["year_act", "commodity"], "product", 0.0, yr)
                         df_hist_re = self._add_history(tecs_re, nodeloc, df2_re, "commodity")
-                        df = df.add(self._com_order((df_hist_re + df_re).fillna(0), order), fill_value=0)
+                        df = df.add(self._com_order(df_re.add(df_hist_re, fill_value=0), order), fill_value=0)
 
                 # Handle imports/exports
-                tecs_imp = [x for x in self.msg.set("technology") if str(x).endswith("_imp")]
+                tecs_imp = [x for x in self._get_all_technology_names() if str(x).endswith("_imp")]
                 if tecs_imp:
                     df_imp, df2_imp = self._model_output(tecs_imp, nodeloc, "output")
                     if not df_imp.empty:
                         df_imp = self._group(df_imp, ["year_act", "commodity"], "product", 0.0, yr)
                         df_hist_imp = self._add_history(tecs_imp, nodeloc, df2_imp, "commodity")
-                        df_imp = self._com_order((df_hist_imp + df_imp).fillna(0), order)
+                        df_imp = self._com_order(df_imp.add(df_hist_imp, fill_value=0), order)
                         df = df.add(df_imp, fill_value=0)
 
-                tecs_exp = [x for x in self.msg.set("technology") if "_exp" in str(x)]
+                tecs_exp = [x for x in self._get_all_technology_names() if "_exp" in str(x)]
                 if tecs_exp:
                     df_exp, df2_exp = self._model_output(tecs_exp, nodeloc, "output")
                     if not df_exp.empty:
                         df_exp = self._group(df_exp, ["year_act", "commodity"], "product", 0.0, yr)
                         df_hist_exp = self._add_history(tecs_exp, nodeloc, df2_exp, "commodity")
-                        df_exp = self._com_order((df_hist_exp + df_exp).fillna(0), order)
+                        df_exp = self._com_order(df_exp.add(df_hist_exp, fill_value=0), order)
                         df = df.add(-df_exp, fill_value=0)
 
                 self.results["Primary energy supply (PJ)"] = self._com_order(df, order) * self.UNIT_GWA_TO_PJ
@@ -861,9 +879,7 @@ class ResultsPostprocessor:
             if not df.empty:
                 df = self._group(df, ["year_act", "commodity"], "product", 0.0, yr)
                 df_hist = self._add_history(tecs, nodeloc, df2, "commodity")
-                # Handle case where historical data might be empty
-                if not df_hist.empty and len(df_hist.columns) > 0:
-                    df = (df_hist + df).fillna(0)
+                df = df.add(df_hist, fill_value=0)
                 df = self._com_order(df, order)
                 self.results["Final energy consumption (PJ)"] = df * self.UNIT_GWA_TO_PJ
 
@@ -887,7 +903,7 @@ class ResultsPostprocessor:
             if not df.empty:
                 df = self._group(df, ["year_act", "commodity"], "product", 0.0, yr)
                 df_hist = self._add_history(tecs_exp, nodeloc, df2, "commodity")
-                df = self._com_order((df_hist + df).fillna(0), order)
+                df = self._com_order(df.add(df_hist, fill_value=0), order)
                 self.results["Energy exports (PJ)"] = df * self.UNIT_GWA_TO_PJ
 
         # Imports
@@ -897,7 +913,7 @@ class ResultsPostprocessor:
             if not df.empty:
                 df = self._group(df, ["year_act", "commodity"], "product", 0.0, yr)
                 df_hist = self._add_history(tecs_imp, nodeloc, df2, "commodity")
-                df = self._com_order((df_hist + df).fillna(0), order)
+                df = self._com_order(df.add(df_hist, fill_value=0), order)
                 self.results["Energy imports (PJ)"] = df * self.UNIT_GWA_TO_PJ
 
     def _calculate_emissions(self, nodeloc: str, yr: int):
@@ -1157,7 +1173,7 @@ class ResultsPostprocessor:
 
         df = self._group(df, ["year_act", "commodity"], "product", 0.0, yr)
         df_hist = self._add_history(tecs, nodeloc, df2, "commodity")
-        df = self._com_order((df_hist + df).fillna(0), order)
+        df = self._com_order(df.add(df_hist, fill_value=0), order)
         return df
 
     # =========================================================================
@@ -1263,7 +1279,7 @@ class ResultsPostprocessor:
                 df = self._group(df, ["year_act", "technology"], "product", 0.0, yr)
                 df_hist = self._add_history(consumer_tecs, nodeloc, df2, "technology")
                 if not df_hist.empty and len(df_hist.columns) > 0:
-                    df = (df_hist + df).fillna(0)
+                    df = df.add(df_hist, fill_value=0)
                 result_df = df
 
         # 2. Calculate storage losses (input - output)
@@ -1902,23 +1918,24 @@ class ResultsPostprocessor:
     def _calculate_energy_exports_by_fuel(self, nodeloc: str, yr: int):
         """Calculate energy exports grouped by fuel commodity."""
         order = self._get_commodity_order()
-        tecs_exp = [x for x in self.msg.set("technology") if "_exp" in str(x)]
+        tecs_exp = [x for x in self._get_all_technology_names() if "_exp" in str(x)]
         if not tecs_exp:
             return
 
-        df, df2 = self._model_output(tecs_exp, nodeloc, "input")
+        # Use "output" parameter - export techs may not have "input" defined
+        df, df2 = self._model_output(tecs_exp, nodeloc, "output")
         if df.empty:
             return
 
         df = self._group(df, ["year_act", "commodity"], "product", 0.0, yr)
         df_hist = self._add_history(tecs_exp, nodeloc, df2, "commodity")
-        df = self._com_order((df_hist + df).fillna(0), order)
+        df = self._com_order(df.add(df_hist, fill_value=0), order)
         self.results["Energy exports by fuel (PJ)"] = df * self.UNIT_GWA_TO_PJ
 
     def _calculate_energy_imports_by_fuel(self, nodeloc: str, yr: int):
         """Calculate energy imports grouped by fuel commodity."""
         order = self._get_commodity_order()
-        tecs_imp = [x for x in self.msg.set("technology") if str(x).endswith("_imp")]
+        tecs_imp = [x for x in self._get_all_technology_names() if str(x).endswith("_imp")]
         if not tecs_imp:
             return
 
@@ -1928,7 +1945,7 @@ class ResultsPostprocessor:
 
         df = self._group(df, ["year_act", "commodity"], "product", 0.0, yr)
         df_hist = self._add_history(tecs_imp, nodeloc, df2, "commodity")
-        df = self._com_order((df_hist + df).fillna(0), order)
+        df = self._com_order(df.add(df_hist, fill_value=0), order)
         self.results["Energy imports by fuel (PJ)"] = df * self.UNIT_GWA_TO_PJ
 
     def _calculate_feedstock_by_fuel(self, nodeloc: str, yr: int):
@@ -2007,7 +2024,7 @@ class ResultsPostprocessor:
         
         # Combine historical and model results
         if not df_hist.empty:
-            df = (df_hist + df).fillna(0)
+            df = df.add(df_hist, fill_value=0)
         
         # Get commodity order
         order = self._get_commodity_order()
