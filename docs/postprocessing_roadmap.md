@@ -449,44 +449,37 @@ This document describes the calculations needed for each postprocessing analysis
 
 ---
 
-### 6.6 Electricity Price by Source (Detailed LCOE) [DONE]
+### 6.6 Electricity Price by Source (Detailed LCOE) [DONE - #1 fixed]
 
 **Implementation:** `_calculate_electricity_price_by_source()`
 **Output:** "Electricity cost by source ($/MWh)"
 
 **Calculation:**
-For each electricity-generating technology, calculate LCOE components:
+For each electricity-generating technology, calculate total system cost per year,
+then express as cost contribution per MWh of total generation. This makes the
+values additive across sources (sum = system average LCOE), suitable for stacked
+bar charts.
 
-1. **CAPEX component:**
-   - Get `inv_cost` parameter (investment cost per capacity)
-   - Get `CAP_NEW` variable (new capacity)
-   - Annualize using discount rate and lifetime: `inv_cost * CRF / capacity_factor`
+1. **Variable O&M:** `ACT × var_cost` (total variable cost per tech per year)
+2. **Fixed O&M:** `CAP × fix_cost` (total fixed cost per tech per year)
+3. **Investment (annualized):**
+   - `CAP_NEW × inv_cost × CRF` spread across years within technical_lifetime
    - CRF (Capital Recovery Factor) = r(1+r)^n / ((1+r)^n - 1)
+4. **Fuel cost:** `ACT × input_coefficient × PRICE_COMMODITY`
+5. **Emission cost:** `ACT × emission_factor × PRICE_EMISSION`
+6. **Cost contribution per MWh:**
+   - `contribution = (tech_total_cost / total_yearly_generation) × 0.1142`
+   - Conversion factor 0.1142 converts M$/GWa to $/MWh
+7. **Technology grouping via `_mappings(groupby="technology")`:**
+   - Sums contributions within groups (correct since they share the same denominator)
+   - Sum across all groups = system-wide average LCOE
 
-2. **Fixed O&M component:**
-   - Get `fix_cost` parameter (fixed cost per capacity per year)
-   - Divide by capacity factor to get per-MWh cost
-
-3. **Variable O&M component:**
-   - Get `var_cost` parameter (variable cost per activity)
-   - Direct cost per MWh
-
-4. **Fuel cost component:**
-   - Get `input` parameter (fuel input per electricity output)
-   - Get fuel price from `PRICE_COMMODITY` at primary/secondary level
-   - Fuel_cost = input_coefficient * fuel_price
-
-5. **Emission cost component:**
-   - Get `emission_factor` parameter
-   - Get `PRICE_EMISSION` variable (carbon price)
-   - Emission_cost = emission_factor * carbon_price
-
-6. **Total LCOE by source:**
-   - LCOE_source = CAPEX + Fixed_OM + Variable_OM + Fuel + Emissions
-
-7. **Weighted system LCOE:**
-   - Weight each source's LCOE by its share of generation
-   - System_LCOE = Sum(LCOE_i * Share_i)
+**Key design decisions (fixed 2026-02-11):**
+- Technologies with zero activity (ACT=0) are excluded — they don't generate
+  electricity and should not appear in the cost chart
+- Uses cost contribution (total_cost / total_generation) instead of per-technology
+  LCOE (total_cost / tech_generation) to ensure correct aggregation in `_mappings()`
+- Handles inf/NaN edge cases with explicit replacement
 
 **Data sources:**
 - `inv_cost` parameter - investment costs
@@ -497,15 +490,10 @@ For each electricity-generating technology, calculate LCOE components:
 - `emission_factor` parameter - emissions per activity
 - `PRICE_COMMODITY` variable - fuel prices
 - `PRICE_EMISSION` variable - emission/carbon prices
-- `ACT` variable - for generation shares
-- `CAP`, `CAP_NEW` variables - for capacity
-- `technical_lifetime` parameter - for annualization
-- `discount_rate` or model-wide discount rate
-
-**Notes:**
-- Capacity factor can be derived from ACT / (CAP * 8760 hours)
-- For existing plants, use historical average costs or current market prices
-- Consider including transmission/distribution costs for delivered electricity price
+- `ACT` variable - for generation levels and total generation denominator
+- `CAP`, `CAP_NEW` variables - for capacity and investment annualization
+- `technical_lifetime` parameter - for CRF calculation
+- `interest_rate` parameter (default 0.05) - for CRF calculation
 
 ---
 
@@ -538,7 +526,7 @@ For each electricity-generating technology, calculate LCOE components:
 | Prices | Primary Prices | MISSING | `_calculate_prices()` | #14 |
 | Prices | Secondary Prices | MISSING | `_calculate_prices()` | #14 |
 | Prices | Electricity LCOE | MISSING | `_calculate_electricity_lcoe()` | #14 |
-| Prices | Cost by Source | PARTIALLY DONE | `_calculate_electricity_price_by_source()` | #1 |
+| Prices | Cost by Source | DONE | `_calculate_electricity_price_by_source()` | #1 (fixed) |
 
 ---
 
@@ -590,15 +578,21 @@ The following helper functions were added to support the calculations:
 
 This section documents identified problems with the current postprocessing implementation and their suggested fixes.
 
-### Issue 1: Electricity Cost by Source - Shows Only Nuclear
+### Issue 1: Electricity Cost by Source - Inf Values, Inflated Wind Costs [FIXED]
 
-**Problem:** The electricity cost by source calculation only displays nuclear, but should show all sources (gas, coal, solar, wind, etc.). Nuclear may not even be applicable to the current model.
+**Problem:** The electricity cost by source chart had three issues:
+1. `inf` values in the data table from dividing total_cost by zero activity
+2. Inflated wind onshore costs — `_mappings()` summed per-technology LCOE values within groups instead of computing weighted averages
+3. Retired technologies (ACT=0) still appeared in the cost chart due to fixed/investment costs
 
-**Suggested Fix:**
-1. Review technology filtering in `_calculate_electricity_price_by_source()` - ensure all electricity-generating technologies are captured
-2. Check that the filter includes technologies from both `output` (commodity="electr") AND `input` (level="renewable")
-3. Verify technology name matching patterns work for actual technology names in the data
-4. Add fallback to include technologies with cost data even if not matched by output commodity
+**Fix Applied (2026-02-11):**
+1. Changed calculation from per-technology LCOE (`total_cost / tech_activity`) to cost contribution per MWh of total generation (`total_cost / total_yearly_generation`). Contributions are additive across sources, making `_mappings()` sum correct.
+2. Filtered out technologies with zero activity before cost calculation — they don't generate electricity and shouldn't appear in the breakdown.
+3. Added explicit inf/NaN replacement for edge cases.
+
+**Changes made to `results_postprocessor.py`:**
+- `_calculate_electricity_price_by_source()`: Added zero-activity filter, changed unit_cost to cost_contribution formula, added inf/NaN cleanup
+- Added comprehensive tests in `tests/test_results_postprocessor.py::TestElectricityCostBySource` (6 tests covering: no inf values, zero-activity exclusion, retired tech exclusion, correct wind aggregation, additive contributions, full end-to-end LCOE with all 5 cost components across 2 years)
 
 ---
 
@@ -832,7 +826,7 @@ This section documents identified problems with the current postprocessing imple
 | 6 | Issue 13: Price data issues | Medium | Medium - data quality |
 | 7 | Issue 2: Electricity use by sector | Medium | DONE |
 | 8 | Issue 9: Gas supply issues | Medium | Medium - incorrect values |
-| 9 | Issue 1: LCOE missing sources | Medium | DONE |
+| 9 | Issue 1: LCOE inf values, inflated wind, retired techs | Medium | DONE (fixed 2026-02-11) |
 | 10 | Issue 14/15: Missing price/sectoral analyses | Low | Medium - missing features |
 | 11 | Issue 10: Missing gas utilization | Low | Low - missing feature |
 | 12 | Issue 11: Oil derivatives use | Medium | Low - new feature |

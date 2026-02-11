@@ -891,3 +891,594 @@ class TestFeedstockByFuel:
         # Should have columns for coal, gas, lightoil
         assert 'coal' in df.columns or 'gas' in df.columns, \
             f"Expected fuel commodities in columns, got: {df.columns.tolist()}"
+
+
+class TestElectricityCostBySource:
+    """Tests for electricity cost by source calculation (LCOE)."""
+
+    @pytest.fixture
+    def cost_scenario(self):
+        """Create scenario with electricity technologies and cost data.
+
+        Sets up wind_ppl, wind_res (both map to "wind onshore"), coal_ppl,
+        and solar_pv with known costs so we can verify the aggregation.
+        """
+        scenario = ScenarioData()
+
+        years = [2020, 2030]
+        techs = ['coal_ppl', 'wind_ppl', 'wind_res', 'solar_pv']
+
+        scenario.sets['technology'] = pd.Series(techs)
+        scenario.sets['commodity'] = pd.Series(['electr', 'coal'])
+        scenario.sets['year'] = pd.Series(years)
+        scenario.sets['node'] = pd.Series(['World'])
+
+        # output parameter — all produce electricity
+        output_rows = []
+        for tech in techs:
+            for year in years:
+                output_rows.append({
+                    'technology': tech, 'commodity': 'electr',
+                    'level': 'secondary', 'year_act': year,
+                    'year_vtg': 2015, 'node_loc': 'World',
+                    'mode': 'M1', 'time': 'year', 'value': 1.0
+                })
+        scenario.add_parameter(
+            Parameter('output', pd.DataFrame(output_rows),
+                      {'dims': ['technology', 'commodity']})
+        )
+
+        # ACT variable — activity levels
+        # coal_ppl=50, wind_ppl=20, wind_res=10, solar_pv=20  (total=100)
+        act_data = {
+            'coal_ppl': 50.0, 'wind_ppl': 20.0,
+            'wind_res': 10.0, 'solar_pv': 20.0,
+        }
+        act_rows = []
+        for year in years:
+            for tech, lvl in act_data.items():
+                act_rows.append({
+                    'technology': tech, 'year_act': year,
+                    'node_loc': 'World', 'mode': 'M1',
+                    'time': 'year', 'year_vtg': 2015, 'lvl': lvl
+                })
+        scenario.add_parameter(
+            Parameter('ACT', pd.DataFrame(act_rows), {'result_type': 'variable'})
+        )
+
+        # var_cost parameter — only cost component for simplicity
+        # coal_ppl=10, wind_ppl=5, wind_res=5, solar_pv=8
+        vc_data = {
+            'coal_ppl': 10.0, 'wind_ppl': 5.0,
+            'wind_res': 5.0, 'solar_pv': 8.0,
+        }
+        vc_rows = []
+        for year in years:
+            for tech, val in vc_data.items():
+                vc_rows.append({
+                    'technology': tech, 'year_act': year,
+                    'year_vtg': 2015, 'node_loc': 'World',
+                    'mode': 'M1', 'time': 'year', 'value': val
+                })
+        scenario.add_parameter(
+            Parameter('var_cost', pd.DataFrame(vc_rows),
+                      {'dims': ['technology']})
+        )
+
+        return scenario
+
+    @pytest.fixture
+    def zero_activity_scenario(self, cost_scenario):
+        """Scenario where one technology has zero activity."""
+        scenario = cost_scenario
+
+        # Replace ACT with a version where wind_res has 0 activity
+        act_rows = []
+        act_data = {
+            'coal_ppl': 50.0, 'wind_ppl': 20.0,
+            'wind_res': 0.0, 'solar_pv': 20.0,
+        }
+        for year in [2020, 2030]:
+            for tech, lvl in act_data.items():
+                act_rows.append({
+                    'technology': tech, 'year_act': year,
+                    'node_loc': 'World', 'mode': 'M1',
+                    'time': 'year', 'year_vtg': 2015, 'lvl': lvl
+                })
+        scenario.add_parameter(
+            Parameter('ACT', pd.DataFrame(act_rows), {'result_type': 'variable'})
+        )
+        return scenario
+
+    def test_no_inf_values(self, cost_scenario):
+        """Electricity cost by source must not contain inf values."""
+        processor = ResultsPostprocessor(cost_scenario)
+        processor.set_plot_years([2020, 2030])
+        processor._calculate_electricity_price_by_source('World', 2020)
+
+        assert "Electricity cost by source ($/MWh)" in processor.results
+        df = processor.results["Electricity cost by source ($/MWh)"]
+        assert not df.empty
+
+        # No inf or NaN values
+        assert not np.isinf(df.values).any(), \
+            f"Found inf values in cost data:\n{df}"
+        assert not np.isnan(df.values).any(), \
+            f"Found NaN values in cost data:\n{df}"
+
+    def test_no_inf_with_zero_activity(self, zero_activity_scenario):
+        """Zero-activity technologies must not produce inf values."""
+        processor = ResultsPostprocessor(zero_activity_scenario)
+        processor.set_plot_years([2020, 2030])
+        processor._calculate_electricity_price_by_source('World', 2020)
+
+        assert "Electricity cost by source ($/MWh)" in processor.results
+        df = processor.results["Electricity cost by source ($/MWh)"]
+        assert not df.empty
+
+        assert not np.isinf(df.values).any(), \
+            f"Found inf values with zero-activity tech:\n{df}"
+
+    def test_retired_tech_excluded_from_costs(self):
+        """A technology with ACT=0 in a year must not appear in that year's costs.
+
+        Simulates coal retiring by 2030 (ACT=0) while still having installed
+        capacity and investment costs.  The cost chart should not show coal
+        for years where it has no generation.
+        """
+        scenario = ScenarioData()
+
+        years = [2020, 2025, 2030, 2035]
+        techs = ['coal_ppl', 'solar_pv']
+
+        scenario.sets['technology'] = pd.Series(techs)
+        scenario.sets['commodity'] = pd.Series(['electr'])
+        scenario.sets['year'] = pd.Series(years)
+        scenario.sets['node'] = pd.Series(['World'])
+
+        # output parameter
+        output_rows = []
+        for tech in techs:
+            for year in years:
+                output_rows.append({
+                    'technology': tech, 'commodity': 'electr',
+                    'level': 'secondary', 'year_act': year,
+                    'year_vtg': 2015, 'node_loc': 'World',
+                    'mode': 'M1', 'time': 'year', 'value': 1.0
+                })
+        scenario.add_parameter(
+            Parameter('output', pd.DataFrame(output_rows),
+                      {'dims': ['technology', 'commodity']})
+        )
+
+        # ACT: coal runs in 2020/2025, retired (ACT=0) in 2030/2035
+        # solar runs in all years
+        act_rows = []
+        coal_act = {2020: 50.0, 2025: 30.0, 2030: 0.0, 2035: 0.0}
+        solar_act = {2020: 20.0, 2025: 30.0, 2030: 60.0, 2035: 80.0}
+        for year in years:
+            act_rows.append({
+                'technology': 'coal_ppl', 'year_act': year,
+                'node_loc': 'World', 'mode': 'M1',
+                'time': 'year', 'year_vtg': 2015, 'lvl': coal_act[year]
+            })
+            act_rows.append({
+                'technology': 'solar_pv', 'year_act': year,
+                'node_loc': 'World', 'mode': 'M1',
+                'time': 'year', 'year_vtg': 2015, 'lvl': solar_act[year]
+            })
+        scenario.add_parameter(
+            Parameter('ACT', pd.DataFrame(act_rows), {'result_type': 'variable'})
+        )
+
+        # var_cost for both technologies
+        vc_rows = []
+        for year in years:
+            vc_rows.append({
+                'technology': 'coal_ppl', 'year_act': year,
+                'year_vtg': 2015, 'node_loc': 'World',
+                'mode': 'M1', 'time': 'year', 'value': 10.0
+            })
+            vc_rows.append({
+                'technology': 'solar_pv', 'year_act': year,
+                'year_vtg': 2015, 'node_loc': 'World',
+                'mode': 'M1', 'time': 'year', 'value': 5.0
+            })
+        scenario.add_parameter(
+            Parameter('var_cost', pd.DataFrame(vc_rows),
+                      {'dims': ['technology']})
+        )
+
+        processor = ResultsPostprocessor(scenario)
+        processor.set_plot_years(years)
+        processor._calculate_electricity_price_by_source('World', 2020)
+
+        assert "Electricity cost by source ($/MWh)" in processor.results
+        df = processor.results["Electricity cost by source ($/MWh)"]
+
+        # Coal should have non-zero cost in 2020 and 2025
+        assert df.loc[2020, 'coal'] > 0, "Coal should have cost in 2020"
+        assert df.loc[2025, 'coal'] > 0, "Coal should have cost in 2025"
+
+        # Coal should have ZERO cost in 2030 and 2035 (no generation)
+        assert df.loc[2030, 'coal'] == 0, \
+            f"Coal should have zero cost in 2030 (ACT=0), got {df.loc[2030, 'coal']}"
+        assert df.loc[2035, 'coal'] == 0, \
+            f"Coal should have zero cost in 2035 (ACT=0), got {df.loc[2035, 'coal']}"
+
+        # No inf values anywhere
+        assert not np.isinf(df.values).any(), f"Found inf:\n{df}"
+
+    def test_wind_onshore_not_inflated(self, cost_scenario):
+        """Wind onshore cost must be a weighted contribution, not a sum of LCOEs.
+
+        With the old bug, wind_ppl LCOE + wind_res LCOE would be summed,
+        giving an inflated value.  The fix computes cost contributions that
+        are additive (share the same total-generation denominator).
+        """
+        processor = ResultsPostprocessor(cost_scenario)
+        processor.set_plot_years([2020, 2030])
+        processor._calculate_electricity_price_by_source('World', 2020)
+
+        df = processor.results["Electricity cost by source ($/MWh)"]
+
+        # "wind onshore" maps to wind_ppl + wind_res in _get_technology_mappings
+        assert 'wind onshore' in df.columns, \
+            f"Expected 'wind onshore' column, got: {df.columns.tolist()}"
+
+        # Expected: total_cost contributions divided by total generation.
+        # wind_ppl: total_cost = 20 * 5 = 100, contribution = (100/100) * 0.1142 ≈ 0.1142
+        # wind_res: total_cost = 10 * 5 = 50,  contribution = (50/100) * 0.1142 ≈ 0.0571
+        # wind onshore sum ≈ 0.1713
+        # coal_ppl: total_cost = 50 * 10 = 500, contribution = (500/100) * 0.1142 ≈ 0.571
+        # solar_pv: total_cost = 20 * 8 = 160, contribution = (160/100) * 0.1142 ≈ 0.1827
+        # System total ≈ 0.9252 $/MWh
+        # Wind onshore should be ~18.5% of total, NOT dominating.
+        wind_val = df.loc[2020, 'wind onshore']
+        coal_val = df.loc[2020, 'coal']
+
+        # Wind onshore should be much less than coal (wind has lower var_cost
+        # and less activity)
+        assert wind_val < coal_val, \
+            f"Wind onshore ({wind_val:.4f}) should be less than coal ({coal_val:.4f})"
+
+        # Contributions should sum to the system average cost
+        total = df.loc[2020].sum()
+        # total_cost = 50*10 + 20*5 + 10*5 + 20*8 = 500 + 100 + 50 + 160 = 810
+        # total_gen = 100, so system avg = (810/100) * 0.1142 = 0.9250
+        assert abs(total - 0.9250) < 0.01, \
+            f"Total cost contribution should be ~0.9250, got {total:.4f}"
+
+    def test_cost_contributions_additive(self, cost_scenario):
+        """Sum of all source contributions should equal system average LCOE."""
+        processor = ResultsPostprocessor(cost_scenario)
+        processor.set_plot_years([2020, 2030])
+        processor._calculate_electricity_price_by_source('World', 2020)
+
+        df = processor.results["Electricity cost by source ($/MWh)"]
+
+        for year in [2020, 2030]:
+            if year in df.index:
+                total = df.loc[year].sum()
+                # System: total_cost=810, total_gen=100
+                # system_avg = (810/100) * 0.1142 = 0.9250
+                expected = 810.0 / 100.0 * 0.1142
+                assert abs(total - expected) < 0.01, \
+                    f"Year {year}: sum of contributions ({total:.4f}) != " \
+                    f"system avg ({expected:.4f})"
+
+    def test_full_lcoe_calculation(self):
+        """End-to-end LCOE with all 5 cost components across two years.
+
+        Every input varies between years so each component is verified
+        independently per year, catching any year-mixing bugs.
+
+        Technologies: coal_ppl, solar_pv
+        Years:        2025, 2030
+
+        Year-varying inputs:
+        ┌────────────────┬─────────────┬─────────────┬──────────────┬──────────────┐
+        │                │ coal 2025   │ coal 2030   │ solar 2025   │ solar 2030   │
+        ├────────────────┼─────────────┼─────────────┼──────────────┼──────────────┤
+        │ ACT (GWa)      │  50         │  30         │  40          │  70          │
+        │ var_cost       │   5.0       │   6.0       │   3.0        │   2.0        │
+        │ CAP (GW)       │  12         │  10         │  20          │  35          │
+        │ fix_cost       │  20.0       │  20.0       │  10.0        │   8.0        │
+        └────────────────┴─────────────┴─────────────┴──────────────┴──────────────┘
+        Total generation:   90 (2025)    100 (2030)
+
+        Investment (CAP_NEW):
+            coal_ppl  5 GW vtg 2020, inv_cost 1000, lifetime 40 → active 2020–2060
+            solar_pv 10 GW vtg 2020, inv_cost  900, lifetime 25 → active 2020–2045
+            solar_pv  8 GW vtg 2025, inv_cost  800, lifetime 25 → active 2025–2050
+        Interest rate: 0.05
+
+        Fuel:       input efficiency 2.5 (coal_ppl, both years)
+                    coal price: 3.0 (2025), 4.0 (2030)
+        Emissions:  emission_factor 0.8 (coal_ppl, both years)
+                    CO2 price: 25.0 (2025), 50.0 (2030)
+
+        Expected per-year totals (M$):
+        ┌──────┬────────┬─────────────────────────────────────────────┬─────────┐
+        │ Year │ Tech   │ VOM + FOM + INV + FUEL + EMIS              │ Total   │
+        ├──────┼────────┼─────────────────────────────────────────────┼─────────┤
+        │ 2025 │ coal   │ 250 + 240 + 291.4 + 375.0 + 1000.0        │ 2156.4  │
+        │ 2025 │ solar  │ 120 + 200 + (638.6+454.1) + 0 + 0         │ 1412.7  │
+        │ 2030 │ coal   │ 180 + 200 + 291.4 + 300.0 + 1200.0        │ 2171.4  │
+        │ 2030 │ solar  │ 140 + 280 + (638.6+454.1) + 0 + 0         │ 1512.7  │
+        └──────┴────────┴─────────────────────────────────────────────┴─────────┘
+        """
+        scenario = ScenarioData()
+
+        Y1, Y2 = 2025, 2030
+        YEARS = [Y1, Y2]
+        techs = ['coal_ppl', 'solar_pv']
+
+        scenario.sets['technology'] = pd.Series(techs)
+        scenario.sets['commodity'] = pd.Series(['electr', 'coal'])
+        scenario.sets['year'] = pd.Series(YEARS)
+        scenario.sets['node'] = pd.Series(['World'])
+
+        # --- output parameter (identifies electricity producers) ---
+        output_rows = [
+            {'technology': t, 'commodity': 'electr', 'level': 'secondary',
+             'year_act': y, 'year_vtg': 2015, 'node_loc': 'World',
+             'mode': 'M1', 'time': 'year', 'value': 1.0}
+            for t in techs for y in YEARS
+        ]
+        scenario.add_parameter(
+            Parameter('output', pd.DataFrame(output_rows),
+                      {'dims': ['technology', 'commodity']})
+        )
+
+        # --- ACT variable (generation) — different per year ---
+        #            coal  solar
+        #   2025:     50    40   (total 90)
+        #   2030:     30    70   (total 100)
+        act_table = {
+            (Y1, 'coal_ppl'): 50.0, (Y1, 'solar_pv'): 40.0,
+            (Y2, 'coal_ppl'): 30.0, (Y2, 'solar_pv'): 70.0,
+        }
+        act_rows = [
+            {'technology': tech, 'year_act': yr, 'node_loc': 'World',
+             'mode': 'M1', 'time': 'year', 'year_vtg': 2015, 'lvl': lvl}
+            for (yr, tech), lvl in act_table.items()
+        ]
+        scenario.add_parameter(
+            Parameter('ACT', pd.DataFrame(act_rows), {'result_type': 'variable'})
+        )
+
+        # --- var_cost — different per year and technology ---
+        vc_table = {
+            (Y1, 'coal_ppl'): 5.0, (Y1, 'solar_pv'): 3.0,
+            (Y2, 'coal_ppl'): 6.0, (Y2, 'solar_pv'): 2.0,
+        }
+        vc_rows = [
+            {'technology': tech, 'year_act': yr, 'year_vtg': 2015,
+             'node_loc': 'World', 'mode': 'M1', 'time': 'year', 'value': val}
+            for (yr, tech), val in vc_table.items()
+        ]
+        scenario.add_parameter(
+            Parameter('var_cost', pd.DataFrame(vc_rows), {'dims': ['technology']})
+        )
+
+        # --- CAP variable — different per year ---
+        cap_table = {
+            (Y1, 'coal_ppl'): 12.0, (Y1, 'solar_pv'): 20.0,
+            (Y2, 'coal_ppl'): 10.0, (Y2, 'solar_pv'): 35.0,
+        }
+        cap_rows = [
+            {'technology': tech, 'year_act': yr, 'year_vtg': 2015, 'lvl': lvl}
+            for (yr, tech), lvl in cap_table.items()
+        ]
+        scenario.add_parameter(
+            Parameter('CAP', pd.DataFrame(cap_rows), {'result_type': 'variable'})
+        )
+
+        # --- fix_cost — different per year and technology ---
+        fc_table = {
+            (Y1, 'coal_ppl'): 20.0, (Y1, 'solar_pv'): 10.0,
+            (Y2, 'coal_ppl'): 20.0, (Y2, 'solar_pv'):  8.0,
+        }
+        fc_rows = [
+            {'technology': tech, 'year_act': yr, 'year_vtg': 2015,
+             'node_loc': 'World', 'value': val}
+            for (yr, tech), val in fc_table.items()
+        ]
+        scenario.add_parameter(
+            Parameter('fix_cost', pd.DataFrame(fc_rows), {'dims': ['technology']})
+        )
+
+        # --- CAP_NEW variable (two vintages for solar) ---
+        cap_new_rows = [
+            {'technology': 'coal_ppl', 'year_vtg': 2020, 'node_loc': 'World', 'lvl': 5.0},
+            {'technology': 'solar_pv', 'year_vtg': 2020, 'node_loc': 'World', 'lvl': 10.0},
+            {'technology': 'solar_pv', 'year_vtg': 2025, 'node_loc': 'World', 'lvl': 8.0},
+        ]
+        scenario.add_parameter(
+            Parameter('CAP_NEW', pd.DataFrame(cap_new_rows), {'result_type': 'variable'})
+        )
+
+        # --- inv_cost (per vintage) ---
+        inv_rows = [
+            {'technology': 'coal_ppl', 'year_vtg': 2020, 'node_loc': 'World', 'value': 1000.0},
+            {'technology': 'solar_pv', 'year_vtg': 2020, 'node_loc': 'World', 'value': 900.0},
+            {'technology': 'solar_pv', 'year_vtg': 2025, 'node_loc': 'World', 'value': 800.0},
+        ]
+        scenario.add_parameter(
+            Parameter('inv_cost', pd.DataFrame(inv_rows), {'dims': ['technology']})
+        )
+
+        # --- technical_lifetime ---
+        lt_rows = [
+            {'technology': 'coal_ppl', 'value': 40.0},
+            {'technology': 'solar_pv', 'value': 25.0},
+        ]
+        scenario.add_parameter(
+            Parameter('technical_lifetime', pd.DataFrame(lt_rows), {'dims': ['technology']})
+        )
+
+        # --- interest_rate ---
+        scenario.add_parameter(
+            Parameter('interest_rate', pd.DataFrame({'value': [0.05]}), {'dims': []})
+        )
+
+        # --- input parameter (fuel input, both years) ---
+        input_rows = [
+            {'technology': 'coal_ppl', 'commodity': 'coal', 'level': 'secondary',
+             'year_act': yr, 'year_vtg': 2015, 'node_loc': 'World',
+             'mode': 'M1', 'time': 'year', 'value': 2.5}
+            for yr in YEARS
+        ]
+        scenario.add_parameter(
+            Parameter('input', pd.DataFrame(input_rows),
+                      {'dims': ['technology', 'commodity']})
+        )
+
+        # --- PRICE_COMMODITY — different per year ---
+        price_com_rows = [
+            {'node': 'World', 'commodity': 'coal', 'level': 'secondary',
+             'year': Y1, 'time': 'year', 'lvl': 3.0},
+            {'node': 'World', 'commodity': 'coal', 'level': 'secondary',
+             'year': Y2, 'time': 'year', 'lvl': 4.0},
+        ]
+        scenario.add_parameter(
+            Parameter('PRICE_COMMODITY', pd.DataFrame(price_com_rows),
+                      {'result_type': 'variable'})
+        )
+
+        # --- emission_factor (both years) ---
+        ef_rows = [
+            {'technology': 'coal_ppl', 'emission': 'CO2', 'year_act': yr,
+             'year_vtg': 2015, 'node_loc': 'World', 'mode': 'M1',
+             'time': 'year', 'value': 0.8}
+            for yr in YEARS
+        ]
+        scenario.add_parameter(
+            Parameter('emission_factor', pd.DataFrame(ef_rows), {'dims': ['technology']})
+        )
+
+        # --- PRICE_EMISSION — different per year ---
+        pe_rows = [
+            {'node': 'World', 'emission': 'CO2', 'type_tec': 'all',
+             'year': Y1, 'lvl': 25.0},
+            {'node': 'World', 'emission': 'CO2', 'type_tec': 'all',
+             'year': Y2, 'lvl': 50.0},
+        ]
+        scenario.add_parameter(
+            Parameter('PRICE_EMISSION', pd.DataFrame(pe_rows),
+                      {'result_type': 'variable'})
+        )
+
+        # ── Run calculation ──────────────────────────────────────────
+        processor = ResultsPostprocessor(scenario)
+        processor.set_plot_years(YEARS)
+        processor._calculate_electricity_price_by_source('World', Y1)
+
+        assert "Electricity cost by source ($/MWh)" in processor.results
+        df = processor.results["Electricity cost by source ($/MWh)"]
+        assert not df.empty, f"Result DataFrame is empty"
+
+        # No inf / NaN
+        assert not np.isinf(df.values).any(), f"Found inf:\n{df}"
+        assert not np.isnan(df.values).any(), f"Found NaN:\n{df}"
+
+        # Both years must be present
+        for yr in YEARS:
+            assert yr in df.index, f"Year {yr} not in index: {df.index.tolist()}"
+
+        # After _mappings: coal_ppl → "coal", solar_pv → "solar PV"
+        coal_col = 'coal'
+        solar_col = 'solar PV'
+        assert coal_col in df.columns, \
+            f"Expected '{coal_col}' in columns, got: {df.columns.tolist()}"
+        assert solar_col in df.columns, \
+            f"Expected '{solar_col}' in columns, got: {df.columns.tolist()}"
+
+        # ── Hand-calculated expected values ──────────────────────────
+        CONV = 0.1142   # M$/GWa → $/MWh
+        r = 0.05
+
+        # CRF
+        rf40 = (1 + r) ** 40
+        crf_coal = r * rf40 / (rf40 - 1)
+        rf25 = (1 + r) ** 25
+        crf_solar = r * rf25 / (rf25 - 1)
+
+        # Annualised investment costs (M$, constant across active years)
+        coal_inv_ann  = 5  * 1000 * crf_coal   # vtg 2020, active 2020-2060
+        solar_inv_v20 = 10 *  900 * crf_solar   # vtg 2020, active 2020-2045
+        solar_inv_v25 = 8  *  800 * crf_solar   # vtg 2025, active 2025-2050
+
+        # ── Year 2025 ────────────────────────────────────────────────
+        coal_vom_25  = 50 * 5.0           # ACT × var_cost = 250
+        coal_fom_25  = 12 * 20.0          # CAP × fix_cost = 240
+        coal_inv_25  = coal_inv_ann       # active (2020 ≤ 2025 < 2060)
+        coal_fuel_25 = 50 * 2.5 * 3.0    # ACT × input × fuel_price = 375
+        coal_emis_25 = 50 * 0.8 * 25.0   # ACT × ef × CO2_price = 1000
+        coal_total_25 = (coal_vom_25 + coal_fom_25 + coal_inv_25
+                         + coal_fuel_25 + coal_emis_25)
+
+        solar_vom_25 = 40 * 3.0          # = 120
+        solar_fom_25 = 20 * 10.0         # = 200
+        solar_inv_25 = solar_inv_v20 + solar_inv_v25  # both vintages active
+        solar_total_25 = solar_vom_25 + solar_fom_25 + solar_inv_25
+
+        total_gen_25 = 90.0
+        exp_coal_25  = (coal_total_25  / total_gen_25) * CONV
+        exp_solar_25 = (solar_total_25 / total_gen_25) * CONV
+        exp_system_25 = exp_coal_25 + exp_solar_25
+
+        # ── Year 2030 ────────────────────────────────────────────────
+        coal_vom_30  = 30 * 6.0           # = 180
+        coal_fom_30  = 10 * 20.0          # = 200
+        coal_inv_30  = coal_inv_ann       # still active (2020 ≤ 2030 < 2060)
+        coal_fuel_30 = 30 * 2.5 * 4.0    # = 300
+        coal_emis_30 = 30 * 0.8 * 50.0   # = 1200
+        coal_total_30 = (coal_vom_30 + coal_fom_30 + coal_inv_30
+                         + coal_fuel_30 + coal_emis_30)
+
+        solar_vom_30 = 70 * 2.0          # = 140
+        solar_fom_30 = 35 * 8.0          # = 280
+        solar_inv_30 = solar_inv_v20 + solar_inv_v25  # both still active
+        solar_total_30 = solar_vom_30 + solar_fom_30 + solar_inv_30
+
+        total_gen_30 = 100.0
+        exp_coal_30  = (coal_total_30  / total_gen_30) * CONV
+        exp_solar_30 = (solar_total_30 / total_gen_30) * CONV
+        exp_system_30 = exp_coal_30 + exp_solar_30
+
+        # ── Assertions ───────────────────────────────────────────────
+        # Tolerance: 0.5% relative or 0.01 $/MWh absolute
+        tol_abs = 0.01
+        tol_rel = 0.005
+
+        def assert_close(actual, expected, label):
+            diff = abs(actual - expected)
+            ok = diff < max(tol_abs, abs(expected) * tol_rel)
+            assert ok, (
+                f"{label}: expected {expected:.4f}, got {actual:.4f} "
+                f"(diff={diff:.6f})"
+            )
+
+        # Year 2025
+        assert_close(df.loc[Y1, coal_col],  exp_coal_25,  f"coal {Y1}")
+        assert_close(df.loc[Y1, solar_col], exp_solar_25, f"solar PV {Y1}")
+        assert_close(df.loc[Y1].sum(),      exp_system_25, f"system {Y1}")
+
+        # Year 2030
+        assert_close(df.loc[Y2, coal_col],  exp_coal_30,  f"coal {Y2}")
+        assert_close(df.loc[Y2, solar_col], exp_solar_30, f"solar PV {Y2}")
+        assert_close(df.loc[Y2].sum(),      exp_system_30, f"system {Y2}")
+
+        # Verify values actually differ between years (proves year-specific data)
+        assert df.loc[Y1, coal_col] != df.loc[Y2, coal_col], \
+            "Coal cost should differ between years"
+        assert df.loc[Y1, solar_col] != df.loc[Y2, solar_col], \
+            "Solar cost should differ between years"
+
+        # Sanity: coal dominates in both years (fuel + emission costs)
+        for yr in YEARS:
+            assert df.loc[yr, coal_col] > df.loc[yr, solar_col], \
+                f"Year {yr}: coal ({df.loc[yr, coal_col]:.4f}) should " \
+                f"exceed solar ({df.loc[yr, solar_col]:.4f})"

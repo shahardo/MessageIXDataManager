@@ -82,6 +82,7 @@ Excel File → InputManager → ParsingStrategy → Parameter objects
 - **UndoManager**: Manages undo/redo stack with Command objects
 - **UserPreferences**: Shared QObject holding `min_year`, `max_year`, `limit_enabled` with a `changed` signal. Created by `MainWindow` and passed to `DataDisplayWidget` and `PostprocessingDashboard`
 - **DashboardChartMixin**: Shared chart rendering methods (stacked bar, pie, placeholder) used by both `ResultsFileDashboard` and `PostprocessingDashboard`
+- **ResultsPostprocessor**: Calculates derived metrics from MESSAGEix results (electricity generation, costs, emissions, etc.). 
 
 ## Coding Conventions
 
@@ -193,6 +194,7 @@ pytest -v tests/
 | `src/core/user_preferences.py` | Shared user preferences (UserPreferences) |
 | `src/ui/dashboard_chart_mixin.py` | Shared chart rendering for dashboards |
 | `src/ui/postprocessing_dashboard.py` | Postprocessed results dashboard |
+| `src/managers/results_postprocessor.py` | Postprocessing calculations (LCOE, generation, emissions) |
 | `docs/devplan.md` | Development plan and task tracking |
 
 ## MESSAGEix Integration

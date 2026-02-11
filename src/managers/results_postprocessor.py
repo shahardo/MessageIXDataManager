@@ -2740,7 +2740,13 @@ class ResultsPostprocessor:
         
         # Group ACT by year and technology
         act_grouped = act.groupby(['year_act', 'technology'])['lvl'].sum().reset_index()
-        
+
+        # Drop technologies with zero activity — they are not generating
+        # electricity and should not appear in the cost breakdown.
+        act_grouped = act_grouped[act_grouped['lvl'] > 0]
+        if act_grouped.empty:
+            return
+
         # Initialize cost dataframe with activity
         costs = act_grouped.copy()
         costs['total_cost'] = 0.0
@@ -2849,14 +2855,29 @@ class ResultsPostprocessor:
             costs['total_cost'] += costs['lvl'] * costs['em_unit_cost'].fillna(0)
             costs.drop(columns=['em_unit_cost'], inplace=True)
 
-        # Calculate Unit Cost ($/MWh)
+        # Calculate cost contribution per MWh of total generation.
+        # Each technology's contribution = its total_cost / total_generation,
+        # so contributions are additive across sources (sum = system avg LCOE).
         # 0.1142 conversion factor from M$/GWa to $/MWh
-        costs['unit_cost'] = (costs['total_cost'] / costs['lvl']) * 0.1142
-        
+        yearly_total_act = costs.groupby('year_act')['lvl'].transform('sum')
+        costs['cost_contribution'] = 0.0
+        nonzero_mask = yearly_total_act > 0
+        costs.loc[nonzero_mask, 'cost_contribution'] = (
+            costs.loc[nonzero_mask, 'total_cost'] / yearly_total_act[nonzero_mask]
+        ) * 0.1142
+
+        # Replace any remaining inf/NaN from edge cases
+        costs['cost_contribution'] = costs['cost_contribution'].replace(
+            [float('inf'), float('-inf')], 0
+        ).fillna(0)
+
         # Format for result
-        result_df = costs[['year_act', 'technology', 'unit_cost']].pivot(index='year_act', columns='technology', values='unit_cost')
-        
-        # Map
+        result_df = costs[['year_act', 'technology', 'cost_contribution']].pivot(
+            index='year_act', columns='technology', values='cost_contribution'
+        )
+
+        # Map — _mappings sums within groups, which is correct for
+        # cost contributions (they share the same denominator).
         result_mapped = self._mappings(result_df, groupby="technology")
         self.results["Electricity cost by source ($/MWh)"] = result_mapped
 

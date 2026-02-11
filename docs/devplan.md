@@ -187,7 +187,7 @@ We will implement the ability to add and remove parameters in the active scenari
 - For postprocessing data, show the same dashboard as for output file.
 - Remove output file code, use only postprocessin.
 - Use consistend color scheme for charts.
-- Add costs chart, stacked bars by fuel source
+- ~~Add costs chart, stacked bars by fuel source~~ DONE - Electricity cost by source ($/MWh) stacked bar chart
 - Allow cleaning up input data - remove redundant years, remove un-needed parameters.
 - Allow to run the model directly from the app.
 - Unify the pivot code between the data tables and the charts
