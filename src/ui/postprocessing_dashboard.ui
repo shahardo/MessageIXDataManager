@@ -733,7 +733,7 @@
           <widget class="QWidget" name="sectoral_chart4_widget" native="true">
            <layout class="QVBoxLayout" name="sectoral_chart4_layout">
             <item>
-             <widget class="QWebEngineView" name="sectoral_feedstock_chart">
+             <widget class="QWebEngineView" name="sectoral_transport_chart">
               <property name="minimumSize">
                <size>
                 <width>300</width>

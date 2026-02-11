@@ -98,7 +98,7 @@ class PostprocessingDashboard(DashboardChartMixin, QWidget):
                 'sectoral_buildings': self.sectoral_buildings_chart,
                 'sectoral_industry': self.sectoral_industry_chart,
                 'sectoral_electricity': self.sectoral_electricity_chart,
-                'sectoral_feedstock': self.sectoral_feedstock_chart,
+                'sectoral_transport': self.sectoral_transport_chart,
             }
 
             # Emissions tab charts
@@ -598,7 +598,7 @@ class PostprocessingDashboard(DashboardChartMixin, QWidget):
             'sectoral_buildings': ('Buildings energy by fuel (PJ)', 'Buildings Energy by Fuel (PJ)'),
             'sectoral_industry': ('Industry energy by fuel (PJ)', 'Industry Energy by Fuel (PJ)'),
             'sectoral_electricity': ('Electricity use by sector (TWh)', 'Electricity Use by Sector (TWh)'),
-            'sectoral_feedstock': ('Feedstock by fuel (PJ)', 'Feedstock by Fuel (PJ)'),
+            'sectoral_transport': ('Energy use Transport (PJ)', 'Transportation Energy by Fuel (PJ)'),
         }
         self._render_tab_charts(self.sectoral_chart_views, charts)
 
