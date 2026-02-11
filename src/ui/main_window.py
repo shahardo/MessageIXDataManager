@@ -402,22 +402,12 @@ class MainWindow(QMainWindow):
             self._switch_to_multi_section_view(target_scenario)
             self._clear_data_display()
             
-            # Auto-select dashboard or parameter
+            # Auto-select the "Parameters" section for input files,
+            # "Results" section for results files.
             if file_type == "input":
-                if self.last_selected_input_parameter:
-                    self._auto_select_parameter_if_exists(self.last_selected_input_parameter, False)
-                elif not self.param_tree.selectedItems():
-                    self._auto_select_parameter_if_exists("Dashboard", False)
+                self._auto_select_section("parameters")
             elif file_type == "results":
-                if self.last_selected_results_parameter:
-                    self._auto_select_parameter_if_exists(self.last_selected_results_parameter, True)
-                elif not self.param_tree.selectedItems():
-                    self._auto_select_parameter_if_exists("Dashboard", True)
-            elif file_type == "data":
-                # Auto-select first variable if available
-                if not self.param_tree.selectedItems():
-                    # Logic to select first item could be added here
-                    pass
+                self._auto_select_section("results")
         else:
             # Fallback for files not associated with a scenario (should be rare now)
             print(f"DEBUG: No scenario found for file, creating temporary scenario")
@@ -429,22 +419,18 @@ class MainWindow(QMainWindow):
                 temp_scenario.results_file = file_path
             elif file_type == "data":
                 temp_scenario.message_scenario_file = file_path
-            
+
             self.selected_scenario = temp_scenario
             self.selected_input_file = temp_scenario.input_file
             self.selected_results_file = temp_scenario.results_file
-            
+
             self._switch_to_multi_section_view(temp_scenario)
             self._clear_data_display()
-            
+
             if file_type == "input":
-                if self.last_selected_input_parameter:
-                    self._auto_select_parameter_if_exists(self.last_selected_input_parameter, False)
-                elif not self.param_tree.selectedItems():
-                    self._auto_select_parameter_if_exists("Dashboard", False)
+                self._auto_select_section("parameters")
             elif file_type == "results":
-                if self.last_selected_results_parameter:
-                    self._auto_select_parameter_if_exists(self.last_selected_results_parameter, True)
+                self._auto_select_section("results")
 
         # Save current session state
         self._save_current_session_state()
@@ -478,11 +464,14 @@ class MainWindow(QMainWindow):
         self._switch_to_multi_section_view(scenario)
         
         self._clear_data_display()
-        
-        # Auto-select dashboard if no parameter is selected
+
+        # Auto-select the "Parameters" section when an input file is present,
+        # otherwise fall back to the first available section.
         if not self.param_tree.selectedItems():
-            has_results = scenario.results_file is not None
-            self._auto_select_parameter_if_exists("Dashboard", has_results)
+            if scenario.input_file:
+                self._auto_select_section("parameters")
+            elif scenario.results_file:
+                self._auto_select_section("results")
 
         # Save current session state
         self._save_current_session_state()
@@ -990,6 +979,19 @@ class MainWindow(QMainWindow):
         # Use the stored current parameter instead of tree selection (which may be cleared)
         if self.current_displayed_parameter:
             self._on_parameter_selected(self.current_displayed_parameter, self.current_displayed_is_results)
+
+    def _auto_select_section(self, section_type: str):
+        """Auto-select a section header (e.g. 'parameters') in the tree and show its dashboard.
+
+        Returns True if the section was found and selected."""
+        section_item = self.param_tree.sections.get(section_type)
+        if section_item:
+            self.param_tree.setCurrentItem(section_item)
+            self.param_tree.scrollToItem(section_item)
+            # Trigger the section dashboard display
+            self._on_section_selected(section_type)
+            return True
+        return False
 
     def _auto_select_parameter_if_exists(self, parameter_name: str, is_results: bool):
         """Auto-select a parameter in the tree if it exists in the current scenario"""
