@@ -7,6 +7,11 @@ Main application entry point
 import sys
 import os
 import platform
+
+# Disable GPU in QWebEngineView's Chromium engine to avoid GL context failures
+# on systems with incompatible GPU drivers.  Must be set before any Qt imports.
+os.environ['QTWEBENGINE_CHROMIUM_FLAGS'] = '--disable-gpu'
+
 from PyQt5.QtWidgets import QApplication
 from PyQt5.QtGui import QIcon
 from PyQt5.QtCore import QSize

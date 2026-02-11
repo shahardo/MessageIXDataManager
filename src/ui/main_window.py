@@ -19,6 +19,7 @@ from typing import Optional, List, Dict, Any
 from .dashboard import ResultsDashboard
 from .results_file_dashboard import ResultsFileDashboard
 from .input_file_dashboard import InputFileDashboard
+from .postprocessing_dashboard import PostprocessingDashboard
 from .components import (
     DataDisplayWidget, ChartWidget, ParameterTreeWidget, FileNavigatorWidget
 )
@@ -37,6 +38,7 @@ from managers.commands import EditCellCommand, EditPivotCommand, PasteColumnComm
 from managers.parameter_manager import ParameterManager
 from managers.session_manager import SessionManager
 from core.data_models import ScenarioData, Scenario
+from core.user_preferences import UserPreferences
 from utils.error_handler import ErrorHandler, SafeOperation
 from utils.data_transformer import DataTransformer
 
@@ -132,10 +134,16 @@ class MainWindow(QMainWindow):
             log_callback=lambda level, module, msg, extra: logging_manager.log(level, module, msg, extra)
         )
 
+        # Shared year preferences – used by data_display AND postprocessing dashboard
+        self.user_prefs = UserPreferences(parent=self)
+
         # Initialize dashboard
         self.dashboard: ResultsDashboard = ResultsDashboard(self.results_analyzer)
         self.results_file_dashboard: ResultsFileDashboard = ResultsFileDashboard(self.results_analyzer)
         self.input_file_dashboard: InputFileDashboard = InputFileDashboard(self.input_manager)
+        self.postprocessing_dashboard: PostprocessingDashboard = PostprocessingDashboard(
+            self.results_analyzer, user_prefs=self.user_prefs
+        )
 
         # Initialize undo manager
         self.undo_manager = UndoManager()
@@ -219,18 +227,20 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.dataSplitter)
         layout.addWidget(self.results_file_dashboard)
         layout.addWidget(self.input_file_dashboard)
+        layout.addWidget(self.postprocessing_dashboard)
 
         # Initially show data splitter and hide dashboards
         self.dataSplitter.show()
         self.results_file_dashboard.hide()
         self.input_file_dashboard.hide()
+        self.postprocessing_dashboard.hide()
 
     def _setup_ui_components(self):
         """Set up the UI components using composition"""
         # Create component instances, passing existing widgets from .ui file
         self.file_navigator = FileNavigatorWidget(session_manager=self.session_manager)
         self.param_tree = ParameterTreeWidget()
-        self.data_display = DataDisplayWidget()
+        self.data_display = DataDisplayWidget(user_prefs=self.user_prefs)
         self.chart_widget = ChartWidget()
 
         # Initialize components with existing UI widgets
@@ -762,7 +772,7 @@ class MainWindow(QMainWindow):
                         # Update chart with transformed data for display
                         # Use year options from data_display widget
                         filters = self.data_display._get_current_filters() if hasattr(self.data_display, '_get_current_filters') else {}
-                        year_options = self.data_display.get_year_options()
+                        year_options = self.user_prefs.to_dict()
                         chart_df = DataTransformer.prepare_chart_data(
                             parameter, is_results=is_results,
                             scenario_options=year_options,
@@ -789,6 +799,8 @@ class MainWindow(QMainWindow):
                 self._show_results_file_dashboard()
             elif section_type == "results":
                 self._show_results_file_dashboard()
+            elif section_type == "postprocessing":
+                self._show_postprocessing_dashboard()
             else:
                 print(f"Unknown section type: {section_type}")
         except Exception as e:
@@ -839,7 +851,7 @@ class MainWindow(QMainWindow):
                 # Use wait cursor for large datasets
                 row_count = len(parameter.df) if parameter.df is not None else 0
                 with WaitCursorContext(row_count):
-                    year_options = self.data_display.get_year_options()
+                    year_options = self.user_prefs.to_dict()
                     chart_df = DataTransformer.prepare_chart_data(
                         parameter, is_results=self.current_displayed_is_results,
                         scenario_options=year_options,
@@ -897,7 +909,7 @@ class MainWindow(QMainWindow):
 
                 # Update chart immediately with the new data
                 filters = self.data_display._get_current_filters() if hasattr(self.data_display, '_get_current_filters') else {}
-                year_options = self.data_display.get_year_options()
+                year_options = self.user_prefs.to_dict()
                 chart_df = DataTransformer.prepare_chart_data(
                     parameter, is_results=self.current_displayed_is_results,
                     scenario_options=year_options,
@@ -947,7 +959,7 @@ class MainWindow(QMainWindow):
             with WaitCursorContext(row_count):
                 # Update chart with current data (which includes our changes)
                 filters = self.data_display._get_current_filters() if hasattr(self.data_display, '_get_current_filters') else {}
-                year_options = self.data_display.get_year_options()
+                year_options = self.user_prefs.to_dict()
                 chart_df = DataTransformer.prepare_chart_data(
                     parameter, is_results=self.current_displayed_is_results,
                     scenario_options=year_options,
@@ -1293,6 +1305,7 @@ class MainWindow(QMainWindow):
             # Hide dashboards and show data splitter
             self.results_file_dashboard.hide()
             self.input_file_dashboard.hide()
+            self.postprocessing_dashboard.hide()
             self.dataSplitter.show()
 
         except Exception as e:
@@ -1304,9 +1317,10 @@ class MainWindow(QMainWindow):
             # Get the current results scenario
             scenario = self._get_current_scenario(True)  # True for results
 
-            # Hide data splitter and input dashboard, show results dashboard
+            # Hide data splitter and other dashboards, show results dashboard
             self.dataSplitter.hide()
             self.input_file_dashboard.hide()
+            self.postprocessing_dashboard.hide()
             self.results_file_dashboard.update_dashboard(scenario)
             self.results_file_dashboard.show()
 
@@ -1321,9 +1335,10 @@ class MainWindow(QMainWindow):
             # Get the current input scenario
             scenario = self._get_current_scenario(False)  # False for input
 
-            # Hide data splitter and results dashboard, show input dashboard
+            # Hide data splitter and other dashboards, show input dashboard
             self.dataSplitter.hide()
             self.results_file_dashboard.hide()
+            self.postprocessing_dashboard.hide()
             self.input_file_dashboard.update_dashboard(scenario)
             self.input_file_dashboard.show()
 
@@ -1331,6 +1346,24 @@ class MainWindow(QMainWindow):
             self._append_to_console(f"Error showing input file dashboard: {str(e)}")
             QMessageBox.critical(self, "Dashboard Error",
                                f"Failed to show input file dashboard: {str(e)}")
+
+    def _show_postprocessing_dashboard(self):
+        """Show the postprocessing dashboard in the main content area"""
+        try:
+            # Use combined data which contains postprocessed parameters
+            scenario = self._get_current_scenario(True)  # True for results/combined
+
+            # Hide data splitter and other dashboards, show postprocessing dashboard
+            self.dataSplitter.hide()
+            self.results_file_dashboard.hide()
+            self.input_file_dashboard.hide()
+            self.postprocessing_dashboard.update_dashboard(scenario)
+            self.postprocessing_dashboard.show()
+
+        except Exception as e:
+            self._append_to_console(f"Error showing postprocessing dashboard: {str(e)}")
+            QMessageBox.critical(self, "Dashboard Error",
+                               f"Failed to show postprocessing dashboard: {str(e)}")
 
     def _show_dashboard(self):
         """Show results dashboard"""

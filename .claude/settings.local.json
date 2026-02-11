@@ -6,10 +6,20 @@
       "Bash(find:*)",
       "Bash(grep:*)",
       "Bash(envscriptsactivate)",
-      "Bash(python -m pytest:*)",
+      "Bash(*python -m pytest *)",
+      "./env/Scripts/python.exe -c \"import *\"",
       "Bash(./env/Scripts/python.exe -m pytest tests/ *)",
       "Bash(timeout 150 ./env/Scripts/python.exe -m pytest:*)",
-      "Bash(echo:*)"
-    ]
+      "Bash(echo:*)",
+      "Bash(./env/Scripts/python.exe:*)",
+      "Bash(findstr:*)",
+      "Bash(Select-String -Pattern \"passed|failed|FAILED\")",
+      "Bash(Select-Object -Last 10)",
+      "Bash(tee:*)",
+      "Bash(../env/Scripts/python.exe:*)",
+      "Bash(select-string:*)"
+//      "Bash(.\\\\env\\\\Scripts\\\\python.exe -m pytest:*)"
+    ],
+    "defaultMode": "acceptEdits"
   }
 }

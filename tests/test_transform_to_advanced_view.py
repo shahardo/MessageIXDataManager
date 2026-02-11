@@ -27,9 +27,9 @@ def sample_widget():
     widget.hide_empty_checkbox = None
     widget.years_limit_checkbox = None
     widget.options_button = None
-    widget.years_limit_enabled = False
-    widget.min_year = 2020
-    widget.max_year = 2050
+    # Create a YearPreferences before using property accessors
+    from core.user_preferences import UserPreferences
+    widget.user_prefs = UserPreferences(min_year=2020, max_year=2050, limit_enabled=False)
 
     # Bind methods to the instance
     widget._identify_columns = DataDisplayWidget._identify_columns.__get__(widget, DataDisplayWidget)

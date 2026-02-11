@@ -344,6 +344,31 @@ class DataDisplayWidget(QWidget):
         'value': 'value'
     }
 
+    # --- Year-limit properties delegating to shared UserPreferences ----------
+    @property
+    def years_limit_enabled(self) -> bool:
+        return self.user_prefs.limit_enabled
+
+    @years_limit_enabled.setter
+    def years_limit_enabled(self, value: bool):
+        self.user_prefs.limit_enabled = value
+
+    @property
+    def min_year(self) -> int:
+        return self.user_prefs.min_year
+
+    @min_year.setter
+    def min_year(self, value: int):
+        self.user_prefs.min_year = value
+
+    @property
+    def max_year(self) -> int:
+        return self.user_prefs.max_year
+
+    @max_year.setter
+    def max_year(self, value: int):
+        self.user_prefs.max_year = value
+
     # Define PyQt signals
     display_mode_changed = pyqtSignal()
     cell_value_changed = pyqtSignal(str, object, object, object)  # mode, row_or_year, col_or_tech, new_value
@@ -351,7 +376,7 @@ class DataDisplayWidget(QWidget):
     chart_update_needed = pyqtSignal()  # Signal to update chart without refreshing table
     options_changed = pyqtSignal()  # Signal emitted when year options are modified
 
-    def __init__(self, parent=None, tech_descriptions=None):
+    def __init__(self, parent=None, tech_descriptions=None, user_prefs=None):
         super().__init__(parent)
         self.table_display_mode = "raw"  # "raw" or "advanced"
         self.hide_empty_columns = True  # Whether to hide empty columns in advanced view (default: on)
@@ -361,10 +386,11 @@ class DataDisplayWidget(QWidget):
         self.options_button = None
         self.tech_descriptions = tech_descriptions or {}
 
-        # Year limit settings (stored locally, synced with scenario options)
-        self.years_limit_enabled = True  # Whether to apply year filtering to table (default: on)
-        self.min_year = 2020
-        self.max_year = 2050
+        # Year limit settings – delegate to shared UserPreferences
+        from core.user_preferences import UserPreferences
+        self.user_prefs: UserPreferences = user_prefs or UserPreferences(parent=self)
+        # Connect shared prefs changes → refresh display
+        self.user_prefs.changed.connect(self._on_user_prefs_changed)
 
         # Clipboard operations
         self.clipboard_delimiter = '\t'  # Default delimiter for clipboard operations
@@ -780,11 +806,25 @@ class DataDisplayWidget(QWidget):
         self.display_mode_changed.emit()
 
     def _on_years_limit_changed(self):
-        """Handle years limit checkbox state change"""
-        self.years_limit_enabled = self.years_limit_checkbox.isChecked()
-        # Emit signal to refresh display with new year limits
+        """Handle years limit checkbox state change.
+
+        Writes to the shared UserPreferences which then triggers
+        _on_user_prefs_changed via the changed signal.
+        """
+        self.user_prefs.limit_enabled = self.years_limit_checkbox.isChecked()
+
+    def _on_user_prefs_changed(self):
+        """React to shared UserPreferences being changed (possibly externally).
+
+        Syncs the local checkbox and emits signals so the table/chart refresh.
+        """
+        # Sync checkbox state if it exists
+        if self.years_limit_checkbox:
+            self.years_limit_checkbox.blockSignals(True)
+            self.years_limit_checkbox.setChecked(self.user_prefs.limit_enabled)
+            self.years_limit_checkbox.blockSignals(False)
+        # Refresh display
         self.display_mode_changed.emit()
-        # Also notify that options have changed (for chart updates)
         self.options_changed.emit()
 
     def _show_year_options_dialog(self):
@@ -819,7 +859,7 @@ class DataDisplayWidget(QWidget):
         dialog.exec_()
 
     def _save_year_options(self, dialog, min_year_edit, max_year_edit):
-        """Save the year options"""
+        """Save the year options to the shared UserPreferences."""
         try:
             min_year = int(min_year_edit.text())
             max_year = int(max_year_edit.text())
@@ -828,39 +868,27 @@ class DataDisplayWidget(QWidget):
                 QMessageBox.warning(self, "Invalid Input", "Min Year must be less than Max Year.")
                 return
 
-            self.min_year = min_year
-            self.max_year = max_year
-
-            # Emit signal to refresh display if years limit is enabled
-            if self.years_limit_enabled:
-                self.display_mode_changed.emit()
-                self.options_changed.emit()
+            # Bulk-update emits changed once → _on_user_prefs_changed fires
+            self.user_prefs.update_from_dict({
+                'MinYear': min_year,
+                'MaxYear': max_year,
+            })
 
             dialog.accept()
         except ValueError:
             QMessageBox.warning(self, "Invalid Input", "Please enter valid integer values for years.")
 
     def get_year_options(self) -> dict:
-        """Get current year options as a dictionary"""
-        return {
-            'YearsLimitEnabled': self.years_limit_enabled,
-            'MinYear': self.min_year,
-            'MaxYear': self.max_year
-        }
+        """Get current year options as a dictionary."""
+        return self.user_prefs.to_dict()
 
     def set_year_options(self, options: dict):
-        """Set year options from a dictionary (e.g., from scenario options)"""
-        if 'YearsLimitEnabled' in options:
-            self.years_limit_enabled = options['YearsLimitEnabled']
-        if 'MinYear' in options:
-            self.min_year = options['MinYear']
-        if 'MaxYear' in options:
-            self.max_year = options['MaxYear']
-        # Update checkbox if it exists
-        if self.years_limit_checkbox:
-            self.years_limit_checkbox.blockSignals(True)
-            self.years_limit_checkbox.setChecked(self.years_limit_enabled)
-            self.years_limit_checkbox.blockSignals(False)
+        """Set year options from a dictionary (e.g., from scenario options).
+
+        Delegates to UserPreferences.update_from_dict which emits changed
+        once → _on_user_prefs_changed syncs the checkbox automatically.
+        """
+        self.user_prefs.update_from_dict(options)
 
     def _on_cell_changed(self, row: int, col: int):
         """Handle cell value changes in editable table"""
