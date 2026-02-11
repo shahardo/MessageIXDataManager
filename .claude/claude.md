@@ -24,7 +24,8 @@ src/
 ├── main.py                 # Application entry point
 ├── core/                   # Data models and schemas
 │   ├── data_models.py      # Parameter, Scenario, ScenarioData classes
-│   └── message_ix_schema.py # MESSAGEix parameter definitions
+│   ├── message_ix_schema.py # MESSAGEix parameter definitions
+│   └── user_preferences.py  # Shared user preferences (UserPreferences QObject)
 ├── managers/               # Business logic layer
 │   ├── base_data_manager.py      # Abstract base with Observer pattern
 │   ├── input_manager.py          # Load/parse input Excel files
@@ -36,6 +37,9 @@ src/
 │   └── file_handlers.py          # High-level file operations
 ├── ui/                     # User interface (PyQt5)
 │   ├── main_window.py            # Main application window
+│   ├── dashboard_chart_mixin.py  # Shared chart rendering for dashboards
+│   ├── postprocessing_dashboard.py # Postprocessed results dashboard
+│   ├── results_file_dashboard.py # Results file dashboard
 │   ├── components/               # Reusable UI components
 │   │   ├── parameter_tree_widget.py   # Parameter tree navigation
 │   │   ├── data_display_widget.py     # Data table with editing
@@ -60,6 +64,7 @@ src/
 3. **Factory Pattern**: `ParameterFactory` with registry for parameter creation
 4. **Command Pattern**: `UndoManager` with command objects for undo/redo
 5. **Composition Pattern**: `MainWindow` composes UI components (not inheritance)
+6. **Shared Preferences**: `UserPreferences` QObject shared between `DataDisplayWidget` and `PostprocessingDashboard` for synchronized year-range filtering
 
 ### Data Flow
 
@@ -75,6 +80,8 @@ Excel File → InputManager → ParsingStrategy → Parameter objects
 - **Scenario**: Represents a MESSAGEix scenario with input/results files
 - **ScenarioData**: Container for sets, parameters, mappings
 - **UndoManager**: Manages undo/redo stack with Command objects
+- **UserPreferences**: Shared QObject holding `min_year`, `max_year`, `limit_enabled` with a `changed` signal. Created by `MainWindow` and passed to `DataDisplayWidget` and `PostprocessingDashboard`
+- **DashboardChartMixin**: Shared chart rendering methods (stacked bar, pie, placeholder) used by both `ResultsFileDashboard` and `PostprocessingDashboard`
 
 ## Coding Conventions
 
@@ -183,6 +190,9 @@ pytest -v tests/
 | `src/managers/commands.py` | Undo/redo command objects |
 | `src/managers/input_manager.py` | Input file parsing |
 | `src/ui/components/data_display_widget.py` | Table display with editing |
+| `src/core/user_preferences.py` | Shared user preferences (UserPreferences) |
+| `src/ui/dashboard_chart_mixin.py` | Shared chart rendering for dashboards |
+| `src/ui/postprocessing_dashboard.py` | Postprocessed results dashboard |
 | `docs/devplan.md` | Development plan and task tracking |
 
 ## MESSAGEix Integration
