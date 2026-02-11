@@ -158,9 +158,10 @@ class DashboardChartMixin:
     def show_chart_placeholder(self, chart_view: QWebEngineView, message: str):
         """Show a placeholder message in a chart view."""
         html = f"""
-        <html>
+        <html style="height: 100%; margin: 0;">
         <body style="display: flex; justify-content: center; align-items: center;
-                     height: 100%; font-family: Arial, sans-serif; background: #f8f9fa;">
+                     height: 100%; margin: 0; font-family: Arial, sans-serif;
+                     background: #f8f9fa; overflow: hidden;">
             <div style="text-align: center; color: #666;">
                 <p>{message}</p>
             </div>
@@ -179,12 +180,15 @@ class DashboardChartMixin:
             <title>{html_title}</title>
             <script src="{PLOTLY_CDN_URL}"></script>
             <style>
-                body {{
+                html, body {{
                     margin: 0;
                     padding: 0;
+                    width: 100%;
+                    height: 100%;
+                    overflow: hidden;
                     font-family: Arial, sans-serif;
                 }}
-                .js-plotly-plot {{
+                .js-plotly-plot, .plotly-graph-div {{
                     width: 100% !important;
                     height: 100% !important;
                 }}
@@ -197,6 +201,27 @@ class DashboardChartMixin:
         </head>
         <body>
             {plot_html}
+            <script>
+                // Resize chart to fill viewport on load and window resize
+                window.addEventListener('load', function() {{
+                    var gd = document.querySelector('.plotly-graph-div');
+                    if (gd) {{
+                        Plotly.relayout(gd, {{
+                            width: window.innerWidth,
+                            height: window.innerHeight
+                        }});
+                    }}
+                }});
+                window.addEventListener('resize', function() {{
+                    var gd = document.querySelector('.plotly-graph-div');
+                    if (gd) {{
+                        Plotly.relayout(gd, {{
+                            width: window.innerWidth,
+                            height: window.innerHeight
+                        }});
+                    }}
+                }});
+            </script>
         </body>
         </html>
         """
