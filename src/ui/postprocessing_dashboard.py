@@ -77,6 +77,38 @@ class PostprocessingDashboard(DashboardChartMixin, QWidget):
                 'electricity_costs_by_fuel': self.electricity_costs_by_fuel_chart
             }
 
+            # Energy Balance tab charts
+            self.energy_balance_chart_views = {
+                'eb_primary_supply': self.eb_primary_supply_chart,
+                'eb_final_consumption': self.eb_final_consumption_chart,
+                'eb_imports': self.eb_imports_chart,
+                'eb_exports': self.eb_exports_chart,
+            }
+
+            # Fuels tab charts
+            self.fuels_chart_views = {
+                'fuels_gas_supply': self.fuels_gas_supply_chart,
+                'fuels_gas_use': self.fuels_gas_use_chart,
+                'fuels_oil_supply': self.fuels_oil_supply_chart,
+                'fuels_oil_use': self.fuels_oil_use_chart,
+            }
+
+            # Sectoral Use tab charts
+            self.sectoral_chart_views = {
+                'sectoral_buildings': self.sectoral_buildings_chart,
+                'sectoral_industry': self.sectoral_industry_chart,
+                'sectoral_electricity': self.sectoral_electricity_chart,
+                'sectoral_feedstock': self.sectoral_feedstock_chart,
+            }
+
+            # Emissions tab charts
+            self.emissions_chart_views = {
+                'emissions_total': self.emissions_total_chart,
+                'emissions_by_tech': self.emissions_by_tech_chart,
+                'emissions_by_type': self.emissions_by_type_chart,
+                'emissions_by_fuel': self.emissions_by_fuel_chart,
+            }
+
             # Cost breakdown table
             if hasattr(self, 'cost_breakdown_table'):
                 self.cost_breakdown_table = self.cost_breakdown_table
@@ -92,6 +124,10 @@ class PostprocessingDashboard(DashboardChartMixin, QWidget):
             # Configure chart view settings via mixin
             self.setup_chart_view_settings(self.chart_views)
             self.setup_chart_view_settings(self.electricity_chart_views)
+            self.setup_chart_view_settings(self.energy_balance_chart_views)
+            self.setup_chart_view_settings(self.fuels_chart_views)
+            self.setup_chart_view_settings(self.sectoral_chart_views)
+            self.setup_chart_view_settings(self.emissions_chart_views)
 
             # Sync checkbox to current prefs (UI default may differ)
             self.limitYearsCheckbox.setChecked(self.user_prefs.limit_enabled)
@@ -105,6 +141,10 @@ class PostprocessingDashboard(DashboardChartMixin, QWidget):
             # For testing without UI
             self.chart_views = {}
             self.electricity_chart_views = {}
+            self.energy_balance_chart_views = {}
+            self.fuels_chart_views = {}
+            self.sectoral_chart_views = {}
+            self.emissions_chart_views = {}
             self.metric_labels = {}
 
     # ------------------------------------------------------------------
@@ -423,12 +463,25 @@ class PostprocessingDashboard(DashboardChartMixin, QWidget):
             # --- Electricity tab ---
             self._render_electricity_charts()
 
+            # --- New category tabs ---
+            self._render_energy_balance_charts()
+            self._render_fuels_charts()
+            self._render_sectoral_charts()
+            self._render_emissions_charts()
+
         except Exception as e:
             print(f"Error rendering postprocessing charts: {str(e)}")
-            for chart_view in self.chart_views.values():
-                self.show_chart_placeholder(chart_view, f"Error: {str(e)}")
-            for chart_view in self.electricity_chart_views.values():
-                self.show_chart_placeholder(chart_view, f"Error: {str(e)}")
+            all_views = [
+                self.chart_views,
+                self.electricity_chart_views,
+                self.energy_balance_chart_views,
+                self.fuels_chart_views,
+                self.sectoral_chart_views,
+                self.emissions_chart_views,
+            ]
+            for views_dict in all_views:
+                for chart_view in views_dict.values():
+                    self.show_chart_placeholder(chart_view, f"Error: {str(e)}")
 
     def _render_electricity_charts(self):
         """Render electricity tab charts: generation by fuel and costs."""
@@ -479,6 +532,89 @@ class PostprocessingDashboard(DashboardChartMixin, QWidget):
             print(f"Error rendering postprocessing electricity charts: {str(e)}")
             for chart_view in self.electricity_chart_views.values():
                 self.show_chart_placeholder(chart_view, f"Error: {str(e)}")
+
+    # ------------------------------------------------------------------
+    # Generic tab chart renderer
+    # ------------------------------------------------------------------
+
+    def _render_tab_charts(self, chart_views: dict, chart_specs: dict):
+        """Render a set of charts for a tab using parameter names.
+
+        Args:
+            chart_views: dict mapping chart key → QWebEngineView widget
+            chart_specs: dict mapping chart key → (param_name, chart_title)
+        """
+        if not self.current_scenario:
+            for view in chart_views.values():
+                self.show_chart_placeholder(view, "No postprocessing data loaded")
+            return
+
+        for key, (param_name, title) in chart_specs.items():
+            if key not in chart_views:
+                continue
+            view = chart_views[key]
+            param = self.current_scenario.get_parameter(param_name)
+            filtered = self._filter_param_years(param)
+            if filtered and not filtered.df.empty:
+                self.render_energy_chart(filtered, view, title, title)
+            else:
+                self.show_chart_placeholder(view, f"No data: {param_name}")
+
+    # ------------------------------------------------------------------
+    # Energy Balance tab
+    # ------------------------------------------------------------------
+
+    def _render_energy_balance_charts(self):
+        """Render energy balance tab charts."""
+        charts = {
+            'eb_primary_supply': ('Primary energy supply (PJ)', 'Primary Energy Supply (PJ)'),
+            'eb_final_consumption': ('Final energy consumption (PJ)', 'Final Energy Consumption (PJ)'),
+            'eb_imports': ('Energy imports by fuel (PJ)', 'Energy Imports by Fuel (PJ)'),
+            'eb_exports': ('Energy exports by fuel (PJ)', 'Energy Exports by Fuel (PJ)'),
+        }
+        self._render_tab_charts(self.energy_balance_chart_views, charts)
+
+    # ------------------------------------------------------------------
+    # Fuels tab
+    # ------------------------------------------------------------------
+
+    def _render_fuels_charts(self):
+        """Render fuels tab charts."""
+        charts = {
+            'fuels_gas_supply': ('Gas supply by source (PJ)', 'Gas Supply by Source (PJ)'),
+            'fuels_gas_use': ('Gas use by sector (PJ)', 'Gas Use by Sector (PJ)'),
+            'fuels_oil_supply': ('Oil derivatives supply (PJ)', 'Oil Derivatives Supply (PJ)'),
+            'fuels_oil_use': ('Oil derivatives use by sector (PJ)', 'Oil Derivatives Use by Sector (PJ)'),
+        }
+        self._render_tab_charts(self.fuels_chart_views, charts)
+
+    # ------------------------------------------------------------------
+    # Sectoral Use tab
+    # ------------------------------------------------------------------
+
+    def _render_sectoral_charts(self):
+        """Render sectoral use tab charts."""
+        charts = {
+            'sectoral_buildings': ('Buildings energy by fuel (PJ)', 'Buildings Energy by Fuel (PJ)'),
+            'sectoral_industry': ('Industry energy by fuel (PJ)', 'Industry Energy by Fuel (PJ)'),
+            'sectoral_electricity': ('Electricity use by sector (TWh)', 'Electricity Use by Sector (TWh)'),
+            'sectoral_feedstock': ('Feedstock by fuel (PJ)', 'Feedstock by Fuel (PJ)'),
+        }
+        self._render_tab_charts(self.sectoral_chart_views, charts)
+
+    # ------------------------------------------------------------------
+    # Emissions tab
+    # ------------------------------------------------------------------
+
+    def _render_emissions_charts(self):
+        """Render emissions tab charts."""
+        charts = {
+            'emissions_total': ('Total GHG emissions (MtCeq)', 'Total GHG Emissions (MtCeq)'),
+            'emissions_by_tech': ('Emissions by technology (Mt CO2)', 'Emissions by Technology (Mt CO2)'),
+            'emissions_by_type': ('Emissions by type (Mt)', 'Emissions by Type (Mt)'),
+            'emissions_by_fuel': ('Emissions by fuel (Mt CO2)', 'Emissions by Fuel (Mt CO2)'),
+        }
+        self._render_tab_charts(self.emissions_chart_views, charts)
 
     def _render_electricity_costs_fallback(self):
         """Fallback: use results_analyzer to calculate electricity costs."""

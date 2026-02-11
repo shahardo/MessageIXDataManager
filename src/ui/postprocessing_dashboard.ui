@@ -524,6 +524,306 @@
        </item>
       </layout>
      </widget>
+     <widget class="QWidget" name="energyBalanceTab">
+      <attribute name="title">
+       <string>Energy Balance</string>
+      </attribute>
+      <layout class="QVBoxLayout" name="energyBalanceLayout">
+       <item>
+        <layout class="QGridLayout" name="energyBalanceChartsGrid">
+         <item row="0" column="0">
+          <widget class="QWidget" name="eb_chart1_widget" native="true">
+           <layout class="QVBoxLayout" name="eb_chart1_layout">
+            <item>
+             <widget class="QWebEngineView" name="eb_primary_supply_chart">
+              <property name="minimumSize">
+               <size>
+                <width>300</width>
+                <height>200</height>
+               </size>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </widget>
+         </item>
+         <item row="0" column="1">
+          <widget class="QWidget" name="eb_chart2_widget" native="true">
+           <layout class="QVBoxLayout" name="eb_chart2_layout">
+            <item>
+             <widget class="QWebEngineView" name="eb_final_consumption_chart">
+              <property name="minimumSize">
+               <size>
+                <width>300</width>
+                <height>200</height>
+               </size>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </widget>
+         </item>
+         <item row="1" column="0">
+          <widget class="QWidget" name="eb_chart3_widget" native="true">
+           <layout class="QVBoxLayout" name="eb_chart3_layout">
+            <item>
+             <widget class="QWebEngineView" name="eb_imports_chart">
+              <property name="minimumSize">
+               <size>
+                <width>300</width>
+                <height>200</height>
+               </size>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </widget>
+         </item>
+         <item row="1" column="1">
+          <widget class="QWidget" name="eb_chart4_widget" native="true">
+           <layout class="QVBoxLayout" name="eb_chart4_layout">
+            <item>
+             <widget class="QWebEngineView" name="eb_exports_chart">
+              <property name="minimumSize">
+               <size>
+                <width>300</width>
+                <height>200</height>
+               </size>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </widget>
+         </item>
+        </layout>
+       </item>
+      </layout>
+     </widget>
+     <widget class="QWidget" name="fuelsTab">
+      <attribute name="title">
+       <string>Fuels</string>
+      </attribute>
+      <layout class="QVBoxLayout" name="fuelsLayout">
+       <item>
+        <layout class="QGridLayout" name="fuelsChartsGrid">
+         <item row="0" column="0">
+          <widget class="QWidget" name="fuels_chart1_widget" native="true">
+           <layout class="QVBoxLayout" name="fuels_chart1_layout">
+            <item>
+             <widget class="QWebEngineView" name="fuels_gas_supply_chart">
+              <property name="minimumSize">
+               <size>
+                <width>300</width>
+                <height>200</height>
+               </size>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </widget>
+         </item>
+         <item row="0" column="1">
+          <widget class="QWidget" name="fuels_chart2_widget" native="true">
+           <layout class="QVBoxLayout" name="fuels_chart2_layout">
+            <item>
+             <widget class="QWebEngineView" name="fuels_gas_use_chart">
+              <property name="minimumSize">
+               <size>
+                <width>300</width>
+                <height>200</height>
+               </size>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </widget>
+         </item>
+         <item row="1" column="0">
+          <widget class="QWidget" name="fuels_chart3_widget" native="true">
+           <layout class="QVBoxLayout" name="fuels_chart3_layout">
+            <item>
+             <widget class="QWebEngineView" name="fuels_oil_supply_chart">
+              <property name="minimumSize">
+               <size>
+                <width>300</width>
+                <height>200</height>
+               </size>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </widget>
+         </item>
+         <item row="1" column="1">
+          <widget class="QWidget" name="fuels_chart4_widget" native="true">
+           <layout class="QVBoxLayout" name="fuels_chart4_layout">
+            <item>
+             <widget class="QWebEngineView" name="fuels_oil_use_chart">
+              <property name="minimumSize">
+               <size>
+                <width>300</width>
+                <height>200</height>
+               </size>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </widget>
+         </item>
+        </layout>
+       </item>
+      </layout>
+     </widget>
+     <widget class="QWidget" name="sectoralTab">
+      <attribute name="title">
+       <string>Sectoral Use</string>
+      </attribute>
+      <layout class="QVBoxLayout" name="sectoralLayout">
+       <item>
+        <layout class="QGridLayout" name="sectoralChartsGrid">
+         <item row="0" column="0">
+          <widget class="QWidget" name="sectoral_chart1_widget" native="true">
+           <layout class="QVBoxLayout" name="sectoral_chart1_layout">
+            <item>
+             <widget class="QWebEngineView" name="sectoral_buildings_chart">
+              <property name="minimumSize">
+               <size>
+                <width>300</width>
+                <height>200</height>
+               </size>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </widget>
+         </item>
+         <item row="0" column="1">
+          <widget class="QWidget" name="sectoral_chart2_widget" native="true">
+           <layout class="QVBoxLayout" name="sectoral_chart2_layout">
+            <item>
+             <widget class="QWebEngineView" name="sectoral_industry_chart">
+              <property name="minimumSize">
+               <size>
+                <width>300</width>
+                <height>200</height>
+               </size>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </widget>
+         </item>
+         <item row="1" column="0">
+          <widget class="QWidget" name="sectoral_chart3_widget" native="true">
+           <layout class="QVBoxLayout" name="sectoral_chart3_layout">
+            <item>
+             <widget class="QWebEngineView" name="sectoral_electricity_chart">
+              <property name="minimumSize">
+               <size>
+                <width>300</width>
+                <height>200</height>
+               </size>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </widget>
+         </item>
+         <item row="1" column="1">
+          <widget class="QWidget" name="sectoral_chart4_widget" native="true">
+           <layout class="QVBoxLayout" name="sectoral_chart4_layout">
+            <item>
+             <widget class="QWebEngineView" name="sectoral_feedstock_chart">
+              <property name="minimumSize">
+               <size>
+                <width>300</width>
+                <height>200</height>
+               </size>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </widget>
+         </item>
+        </layout>
+       </item>
+      </layout>
+     </widget>
+     <widget class="QWidget" name="emissionsTab">
+      <attribute name="title">
+       <string>Emissions</string>
+      </attribute>
+      <layout class="QVBoxLayout" name="emissionsLayout">
+       <item>
+        <layout class="QGridLayout" name="emissionsChartsGrid">
+         <item row="0" column="0">
+          <widget class="QWidget" name="emissions_chart1_widget" native="true">
+           <layout class="QVBoxLayout" name="emissions_chart1_layout">
+            <item>
+             <widget class="QWebEngineView" name="emissions_total_chart">
+              <property name="minimumSize">
+               <size>
+                <width>300</width>
+                <height>200</height>
+               </size>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </widget>
+         </item>
+         <item row="0" column="1">
+          <widget class="QWidget" name="emissions_chart2_widget" native="true">
+           <layout class="QVBoxLayout" name="emissions_chart2_layout">
+            <item>
+             <widget class="QWebEngineView" name="emissions_by_tech_chart">
+              <property name="minimumSize">
+               <size>
+                <width>300</width>
+                <height>200</height>
+               </size>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </widget>
+         </item>
+         <item row="1" column="0">
+          <widget class="QWidget" name="emissions_chart3_widget" native="true">
+           <layout class="QVBoxLayout" name="emissions_chart3_layout">
+            <item>
+             <widget class="QWebEngineView" name="emissions_by_type_chart">
+              <property name="minimumSize">
+               <size>
+                <width>300</width>
+                <height>200</height>
+               </size>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </widget>
+         </item>
+         <item row="1" column="1">
+          <widget class="QWidget" name="emissions_chart4_widget" native="true">
+           <layout class="QVBoxLayout" name="emissions_chart4_layout">
+            <item>
+             <widget class="QWebEngineView" name="emissions_by_fuel_chart">
+              <property name="minimumSize">
+               <size>
+                <width>300</width>
+                <height>200</height>
+               </size>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </widget>
+         </item>
+        </layout>
+       </item>
+      </layout>
+     </widget>
     </widget>
    </item>
   </layout>

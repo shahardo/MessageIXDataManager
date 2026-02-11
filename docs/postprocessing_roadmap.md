@@ -844,3 +844,62 @@ This section documents identified problems with the current postprocessing imple
 4. **Renewable technologies not included** - Need to check `input.level = "renewable"` in addition to `output.commodity = "electr"`
 5. **Historical vs model years not combined** - Need to merge `historical_activity` with `ACT` variable
 6. **Unit conversion errors** - Verify GWa to PJ (×31.536) and GWa to TWh (×8.76) conversions
+
+---
+
+## Dashboard Tab Organization (2026-02-11)
+
+The postprocessing dashboard displays metrics in 6 tabs. Each new tab uses a 2x2 grid of stacked bar charts rendered via `DashboardChartMixin.render_energy_chart()`. All charts respect the "Limit years" filter.
+
+### Tab 1: Overview (existing)
+| Position | Chart | Parameter |
+|----------|-------|-----------|
+| Top-left | Primary Energy Supply bar | `Primary energy supply (PJ)` |
+| Top-right | Electricity Generation bar | `Electricity generation by source (TWh)` |
+| Bottom-left | Primary Energy pie | `Primary energy supply (PJ)` |
+| Bottom-right | Electricity Sources pie | `Electricity generation by source (TWh)` |
+
+### Tab 2: Electricity (existing)
+| Position | Chart | Parameter |
+|----------|-------|-----------|
+| Left | Electricity Generation by Fuel | `Electricity generation by source (TWh)` |
+| Right | Electricity Cost by Source | `Electricity cost by source ($/MWh)` |
+| Below | Cost Breakdown Table | `Electricity cost by source ($/MWh)` |
+
+### Tab 3: Energy Balance (added 2026-02-11)
+| Position | Chart | Parameter |
+|----------|-------|-----------|
+| Top-left | Primary Energy Supply | `Primary energy supply (PJ)` |
+| Top-right | Final Energy Consumption | `Final energy consumption (PJ)` |
+| Bottom-left | Energy Imports | `Energy imports by fuel (PJ)` |
+| Bottom-right | Energy Exports | `Energy exports by fuel (PJ)` |
+
+### Tab 4: Fuels (added 2026-02-11)
+| Position | Chart | Parameter |
+|----------|-------|-----------|
+| Top-left | Gas Supply by Source | `Gas supply by source (PJ)` |
+| Top-right | Gas Use by Sector | `Gas use by sector (PJ)` |
+| Bottom-left | Oil Derivatives Supply | `Oil derivatives supply (PJ)` |
+| Bottom-right | Oil Derivatives Use | `Oil derivatives use by sector (PJ)` |
+
+### Tab 5: Sectoral Use (added 2026-02-11)
+| Position | Chart | Parameter |
+|----------|-------|-----------|
+| Top-left | Buildings by Fuel | `Buildings energy by fuel (PJ)` |
+| Top-right | Industry by Fuel | `Industry energy by fuel (PJ)` |
+| Bottom-left | Electricity Use by Sector | `Electricity use by sector (TWh)` |
+| Bottom-right | Feedstock by Fuel | `Feedstock by fuel (PJ)` |
+
+### Tab 6: Emissions (added 2026-02-11)
+| Position | Chart | Parameter |
+|----------|-------|-----------|
+| Top-left | Total GHG Emissions | `Total GHG emissions (MtCeq)` |
+| Top-right | Emissions by Technology | `Emissions by technology (Mt CO2)` |
+| Bottom-left | Emissions by Type | `Emissions by type (Mt)` |
+| Bottom-right | Emissions by Fuel | `Emissions by fuel (Mt CO2)` |
+
+### Implementation Details
+- **Files modified:** `src/ui/postprocessing_dashboard.ui`, `src/ui/postprocessing_dashboard.py`
+- **Pattern:** Generic `_render_tab_charts()` helper avoids duplicating the fetch-filter-render-or-placeholder pattern
+- **Chart view dicts:** `energy_balance_chart_views`, `fuels_chart_views`, `sectoral_chart_views`, `emissions_chart_views`
+- **Render methods:** `_render_energy_balance_charts()`, `_render_fuels_charts()`, `_render_sectoral_charts()`, `_render_emissions_charts()`
