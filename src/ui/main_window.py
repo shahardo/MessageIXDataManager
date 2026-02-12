@@ -463,14 +463,25 @@ class MainWindow(QMainWindow):
         self.selected_input_file = scenario.input_file
         self.selected_results_file = scenario.results_file
         
+        # Remember the currently displayed parameter before rebuilding the tree
+        prev_parameter = self.current_displayed_parameter
+        prev_is_results = self.current_displayed_is_results
+
         # Always use multi-section view for all scenarios
         self._switch_to_multi_section_view(scenario)
-        
-        self._clear_data_display()
 
-        # Auto-select the "Parameters" section when an input file is present,
-        # otherwise fall back to the first available section.
-        if not self.param_tree.selectedItems():
+        # Try to re-select the previously displayed parameter in the new tree
+        restored = False
+        if prev_parameter:
+            restored = self._auto_select_parameter_if_exists(
+                prev_parameter, prev_is_results
+            )
+
+        if not restored:
+            # Parameter not found in this scenario — clear the data view
+            self._clear_data_display()
+
+            # Fall back to selecting the appropriate section header
             if scenario.input_file:
                 self._auto_select_section("parameters")
             elif scenario.results_file:
@@ -996,8 +1007,11 @@ class MainWindow(QMainWindow):
             return True
         return False
 
-    def _auto_select_parameter_if_exists(self, parameter_name: str, is_results: bool):
-        """Auto-select a parameter in the tree if it exists in the current scenario"""
+    def _auto_select_parameter_if_exists(self, parameter_name: str, is_results: bool) -> bool:
+        """Auto-select a parameter in the tree if it exists in the current scenario.
+
+        Returns True if the parameter was found and selected, False otherwise.
+        """
         if parameter_name == "Dashboard":
             # Special handling for Dashboard - it's at root level
             root = self.param_tree.invisibleRootItem()
@@ -1012,7 +1026,7 @@ class MainWindow(QMainWindow):
 
         scenario = self._get_current_scenario(is_results)
         if not scenario or not scenario.get_parameter(parameter_name):
-            return  # Parameter doesn't exist in this scenario
+            return False  # Parameter doesn't exist in this scenario
 
         # Find and select the parameter in the tree
         def find_and_select_item(parent_item):
@@ -1033,10 +1047,7 @@ class MainWindow(QMainWindow):
 
         # Search through all top-level items
         root = self.param_tree.invisibleRootItem()
-        if find_and_select_item(root):
-            # The selection will trigger the parameter_selected signal automatically
-            # which will call _on_parameter_selected and display the data
-            pass
+        return find_and_select_item(root)
 
     def _get_current_scenario(self, is_results: bool) -> Optional[ScenarioData]:
         """Get the current scenario based on selection"""
