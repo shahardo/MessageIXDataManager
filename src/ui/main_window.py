@@ -41,6 +41,7 @@ from core.data_models import ScenarioData, Scenario
 from core.user_preferences import UserPreferences
 from utils.error_handler import ErrorHandler, SafeOperation
 from utils.data_transformer import DataTransformer
+from utils.technology_classifier import TechnologyClassifier
 
 # Threshold for showing wait cursor during table operations
 NUM_ROWS_FOR_WAIT_CURSOR = 3000
@@ -191,6 +192,7 @@ class MainWindow(QMainWindow):
         self.results_file_handler = ResultsFileHandler(self.results_analyzer)
         self.auto_load_handler = AutoLoadHandler(self.input_manager, self.results_analyzer, self.session_manager)
         self.loaded_data_files = {}  # Cache for loaded data files
+        self._level_tech_map: Dict[str, list] = {}  # Cached energy level → technology list
 
         self._connect_find_widget_signals()
 
@@ -358,6 +360,8 @@ class MainWindow(QMainWindow):
     def _on_file_selected(self, file_path: str, file_type: str):
         """Handle file selection in navigator"""
         print(f"DEBUG: File selected: {file_path} ({file_type})")
+        # Invalidate cached level map when switching files
+        self._level_tech_map = {}
         
         # 1. Ensure file is loaded in the appropriate manager
         if file_type == "input":
@@ -438,6 +442,8 @@ class MainWindow(QMainWindow):
     def _on_scenario_selected(self, scenario: Scenario):
         """Handle scenario selection in navigator"""
         print(f"DEBUG: Scenario selected: {scenario.name}")
+        # Invalidate cached level map when switching scenarios
+        self._level_tech_map = {}
         print(f"DEBUG: Scenario input_file: {scenario.input_file}")
         print(f"DEBUG: Scenario results_file: {scenario.results_file}")
         
@@ -766,18 +772,40 @@ class MainWindow(QMainWindow):
             if scenario:
                 parameter = scenario.get_parameter(parameter_name)
                 if parameter:
+                    # Detect var_* variable and configure analysis controls
+                    is_var = (
+                        is_results
+                        and parameter.metadata.get("result_type") == "variable"
+                    ) or parameter_name.lower().startswith("var_")
+
+                    if is_var:
+                        level_map = self._ensure_level_tech_map()
+                        self.data_display.set_var_mode(
+                            is_var=True,
+                            energy_levels=sorted(level_map.keys()),
+                            level_tech_map=level_map,
+                        )
+                    else:
+                        self.data_display.set_var_mode(is_var=False)
+
                     # Use wait cursor for large datasets
                     row_count = len(parameter.df) if parameter.df is not None else 0
                     with WaitCursorContext(row_count):
+                        # Apply var_* transformations (level filter + tech grouping)
+                        display_param = (
+                            self._apply_var_transformations(parameter) if is_var
+                            else parameter
+                        )
+
                         # Display data using the data display component
-                        self.data_display.display_parameter_data(parameter, is_results)
+                        self.data_display.display_parameter_data(display_param, is_results)
 
                         # Update chart with transformed data for display
                         # Use year options from data_display widget
                         filters = self.data_display._get_current_filters() if hasattr(self.data_display, '_get_current_filters') else {}
                         year_options = self.user_prefs.to_dict()
                         chart_df = DataTransformer.prepare_chart_data(
-                            parameter, is_results=is_results,
+                            display_param, is_results=is_results,
                             scenario_options=year_options,
                             filters=filters, hide_empty=self.data_display.hide_empty_columns
                         )
@@ -1071,6 +1099,67 @@ class MainWindow(QMainWindow):
             if self.selected_input_file:
                 return self.input_manager.get_scenario_by_file_path(self.selected_input_file)
             return self.input_manager.get_current_scenario()
+
+    # ------------------------------------------------------------------
+    # Variable analysis helpers (energy level + technology grouping)
+    # ------------------------------------------------------------------
+
+    def _get_input_scenario(self) -> Optional[ScenarioData]:
+        """Get the input scenario (needed for energy level mapping).
+
+        In multi-section mode, retrieves the input scenario from the
+        selected scenario's input file.  In single-file mode, uses
+        the current input manager.
+        """
+        if self.current_view == "multi" and hasattr(self, 'current_combined_data'):
+            return self.current_combined_data
+        if self.current_view == "multi" and self.selected_scenario:
+            if self.selected_scenario.input_file:
+                return self.input_manager.get_scenario_by_file_path(
+                    self.selected_scenario.input_file
+                )
+        if self.selected_input_file:
+            return self.input_manager.get_scenario_by_file_path(self.selected_input_file)
+        return self.input_manager.get_current_scenario()
+
+    def _ensure_level_tech_map(self) -> Dict[str, list]:
+        """Build or return the cached energy-level → technology mapping."""
+        if self._level_tech_map:
+            return self._level_tech_map
+
+        input_scenario = self._get_input_scenario()
+        if input_scenario:
+            self._level_tech_map = TechnologyClassifier.build_level_technology_map(
+                input_scenario
+            )
+        return self._level_tech_map
+
+    def _apply_var_transformations(self, parameter) -> 'Parameter':
+        """Apply energy-level filtering and technology grouping to a var_* Parameter.
+
+        Reads the current filter/grouping state from ``data_display``
+        and returns a new Parameter with the transformed DataFrame.
+        """
+        from core.data_models import Parameter
+
+        df = parameter.df
+        if df.empty:
+            return parameter
+
+        # Energy level filter
+        level_filter = self.data_display.get_energy_level_filter()
+        if level_filter and self._level_tech_map:
+            df = TechnologyClassifier.filter_by_energy_level(
+                df, level_filter, self._level_tech_map
+            )
+
+        # Technology grouping
+        if self.data_display.is_tech_grouping_enabled():
+            df = TechnologyClassifier.apply_technology_grouping(df)
+
+        if df is parameter.df:
+            return parameter
+        return Parameter(parameter.name, df, parameter.metadata)
 
     def _get_current_displayed_parameter(self) -> Optional[str]:
         """Get the currently displayed parameter name"""

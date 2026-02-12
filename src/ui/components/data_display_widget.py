@@ -392,6 +392,14 @@ class DataDisplayWidget(QWidget):
         # Connect shared prefs changes → refresh display
         self.user_prefs.changed.connect(self._on_user_prefs_changed)
 
+        # Variable analysis controls (energy level filter + technology grouping)
+        self.energy_level_combo: Optional[QComboBox] = None
+        self.group_tech_checkbox: Optional[QCheckBox] = None
+        self._is_var_parameter: bool = False
+        self._available_energy_levels: List[str] = []
+        self._level_tech_map: Dict[str, List[str]] = {}
+        self._group_techs: bool = True  # Default ON per requirements
+
         # Clipboard operations
         self.clipboard_delimiter = '\t'  # Default delimiter for clipboard operations
 
@@ -655,6 +663,9 @@ class DataDisplayWidget(QWidget):
         current_selections = {}
         for col_name, selector in self.property_selectors.items():
             current_selections[col_name] = selector.currentText()
+        # Preserve energy level selection across rebuilds
+        if self.energy_level_combo is not None:
+            current_selections["__energy_level__"] = self.energy_level_combo.currentText()
 
         # Clear existing selectors
         for selector in self.property_selectors.values():
@@ -668,6 +679,12 @@ class DataDisplayWidget(QWidget):
         if self.years_limit_checkbox:
             self.years_limit_checkbox.setParent(None)
             self.years_limit_checkbox = None
+        if self.energy_level_combo:
+            self.energy_level_combo.setParent(None)
+            self.energy_level_combo = None
+        if self.group_tech_checkbox:
+            self.group_tech_checkbox.setParent(None)
+            self.group_tech_checkbox = None
         if self.options_button:
             self.options_button.setParent(None)
             self.options_button = None
@@ -747,6 +764,43 @@ class DataDisplayWidget(QWidget):
             selector_layout.addWidget(combo)
             self.property_selectors[col] = combo
 
+        # --- Variable-analysis controls (only for var_* parameters) ---
+        if self._is_var_parameter and self._available_energy_levels:
+            # Visual separator
+            sep_label = QLabel("|")
+            sep_label.setStyleSheet("color: #aaa; margin: 0 4px;")
+            selector_layout.addWidget(sep_label)
+
+            # Energy Level dropdown
+            level_label = QLabel("Energy Level:")
+            UIStyler.setup_filter_label(level_label)
+            selector_layout.addWidget(level_label)
+
+            self.energy_level_combo = QComboBox()
+            UIStyler.setup_combo_box(self.energy_level_combo)
+            self.energy_level_combo.addItem("All")
+            for level in self._available_energy_levels:
+                self.energy_level_combo.addItem(level)
+            # Restore previous selection if available
+            prev_level = current_selections.get("__energy_level__", "All")
+            idx = self.energy_level_combo.findText(prev_level)
+            if idx >= 0:
+                self.energy_level_combo.blockSignals(True)
+                self.energy_level_combo.setCurrentIndex(idx)
+                self.energy_level_combo.blockSignals(False)
+            self.energy_level_combo.currentTextChanged.connect(self._on_selector_changed)
+            selector_layout.addWidget(self.energy_level_combo)
+
+        if self._is_var_parameter:
+            # Group Technologies checkbox
+            self.group_tech_checkbox = QCheckBox("Group Technologies")
+            UIStyler.setup_checkbox(self.group_tech_checkbox)
+            self.group_tech_checkbox.blockSignals(True)
+            self.group_tech_checkbox.setChecked(self._group_techs)
+            self.group_tech_checkbox.blockSignals(False)
+            self.group_tech_checkbox.stateChanged.connect(self._on_group_tech_changed)
+            selector_layout.addWidget(self.group_tech_checkbox)
+
         # Add stretch before the options button
         selector_layout.addStretch()
 
@@ -805,6 +859,11 @@ class DataDisplayWidget(QWidget):
         # Emit signal to refresh display (will be connected by parent)
         self.display_mode_changed.emit()
 
+    def _on_group_tech_changed(self):
+        """Handle group technologies checkbox state change."""
+        self._group_techs = self.group_tech_checkbox.isChecked()
+        self.display_mode_changed.emit()
+
     def _on_years_limit_changed(self):
         """Handle years limit checkbox state change.
 
@@ -826,6 +885,43 @@ class DataDisplayWidget(QWidget):
         # Refresh display
         self.display_mode_changed.emit()
         self.options_changed.emit()
+
+    # ------------------------------------------------------------------
+    # Variable analysis helpers (energy level filter + tech grouping)
+    # ------------------------------------------------------------------
+
+    def set_var_mode(
+        self,
+        is_var: bool,
+        energy_levels: Optional[List[str]] = None,
+        level_tech_map: Optional[Dict[str, List[str]]] = None,
+    ) -> None:
+        """Configure variable-analysis controls visibility.
+
+        Called by MainWindow before ``display_parameter_data()`` to
+        indicate whether the current parameter is a var_* variable and
+        what energy levels are available.
+
+        Args:
+            is_var: True when displaying a var_* result variable.
+            energy_levels: Available energy level names (data-driven).
+            level_tech_map: Level → technology list mapping.
+        """
+        self._is_var_parameter = is_var
+        self._available_energy_levels = energy_levels or []
+        self._level_tech_map = level_tech_map or {}
+
+    def get_energy_level_filter(self) -> Optional[str]:
+        """Return the currently selected energy level, or None if 'All'."""
+        if self.energy_level_combo is not None and self.energy_level_combo.currentText() != "All":
+            return self.energy_level_combo.currentText()
+        return None
+
+    def is_tech_grouping_enabled(self) -> bool:
+        """Return True if the 'Group Technologies' checkbox is checked."""
+        if self.group_tech_checkbox is not None:
+            return self.group_tech_checkbox.isChecked()
+        return self._group_techs  # fallback to default
 
     def _show_year_options_dialog(self):
         """Show the year range options dialog"""
