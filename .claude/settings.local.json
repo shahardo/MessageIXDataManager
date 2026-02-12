@@ -15,7 +15,10 @@
       "Bash(*python -m pytest:*)",
       "./env/Scripts/python.exe -c \"import *\"",
       "Bash(./env/Scripts/python.exe -m pytest tests:*)",
-      "Bash(./env/Scripts/python.exe -m pytest -v tests:*)"
+      "Bash(./env/Scripts/python.exe -m pytest -v tests:*)",
+      "Bash(Select-String -Pattern \"FAIL|ERROR|passed|failed\")",
+      "Bash(./env/Scripts/python.exe:*)",
+      "Bash(Select-String -Pattern \"FAILED|passed|failed|error\")"
     ],
     "defaultMode": "acceptEdits"
   }
