@@ -455,7 +455,10 @@ class MainWindow(QMainWindow):
              self._load_data_file(scenario.message_scenario_file)
         
         self.selected_scenario = scenario
-        
+
+        # Sync the navigator's visual selection state
+        self.file_navigator.select_scenario(scenario.name)
+
         # Set selected files based on what's available
         self.selected_input_file = scenario.input_file
         self.selected_results_file = scenario.results_file

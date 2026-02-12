@@ -6,7 +6,7 @@ Implements the scenario-based architecture as defined in refactoring guide.
 """
 
 from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QFrame, QLineEdit
-from PyQt5.QtCore import pyqtSignal, Qt, QSize
+from PyQt5.QtCore import pyqtSignal, Qt, QSize, QEvent
 from PyQt5.QtGui import QIcon, QPixmap
 from core.data_models import Scenario
 from managers.session_manager import SessionManager
@@ -37,7 +37,9 @@ class FileNavigatorWidget(QWidget):
         self.session_manager = session_manager if session_manager else SessionManager()
         self.error_handler = ErrorHandler()
         self.current_scenarios = []
-        
+        self.selected_scenario_name = None  # Track which scenario is selected
+        self._scenario_cards = {}  # scenario_name -> ScenarioCardWidget
+
         self.setup_ui()
         self.load_initial_state()
 
@@ -150,22 +152,16 @@ class FileNavigatorWidget(QWidget):
         """Select the last selected scenario if it exists in the current scenarios"""
         session_state = self.session_manager.load_session_state()
         last_selected_name = session_state.get('selected_scenario')
-        
-        print(f"DEBUG: Last selected scenario from session: {last_selected_name}")
-        print(f"DEBUG: Available scenarios: {[s.name for s in scenarios]}")
-        
+
         if last_selected_name:
-            # Find the scenario with the matching name
             for scenario in scenarios:
                 if scenario.name == last_selected_name:
-                    print(f"DEBUG: Selecting last selected scenario: {last_selected_name}")
-                    self.scenario_selected.emit(scenario)
+                    self._on_scenario_clicked(scenario)
                     return
-        
+
         # If no last selected scenario or it doesn't exist, select the first scenario
         if scenarios:
-            print(f"DEBUG: Selecting first scenario: {scenarios[0].name}")
-            self.scenario_selected.emit(scenarios[0])
+            self._on_scenario_clicked(scenarios[0])
 
     def update_scenarios(self, scenarios):
         """
@@ -195,28 +191,47 @@ class FileNavigatorWidget(QWidget):
 
     def _show_scenario_list(self, scenarios):
         """Show the list of scenarios"""
+        self._scenario_cards = {}
         for scenario in scenarios:
             scenario_widget = self._create_scenario_widget(scenario)
             self.navigation_layout.addWidget(scenario_widget)
-        
+
         # Add stretch at the end to push scenarios to top
         self.navigation_layout.addStretch()
 
+    def eventFilter(self, obj, event):
+        """Handle double-click on scenario title buttons to start editing"""
+        if event.type() == QEvent.MouseButtonDblClick and hasattr(obj, '_scenario_ref'):
+            self._start_editing_title(obj._scenario_ref, obj)
+            return True  # Consume the event
+        return super().eventFilter(obj, event)
+
+    def _on_scenario_clicked(self, scenario):
+        """Handle scenario click — update selection and emit signal"""
+        if self.selected_scenario_name == scenario.name:
+            return  # Already selected
+
+        # Update selection state
+        old_name = self.selected_scenario_name
+        self.selected_scenario_name = scenario.name
+
+        # Update visual highlighting
+        if old_name in self._scenario_cards:
+            self._scenario_cards[old_name].set_selected(False)
+        if scenario.name in self._scenario_cards:
+            self._scenario_cards[scenario.name].set_selected(True)
+
+        # Emit signal so main window updates the parameter tree
+        self.scenario_selected.emit(scenario)
+
     def _create_scenario_widget(self, scenario):
         """Create a widget for displaying a single scenario with file entries"""
-        widget = QWidget()
-        widget.setStyleSheet("""
-            QWidget {
-                background-color: #f8f9fa;
-                border: 1px solid #dee2e6;
-                border-radius: 4px;
-                margin: 2px 0;
-                padding: 8px;
-            }
-            QWidget:hover {
-                background-color: #e9ecef;
-            }
-        """)
+        widget = ScenarioCardWidget()
+        widget.set_selected(scenario.name == self.selected_scenario_name)
+        widget.clicked.connect(lambda s=scenario: self._on_scenario_clicked(s))
+
+        # Store reference for later selection updates
+        self._scenario_cards[scenario.name] = widget
         
         layout = QVBoxLayout(widget)
         layout.setContentsMargins(5, 5, 5, 5)
@@ -254,7 +269,10 @@ class FileNavigatorWidget(QWidget):
             }
         """)
         scenario_title_button.setCursor(Qt.PointingHandCursor)
-        scenario_title_button.clicked.connect(lambda checked, s=scenario, b=scenario_title_button: self._start_editing_title(s, b))
+        # Single-click selects the scenario; double-click starts title editing
+        scenario_title_button.clicked.connect(lambda checked, s=scenario: self._on_scenario_clicked(s))
+        scenario_title_button._scenario_ref = scenario  # Store for event filter
+        scenario_title_button.installEventFilter(self)
         
         # Trashcan delete button
         delete_btn = QPushButton()
@@ -383,10 +401,18 @@ class FileNavigatorWidget(QWidget):
             # Remove the scenario with the old name first
             old_name = scenario.name
             self.session_manager.remove_scenario(old_name)
-            
+
             # Update the scenario name
             scenario.name = new_title
-            
+
+            # Update selection tracking if this was the selected scenario
+            if self.selected_scenario_name == old_name:
+                self.selected_scenario_name = new_title
+
+            # Update scenario cards dict
+            if old_name in self._scenario_cards:
+                self._scenario_cards[new_title] = self._scenario_cards.pop(old_name)
+
             # Add the scenario back with the new name
             self.session_manager.add_scenario(scenario)
         
@@ -420,7 +446,10 @@ class FileNavigatorWidget(QWidget):
             }
         """)
         button.setCursor(Qt.PointingHandCursor)
-        button.clicked.connect(lambda checked, s=scenario, b=button: self._start_editing_title(s, b))
+        # Single-click selects the scenario; double-click starts title editing
+        button.clicked.connect(lambda checked, s=scenario: self._on_scenario_clicked(s))
+        button._scenario_ref = scenario
+        button.installEventFilter(self)
         
         # Replace the edit field with the button in the header layout
         header_layout.replaceWidget(edit_field, button)
@@ -468,19 +497,22 @@ class FileNavigatorWidget(QWidget):
     def add_scenario(self, scenario):
         """
         Add a new scenario to the navigator.
-        
+
         Args:
             scenario: Scenario object to add
         """
         # Add to session manager
         self.session_manager.add_scenario(scenario)
-        
+
         # Update current list
         self.current_scenarios.append(scenario)
-        
+
+        # Auto-select the newly added scenario
+        self.selected_scenario_name = scenario.name
+
         # Update display
         self.update_scenarios(self.current_scenarios)
-        
+
         # Emit signal
         self.scenario_created.emit(scenario.name)
 
@@ -533,18 +565,37 @@ class FileNavigatorWidget(QWidget):
     def get_selected_scenario(self):
         """
         Get the currently selected scenario.
-        
+
         Returns:
             Scenario object or None
         """
-        # This would need to be implemented based on selection state
-        # For now, return the first scenario if any exist
+        if self.selected_scenario_name:
+            for s in self.current_scenarios:
+                if s.name == self.selected_scenario_name:
+                    return s
         return self.current_scenarios[0] if self.current_scenarios else None
+
+    def select_scenario(self, scenario_name: str):
+        """
+        Update the visual selection state without emitting scenario_selected.
+
+        Called by main window to keep the navigator in sync when selection
+        is triggered externally (e.g., after loading files).
+        """
+        if self.selected_scenario_name == scenario_name:
+            return
+        old_name = self.selected_scenario_name
+        self.selected_scenario_name = scenario_name
+        if old_name in self._scenario_cards:
+            self._scenario_cards[old_name].set_selected(False)
+        if scenario_name in self._scenario_cards:
+            self._scenario_cards[scenario_name].set_selected(True)
 
     def clear_selection(self):
         """Clear the current selection"""
-        # Implementation would depend on selection mechanism
-        pass
+        if self.selected_scenario_name and self.selected_scenario_name in self._scenario_cards:
+            self._scenario_cards[self.selected_scenario_name].set_selected(False)
+        self.selected_scenario_name = None
 
     def _create_file_entry_widget(self, file_type, file_path, open_callback, close_callback):
         """Create a widget for displaying a file entry with clickable icon and close button"""
@@ -691,6 +742,54 @@ class FileNavigatorWidget(QWidget):
         """Refresh the navigator display"""
         scenarios = self.session_manager.get_scenarios()
         self.update_scenarios(scenarios)
+
+
+class ScenarioCardWidget(QWidget):
+    """Clickable scenario card widget with selection highlighting"""
+    clicked = pyqtSignal()
+
+    STYLE_NORMAL = """
+        QWidget#scenarioCard {
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+            margin: 2px 0;
+            padding: 8px;
+        }
+        QWidget#scenarioCard:hover {
+            background-color: #e9ecef;
+        }
+    """
+    STYLE_SELECTED = """
+        QWidget#scenarioCard {
+            background-color: #d0e4f7;
+            border: 2px solid #007bff;
+            border-radius: 4px;
+            margin: 2px 0;
+            padding: 7px;
+        }
+        QWidget#scenarioCard:hover {
+            background-color: #c0d8f0;
+        }
+    """
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setObjectName("scenarioCard")
+        self._is_selected = False
+        self.setStyleSheet(self.STYLE_NORMAL)
+        self.setCursor(Qt.PointingHandCursor)
+
+    def mousePressEvent(self, event):
+        """Emit clicked signal on left-click (unless a child button handled it)"""
+        if event.button() == Qt.LeftButton:
+            self.clicked.emit()
+        super().mousePressEvent(event)
+
+    def set_selected(self, selected: bool):
+        """Update the visual selection state"""
+        self._is_selected = selected
+        self.setStyleSheet(self.STYLE_SELECTED if selected else self.STYLE_NORMAL)
 
 
 class FileEntryWidget(QWidget):
