@@ -21,6 +21,7 @@ if TYPE_CHECKING:
     from PyQt5.QtWebEngineWidgets import QWebEngineView
 
 from core.data_models import Parameter
+from core.message_ix_schema import generate_legend_tooltip_script
 from ..ui_styler import UIStyler
 
 
@@ -404,6 +405,7 @@ class ChartWidget(QWidget):
                 </head>
                 <body style="height: 100%; margin: 0;">
                     {html_content}
+                    {generate_legend_tooltip_script()}
                 </body>
                 </html>
                 """

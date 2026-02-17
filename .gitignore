@@ -158,6 +158,7 @@ $RECYCLE.BIN/
 *.tmp
 *.temp
 *.bak
+~$*.*
 
 # Project specific
 # Add any project-specific files to ignore here

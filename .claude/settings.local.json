@@ -18,7 +18,8 @@
       "Bash(./env/Scripts/python.exe -m pytest -v tests:*)",
       "Bash(Select-String -Pattern \"FAIL|ERROR|passed|failed\")",
       "Bash(./env/Scripts/python.exe:*)",
-      "Bash(Select-String -Pattern \"FAILED|passed|failed|error\")"
+      "Bash(Select-String -Pattern \"FAILED|passed|failed|error\")",
+      "WebFetch(domain:docs.messageix.org)"
     ],
     "defaultMode": "acceptEdits"
   }

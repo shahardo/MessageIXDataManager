@@ -9,6 +9,8 @@ import plotly.graph_objects as go
 import plotly.io as pio
 from PyQt5.QtWebEngineWidgets import QWebEngineView, QWebEngineSettings
 
+from core.message_ix_schema import generate_legend_tooltip_script
+
 # Plotly CDN URL used across all dashboards
 PLOTLY_CDN_URL = "https://cdn.plot.ly/plotly-2.27.0.min.js"
 
@@ -201,6 +203,7 @@ class DashboardChartMixin:
         </head>
         <body>
             {plot_html}
+            {generate_legend_tooltip_script()}
             <script>
                 // Resize chart to fill viewport on load and window resize
                 window.addEventListener('load', function() {{

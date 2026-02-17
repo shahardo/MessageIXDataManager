@@ -11,6 +11,8 @@ from PyQt5 import uic
 import tempfile
 import os
 
+from core.message_ix_schema import generate_legend_tooltip_script
+
 
 class ResultsDashboard(QWidget):
     """Dashboard widget for displaying result visualizations"""
@@ -247,6 +249,7 @@ class ResultsDashboard(QWidget):
                 </head>
                 <body>
                     {html_content}
+                    {generate_legend_tooltip_script()}
                     <script>
                     // Wait for Plotly to be available and initialize
                     function initChart() {{
