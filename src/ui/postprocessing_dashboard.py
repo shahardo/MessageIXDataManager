@@ -629,7 +629,8 @@ class PostprocessingDashboard(DashboardChartMixin, QWidget):
 
             # Group by fuel categories
             fuel_mapping = {
-                'Coal': ['coal', 'heavy fuel oil', 'light oil'],
+                'Coal': ['coal'],
+                'Fuels': ['heavy fuel oil', 'light oil'],
                 'Natural Gas': ['natural gas (ST + CT)', 'natural gas (CC)'],
                 'Nuclear': ['nuclear'],
                 'Solar': ['solar PV', 'solar CSP'],

@@ -287,6 +287,27 @@ class TestFilterByEnergyLevel:
         result = TechnologyClassifier.filter_by_energy_level(df, "primary", {"primary": ["x"]})
         assert result.empty
 
+    def test_emissions_dynamic_detection(self):
+        """Emissions level dynamically detects emission techs not in level map."""
+        # CO2t_TCE is an emission tech that only exists in results,
+        # not in the input scenario's input/output parameters.
+        df = pd.DataFrame({
+            "technology": ["coal_ppl", "gas_cc", "CO2t_TCE", "CH4_Emission"],
+            "year_act": [2030] * 4,
+            "lvl": [100.0, 200.0, 50.0, 30.0],
+        })
+        # Level map doesn't include CO2t_TCE or CH4_Emission
+        level_map = {
+            "secondary": ["coal_ppl", "gas_cc"],
+            "emissions": [],  # empty - no emission techs discovered from input
+        }
+        result = TechnologyClassifier.filter_by_energy_level(
+            df, "emissions", level_map
+        )
+        # Dynamic pattern matching should find CO2t_TCE and CH4_Emission
+        assert set(result["technology"]) == {"CO2t_TCE", "CH4_Emission"}
+        assert len(result) == 2
+
 
 # ---------------------------------------------------------------------------
 # Tests: apply_technology_grouping
@@ -297,23 +318,23 @@ class TestApplyTechnologyGrouping:
         """All techs with same prefix are lumped together."""
         result = TechnologyClassifier.apply_technology_grouping(sample_var_act_df)
 
-        # coal_ppl (100) + coal_adv (50) → "coal" (150)
-        coal_rows = result[result["technology"] == "coal"]
+        # coal_ppl (100) + coal_adv (50) → "Coal" (150)
+        coal_rows = result[result["technology"] == "Coal"]
         assert len(coal_rows) == 1
         assert coal_rows["lvl"].iloc[0] == 150.0
 
-        # gas_cc (200) + gas_ppl (80) → "natural gas" (280)
-        gas_rows = result[result["technology"] == "natural gas"]
+        # gas_cc (200) + gas_ppl (80) → "Natural Gas" (280)
+        gas_rows = result[result["technology"] == "Natural Gas"]
         assert len(gas_rows) == 1
         assert gas_rows["lvl"].iloc[0] == 280.0
 
-        # solar_pv (120) + solar_res (30) → "solar" (150)
-        solar_rows = result[result["technology"] == "solar"]
+        # solar_pv (120) + solar_res (30) → "Solar" (150)
+        solar_rows = result[result["technology"] == "Solar"]
         assert len(solar_rows) == 1
         assert solar_rows["lvl"].iloc[0] == 150.0
 
-        # wind_ppl (90) + wind_res (10) → "wind" (100)
-        wind_rows = result[result["technology"] == "wind"]
+        # wind_ppl (90) + wind_res (10) → "Wind" (100)
+        wind_rows = result[result["technology"] == "Wind"]
         assert len(wind_rows) == 1
         assert wind_rows["lvl"].iloc[0] == 100.0
 
@@ -321,13 +342,13 @@ class TestApplyTechnologyGrouping:
         """Technologies matching a group are grouped; mapped techs get group name."""
         result = TechnologyClassifier.apply_technology_grouping(sample_var_act_df)
 
-        # hydro_lc → "hydro" (mapped via hydro_ prefix)
-        hydro_rows = result[result["technology"] == "hydro"]
+        # hydro_lc → "Hydro" (mapped via hydro_ prefix)
+        hydro_rows = result[result["technology"] == "Hydro"]
         assert len(hydro_rows) == 1
         assert hydro_rows["lvl"].iloc[0] == 60.0
 
-        # nuc_hc → "nuclear" (mapped via nuc_ prefix)
-        nuc_rows = result[result["technology"] == "nuclear"]
+        # nuc_hc → "Nuclear" (mapped via nuc_ prefix)
+        nuc_rows = result[result["technology"] == "Nuclear"]
         assert len(nuc_rows) == 1
         assert nuc_rows["lvl"].iloc[0] == 150.0
 
@@ -350,8 +371,8 @@ class TestApplyTechnologyGrouping:
             "lvl": [100.0, 80.0, 60.0, 200.0],
         })
         result = TechnologyClassifier.apply_technology_grouping(df)
-        # All gas_* techs → "natural gas"
-        gas_rows = result[result["technology"] == "natural gas"]
+        # All gas_* techs → "Natural Gas"
+        gas_rows = result[result["technology"] == "Natural Gas"]
         assert len(gas_rows) == 1
         assert gas_rows["lvl"].iloc[0] == 440.0
 
@@ -363,8 +384,8 @@ class TestApplyTechnologyGrouping:
             "lvl": [10.0, 20.0, 100.0],
         })
         result = TechnologyClassifier.apply_technology_grouping(df)
-        # All solar_* techs → "solar"
-        solar_rows = result[result["technology"] == "solar"]
+        # All solar_* techs → "Solar"
+        solar_rows = result[result["technology"] == "Solar"]
         assert len(solar_rows) == 1
         assert solar_rows["lvl"].iloc[0] == 130.0
 
@@ -376,7 +397,7 @@ class TestApplyTechnologyGrouping:
             "lvl": [100.0, 200.0],
         })
         result = TechnologyClassifier.apply_technology_grouping(df)
-        ref_rows = result[result["technology"] == "refinery"]
+        ref_rows = result[result["technology"] == "Refinery"]
         assert len(ref_rows) == 1
         assert ref_rows["lvl"].iloc[0] == 300.0
 
@@ -388,7 +409,7 @@ class TestApplyTechnologyGrouping:
             "lvl": [100.0, 50.0, 30.0, 20.0],
         })
         result = TechnologyClassifier.apply_technology_grouping(df)
-        h2_rows = result[result["technology"] == "hydrogen"]
+        h2_rows = result[result["technology"] == "Hydrogen"]
         assert len(h2_rows) == 1
         assert h2_rows["lvl"].iloc[0] == 200.0
 
@@ -406,6 +427,23 @@ class TestApplyTechnologyGrouping:
         ch4_rows = result[result["technology"] == "CH4 emissions"]
         assert len(ch4_rows) == 1
         assert ch4_rows["lvl"].iloc[0] == 35.0
+
+    def test_total_emission_techs_grouped(self):
+        """Technologies like CO2t_TCE are grouped under total emissions."""
+        df = pd.DataFrame({
+            "technology": ["CO2t_TCE", "CH4t_TCE", "CO2_TCE"],
+            "year_act": [2030] * 3,
+            "lvl": [100.0, 50.0, 25.0],
+        })
+        result = TechnologyClassifier.apply_technology_grouping(df)
+        # CO2t_TCE + CH4t_TCE → "total emissions" (prefix match)
+        total_rows = result[result["technology"] == "total emissions"]
+        assert len(total_rows) == 1
+        assert total_rows["lvl"].iloc[0] == 150.0
+        # CO2_TCE → "CO2 emissions" (prefix match, not total emissions)
+        co2_rows = result[result["technology"] == "CO2 emissions"]
+        assert len(co2_rows) == 1
+        assert co2_rows["lvl"].iloc[0] == 25.0
 
     def test_cement_grouped(self):
         """Cement emission technologies are grouped; co2scr goes to CO2 scrubbing."""
@@ -436,8 +474,8 @@ class TestApplyTechnologyGrouping:
         imp_rows = result[result["technology"] == "imports"]
         assert len(imp_rows) == 1
         assert imp_rows["lvl"].iloc[0] == 150.0
-        # gas_cc → "natural gas" (prefix match)
-        gas_rows = result[result["technology"] == "natural gas"]
+        # gas_cc → "Natural Gas" (prefix match)
+        gas_rows = result[result["technology"] == "Natural Gas"]
         assert len(gas_rows) == 1
         assert gas_rows["lvl"].iloc[0] == 200.0
         # oil_exp → "exports" (suffix overrides "oil" prefix)
@@ -457,8 +495,8 @@ class TestApplyTechnologyGrouping:
         scrub_rows = result[result["technology"] == "CO2 scrubbing"]
         assert len(scrub_rows) == 1
         assert scrub_rows["lvl"].iloc[0] == 25.0
-        # bio_ppl → "biomass" (prefix match)
-        bio_rows = result[result["technology"] == "biomass"]
+        # bio_ppl → "Biomass" (prefix match)
+        bio_rows = result[result["technology"] == "Biomass"]
         assert len(bio_rows) == 1
         assert bio_rows["lvl"].iloc[0] == 100.0
 
@@ -485,7 +523,7 @@ class TestApplyTechnologyGrouping:
         })
         result = TechnologyClassifier.apply_technology_grouping(df)
 
-        # Should be 2 rows: "solar" at node A, "solar" at node B
+        # Should be 2 rows: "Solar" at node A, "Solar" at node B
         assert len(result) == 2
         a_row = result[result["node_loc"] == "A"]
         assert a_row["lvl"].iloc[0] == 150.0
@@ -518,12 +556,12 @@ class TestGetTechnologyGroupMappings:
         """Returns a dict with expected keys."""
         result = TechnologyClassifier.get_technology_group_mappings()
         assert isinstance(result, dict)
-        assert "coal" in result
-        assert "solar" in result
-        assert "wind" in result
-        assert "natural gas" in result
-        assert "refinery" in result
-        assert "hydrogen" in result
+        assert "Coal" in result
+        assert "Solar" in result
+        assert "Wind" in result
+        assert "Natural Gas" in result
+        assert "Refinery" in result
+        assert "Hydrogen" in result
         assert "CO2 emissions" in result
         assert "CH4 emissions" in result
 
@@ -543,11 +581,11 @@ class TestHelpers:
     def test_build_reverse_group_map(self):
         """Reverse map contains all patterns."""
         reverse = _build_reverse_group_map()
-        assert reverse["coal_"] == "coal"
-        assert reverse["solar_"] == "solar"
-        assert reverse["gas_"] == "natural gas"
-        assert reverse["ref_"] == "refinery"
-        assert reverse["h2_"] == "hydrogen"
+        assert reverse["coal_"] == "Coal"
+        assert reverse["solar_"] == "Solar"
+        assert reverse["gas_"] == "Natural Gas"
+        assert reverse["ref_"] == "Refinery"
+        assert reverse["h2_"] == "Hydrogen"
         assert reverse["CO2_"] == "CO2 emissions"
         assert reverse["_imp"] == "imports"
         assert reverse["_co2scr"] == "CO2 scrubbing"
@@ -555,23 +593,23 @@ class TestHelpers:
     def test_find_group_exact_match(self):
         """Exact match returns group name."""
         reverse = _build_reverse_group_map()
-        assert _find_group("igcc", reverse) == "coal"
+        assert _find_group("igcc", reverse) == "Coal"
         assert _find_group("mvac_co2", reverse) == "CO2 scrubbing"
         assert _find_group("vertical_stud", reverse) == "emission mitigation"
 
     def test_find_group_prefix_match(self):
         """Prefix match works with broad prefixes."""
         reverse = _build_reverse_group_map()
-        assert _find_group("coal_ppl", reverse) == "coal"
-        assert _find_group("coal_extr_1", reverse) == "coal"
-        assert _find_group("gas_cc", reverse) == "natural gas"
-        assert _find_group("gas_extr_2", reverse) == "natural gas"
-        assert _find_group("solar_pv", reverse) == "solar"
-        assert _find_group("solar_curtailment_1", reverse) == "solar"
-        assert _find_group("h2_smr", reverse) == "hydrogen"
-        assert _find_group("h2_coal_ccs", reverse) == "hydrogen"
-        assert _find_group("ref_hil", reverse) == "refinery"
-        assert _find_group("elec_t_d", reverse) == "electricity"
+        assert _find_group("coal_ppl", reverse) == "Coal"
+        assert _find_group("coal_extr_1", reverse) == "Coal"
+        assert _find_group("gas_cc", reverse) == "Natural Gas"
+        assert _find_group("gas_extr_2", reverse) == "Natural Gas"
+        assert _find_group("solar_pv", reverse) == "Solar"
+        assert _find_group("solar_curtailment_1", reverse) == "Solar"
+        assert _find_group("h2_smr", reverse) == "Hydrogen"
+        assert _find_group("h2_coal_ccs", reverse) == "Hydrogen"
+        assert _find_group("ref_hil", reverse) == "Refinery"
+        assert _find_group("elec_t_d", reverse) == "Electricity"
         assert _find_group("CO2_TCE", reverse) == "CO2 emissions"
         assert _find_group("CH4_Emission", reverse) == "CH4 emissions"
 

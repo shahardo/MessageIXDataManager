@@ -21,7 +21,7 @@ if TYPE_CHECKING:
     from PyQt5.QtWebEngineWidgets import QWebEngineView
 
 from core.data_models import Parameter
-from core.message_ix_schema import generate_legend_tooltip_script
+from core.message_ix_schema import generate_legend_tooltip_script, get_code_display_names
 from ..ui_styler import UIStyler
 
 
@@ -67,6 +67,8 @@ class ChartWidget(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.current_chart_type = 'stacked_bar'  # 'bar', 'stacked_bar', 'line', 'stacked_area'
+        self.decipher_names = True  # Replace MESSAGEix codes with readable names in legend
+        self._code_display_names: dict = {}  # Lazy-loaded mapping
 
         # Widgets will be assigned externally from .ui file
         self.simple_bar_btn: QPushButton
@@ -123,6 +125,18 @@ class ChartWidget(QWidget):
         for btn in [self.simple_bar_btn, self.stacked_bar_btn, self.line_chart_btn, self.stacked_area_btn]:
             UIStyler.setup_chart_button(btn)
 
+    def _get_display_name(self, code: str) -> str:
+        """Return a human-readable name for *code* if deciphering is on, else the code itself.
+
+        Falls back to DIMENSION_DISPLAY_NAMES, then the code→name schema mapping.
+        """
+        display = self.DIMENSION_DISPLAY_NAMES.get(code, code)
+        if display == code and self.decipher_names:
+            if not self._code_display_names:
+                self._code_display_names = get_code_display_names()
+            display = self._code_display_names.get(code, code)
+        return display
+
     def update_chart(self, df: pd.DataFrame, parameter_name: str, is_results: bool = False):
         """Update the chart with data from a DataFrame"""
         try:
@@ -165,8 +179,8 @@ class ChartWidget(QWidget):
             if all(v == 0 for v in values):
                 continue
 
-            # Use display name for the trace name
-            display_name = self.DIMENSION_DISPLAY_NAMES.get(str(col_name), str(col_name))
+            # Use display name for the trace name (decipher MESSAGEix codes when enabled)
+            display_name = self._get_display_name(str(col_name))
 
             if self.current_chart_type == 'line':
                 fig.add_trace(go.Scatter(
@@ -260,55 +274,56 @@ class ChartWidget(QWidget):
         for col in production_cols + import_cols:
             col_data = df[col].fillna(0)
             values = col_data.tolist()
-            
+
             # Skip if all zeros
             if all(v == 0 for v in values):
                 continue
-            
+
+            display_name = self._get_display_name(str(col))
             fig.add_trace(go.Bar(
                 x=years,
                 y=values,
-                name=str(col),
-                #marker_pattern_shape='/',
-                hovertemplate=f'{col}<br>Year: %{{x}}<br>Value: %{{y:.2f}} PJ<extra></extra>'
+                name=display_name,
+                hovertemplate=f'{display_name}<br>Year: %{{x}}<br>Value: %{{y:.2f}} PJ<extra></extra>'
             ))
-        
+
         # Add Exports as bar below zero
         for col in export_cols:
             col_data = df[col].fillna(0)
             values = col_data.tolist()
-            
+
             # Skip if all zeros
             if all(v == 0 for v in values):
                 continue
-            
+
+            display_name = self._get_display_name(str(col))
             fig.add_trace(go.Bar(
                 x=years,
                 y=values,
-                name=str(col),
-                #marker_color='firebrick',
-                hovertemplate=f'{col}<br>Year: %{{x}}<br>Value: %{{y:.2f}} PJ<extra></extra>'
+                name=display_name,
+                hovertemplate=f'{display_name}<br>Year: %{{x}}<br>Value: %{{y:.2f}} PJ<extra></extra>'
             ))
-        
+
         # Add Total Supply as line with markers and values
         for col in total_cols:
             col_data = df[col].fillna(0)
             values = col_data.tolist()
-            
+
             # Skip if all zeros
             if all(v == 0 for v in values):
                 continue
-            
+
+            display_name = self._get_display_name(str(col))
             fig.add_trace(go.Scatter(
                 x=years,
                 y=values,
                 mode='lines+markers+text',
-                name=str(col),
+                name=display_name,
                 line=dict(color='darkgreen', width=3),
                 marker=dict(size=10),
                 text=[f'{v:,.0f}' for v in values],
                 textposition='top center',
-                hovertemplate=f'{col}<br>Year: %{{x}}<br>Value: %{{y:.2f}} PJ<extra></extra>'
+                hovertemplate=f'{display_name}<br>Year: %{{x}}<br>Value: %{{y:.2f}} PJ<extra></extra>'
             ))
         
         # Update layout

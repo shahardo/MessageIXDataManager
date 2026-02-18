@@ -111,7 +111,7 @@
                     <property name="styleSheet">
                      <string>font-size: 11px; font-weight: bold; margin-top: 0px; margin-left: 10px; padding-top: 5px; border: 1px solid #ccc; border-radius: 3px;</string>
                     </property>
-                    <layout class="QHBoxLayout" name="horizontalLayout_2">
+                    <layout class="QVBoxLayout" name="selectorVLayout">
                      <property name="leftMargin">
                       <number>10</number>
                      </property>
@@ -123,6 +123,9 @@
                      </property>
                      <property name="bottomMargin">
                       <number>5</number>
+                     </property>
+                     <property name="spacing">
+                      <number>2</number>
                      </property>
                     </layout>
                    </widget>

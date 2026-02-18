@@ -27,22 +27,22 @@ TECHNOLOGY_GROUPS = {
     # Patterns ending with '_' match any continuation via prefix matching.
     # When "Group Technologies" is enabled, ALL technologies sharing a prefix
     # are lumped together (e.g., gas_cc + gas_ct + gas_ppl → "natural gas").
-    "coal": ["coal_", "igcc", "lignite_"],
-    "heavy fuel oil": ["foil_"],
+    "Coal": ["coal_", "igcc", "lignite_"],
+    "Heavy Fuel Oil": ["foil_"],
     "light oil": ["loil_"],
-    "natural gas": ["gas_"],
-    "oil": ["oil_"],
-    "nuclear": ["nuc_"],
-    "hydro": ["hydro_"],
-    "biomass": ["bio_"],
-    "wind": ["wind_"],
-    "solar": ["solar_", "csp_"],
-    "geothermal": ["geo_"],
-    "storage": ["stor_"],
-    "hydrogen": ["h2_", "h2b_"],
-    "electricity": ["elec_"],
-    "refinery": ["ref_"],
-    "synfuels": ["syn_", "meth_", "eth_", "liq_"],
+    "Natural Gas": ["gas_"],
+    "Oil": ["oil_"],
+    "Nuclear": ["nuc_"],
+    "Hydro": ["hydro_"],
+    "Biomass": ["bio_"],
+    "Wind": ["wind_"],
+    "Solar": ["solar_", "csp_"],
+    "Geothermal": ["geo_"],
+    "Storage": ["stor_"],
+    "Hydrogen": ["h2_", "h2b_"],
+    "Electricity": ["elec_"],
+    "Refinery": ["ref_"],
+    "Synfuels": ["syn_", "meth_", "eth_", "liq_"],
 
     # --- Emissions & CO2 capture ---
     # Suffix patterns (_co2scr, _co2_scrub) are checked BEFORE prefix patterns
@@ -62,7 +62,11 @@ TECHNOLOGY_GROUPS = {
     "HFC emissions": ["HFC_", "HFCo_", "HFCequiv"],
     "NOx emissions": ["NOx_"],
     "other emissions": ["BCA_", "OCA_", "VOC_", "NH3_", "PM2_", "CO_E"],
-    "total emissions": ["TCE_", "TCH4_", "TCO2_", "TN2O_", "TSF6_", "TCF4_", "THFC_"],
+    "total emissions": [
+        "TCE_", "TCH4_", "TCO2_", "TN2O_", "TSF6_", "TCF4_", "THFC_",
+        # {species}t_ patterns (e.g. CO2t_TCE, CH4t_TCE)
+        "CO2t_", "CH4t_", "N2Ot_", "SF6t_", "CF4t_", "HFCt_",
+    ],
     "emission mitigation": [
         "landfill_", "ent_red", "rice_red", "soil_red",
         "nitric_", "replacement_", "vertical_stud",
@@ -82,8 +86,9 @@ _EMISSION_TECH_PATTERNS = re.compile(
     r"(?:"
     # Emission species prefixes (case-sensitive, uppercase species names)
     r"^(?:CO2|CH4|N2O|SO2|SF6|CF4|HFC|NOx|BCA|OCA|VOC|NH3|PM2|CO)_"
-    # Total emission counters
+    # Total emission counters (T{species}_ and {species}t_ variants)
     r"|^T(?:CE|CH4|CO2|N2O|SF6|CF4|HFC)_"
+    r"|^(?:CO2|CH4|N2O|SF6|CF4|HFC)t_"
     # *_TCE suffix (Total Carbon Equivalent)
     r"|_TCE$"
     # Cement, flaring, forest emissions
@@ -176,6 +181,11 @@ class TechnologyClassifier:
     ) -> pd.DataFrame:
         """Filter a DataFrame to only include technologies at a given level.
 
+        For the "emissions" level, also dynamically checks technologies in the
+        DataFrame against ``_EMISSION_TECH_PATTERNS``.  This catches emission
+        accounting technologies that only appear in results (var_ACT) and were
+        not discovered during ``build_level_technology_map()``.
+
         Args:
             df: DataFrame with a technology column.
             level: Energy level name (e.g. "primary", "secondary").
@@ -189,11 +199,19 @@ class TechnologyClassifier:
         if tech_col not in df.columns:
             return df
 
-        techs = level_tech_map.get(level, [])
-        if not techs:
+        techs_set = set(level_tech_map.get(level, []))
+
+        # For "emissions" level, also match technologies by emission patterns
+        # so that result-only techs (e.g. CO2t_TCE) are included.
+        if level == "emissions":
+            for t in df[tech_col].dropna().unique():
+                if _EMISSION_TECH_PATTERNS.search(str(t)):
+                    techs_set.add(t)
+
+        if not techs_set:
             return df.iloc[0:0]  # empty with same columns
 
-        return df[df[tech_col].isin(techs)].copy()
+        return df[df[tech_col].isin(techs_set)].copy()
 
     @staticmethod
     def apply_technology_grouping(

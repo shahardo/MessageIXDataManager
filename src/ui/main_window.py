@@ -811,6 +811,8 @@ class MainWindow(QMainWindow):
                         )
 
                         if chart_df is not None:
+                            # Sync decipher state before rendering chart
+                            self.chart_widget.decipher_names = self.data_display.decipher_names
                             self.chart_widget.update_chart(chart_df, parameter.name, is_results)
         except Exception as e:
             print(f"ERROR in parameter selection: {e}")
@@ -840,8 +842,10 @@ class MainWindow(QMainWindow):
             traceback.print_exc()
 
     def _on_display_mode_changed(self):
-        """Handle display mode change (raw/advanced)"""
+        """Handle display mode change (raw/advanced) or filter/checkbox changes"""
         try:
+            # Sync decipher-names state to the chart widget so legend matches the table
+            self.chart_widget.decipher_names = self.data_display.decipher_names
             # Refresh current parameter display
             self._refresh_current_display()
         except Exception as e:

@@ -20,6 +20,7 @@ if TYPE_CHECKING:
     pass  # No additional imports needed since we assume UI widgets exist
 
 from core.data_models import Parameter
+from core.message_ix_schema import get_code_display_names
 from ..ui_styler import UIStyler
 from managers.commands import Command
 
@@ -380,9 +381,12 @@ class DataDisplayWidget(QWidget):
         super().__init__(parent)
         self.table_display_mode = "raw"  # "raw" or "advanced"
         self.hide_empty_columns = True  # Whether to hide empty columns in advanced view (default: on)
+        self.decipher_names = True  # Whether to replace MESSAGEix codes with human-readable names (default: on)
+        self._code_display_names: Dict[str, str] = {}  # Lazy-loaded code→name mapping
         self.property_selectors = {}
         self.hide_empty_checkbox = None
         self.years_limit_checkbox = None
+        self.decipher_names_checkbox: Optional[QCheckBox] = None
         self.options_button = None
         self.tech_descriptions = tech_descriptions or {}
 
@@ -517,6 +521,22 @@ class DataDisplayWidget(QWidget):
         self.param_table.setColumnCount(0)
         self.view_toggle_button.setEnabled(False)
 
+    def _get_code_display_names(self) -> Dict[str, str]:
+        """Return the cached code→human-readable-name mapping, loading on first use."""
+        if not self._code_display_names:
+            self._code_display_names = get_code_display_names()
+        return self._code_display_names
+
+    def _decipher(self, code: str) -> str:
+        """Translate a MESSAGEix code to its human-readable name if deciphering is on.
+
+        Returns the original code unchanged when the checkbox is off or
+        when no mapping exists for the code.
+        """
+        if not self.decipher_names:
+            return code
+        return self._get_code_display_names().get(code, code)
+
     def _get_current_filters(self) -> Dict[str, str]:
         """Get current filter selections from property selectors"""
         current_filters = {}
@@ -567,13 +587,27 @@ class DataDisplayWidget(QWidget):
             self.param_table.setVerticalHeaderLabels(row_labels)
 
         # Set headers with tooltips
+        code_names = self._get_code_display_names() if self.decipher_names else {}
         for i, col in enumerate(df.columns):
-            # Use display name if available, otherwise use the original column name
-            display_name = self.DIMENSION_DISPLAY_NAMES.get(str(col), str(col))
+            col_str = str(col)
+            # Use dimension display name first, then decipher code, then raw name
+            display_name = self.DIMENSION_DISPLAY_NAMES.get(col_str, col_str)
+            # In advanced mode columns are pivoted values (tech/commodity codes)
+            # — decipher them when the checkbox is on.
+            if display_name == col_str and col_str in code_names:
+                display_name = code_names[col_str]
             header_item = QTableWidgetItem(display_name)
-            desc = self.tech_descriptions.get(str(col), {}).get('description', '')
-            if desc and type(desc) is str: # since desc could be np.nan when reading empty CSV cells
-                header_item.setToolTip(desc)
+            # Always show the original code as tooltip so the user can identify it
+            if display_name != col_str:
+                header_item.setToolTip(col_str)
+            # Also append tech description if available
+            desc = self.tech_descriptions.get(col_str, {}).get('description', '')
+            if desc and type(desc) is str:  # since desc could be np.nan when reading empty CSV cells
+                existing_tip = header_item.toolTip()
+                if existing_tip:
+                    header_item.setToolTip(f"{existing_tip}\n{desc}")
+                else:
+                    header_item.setToolTip(desc)
             self.param_table.setHorizontalHeaderItem(i, header_item)
 
     def _populate_table(self, df: pd.DataFrame, parameter: Parameter):
@@ -635,8 +669,13 @@ class DataDisplayWidget(QWidget):
                     item.setToolTip(f"Integer: {value}")
                 else:
                     str_value = str(value).strip()
-                    item.setText(str_value)
-                    item.setToolTip(f"Text: {str_value}")
+                    deciphered = self._decipher(str_value)
+                    item.setText(deciphered)
+                    # Show original code in tooltip when deciphered
+                    if deciphered != str_value:
+                        item.setToolTip(str_value)
+                    else:
+                        item.setToolTip(f"Text: {str_value}")
 
                 # Right-align numeric columns
                 col_name = df.columns[col_idx]
@@ -657,6 +696,20 @@ class DataDisplayWidget(QWidget):
         # Reconnect cellChanged signal after population
         self.param_table.cellChanged.connect(self._on_cell_changed)
 
+    @staticmethod
+    def _clear_layout(layout):
+        """Recursively remove all items (widgets, sub-layouts, spacers) from a layout."""
+        while layout.count():
+            item = layout.takeAt(0)
+            widget = item.widget()
+            sub_layout = item.layout()
+            if widget is not None:
+                widget.setParent(None)
+                widget.deleteLater()
+            elif sub_layout is not None:
+                DataDisplayWidget._clear_layout(sub_layout)
+            # Spacer items (from addStretch) are discarded automatically
+
     def _setup_property_selectors(self, df: pd.DataFrame, is_results: bool = False):
         """Set up property selectors for advanced view based on DataFrame columns"""
         # Save current selections before clearing
@@ -667,144 +720,78 @@ class DataDisplayWidget(QWidget):
         if self.energy_level_combo is not None:
             current_selections["__energy_level__"] = self.energy_level_combo.currentText()
 
-        # Clear existing selectors
-        for selector in self.property_selectors.values():
-            selector.setParent(None)
+        # Clear references to widgets (they'll be destroyed by _clear_layout below)
         self.property_selectors.clear()
-
-        # Remove existing checkboxes and options button if they exist
-        if self.hide_empty_checkbox:
-            self.hide_empty_checkbox.setParent(None)
-            self.hide_empty_checkbox = None
-        if self.years_limit_checkbox:
-            self.years_limit_checkbox.setParent(None)
-            self.years_limit_checkbox = None
-        if self.energy_level_combo:
-            self.energy_level_combo.setParent(None)
-            self.energy_level_combo = None
-        if self.group_tech_checkbox:
-            self.group_tech_checkbox.setParent(None)
-            self.group_tech_checkbox = None
-        if self.options_button:
-            self.options_button.setParent(None)
-            self.options_button = None
+        self.hide_empty_checkbox = None
+        self.years_limit_checkbox = None
+        self.decipher_names_checkbox = None
+        self.energy_level_combo = None
+        self.group_tech_checkbox = None
+        self.options_button = None
 
         # Get column info to identify which columns should have selectors
         column_info = self._identify_columns(df, is_results)
         filter_columns = column_info.get('filter_cols', [])
 
-        # Get selector layout and clear it completely
-        selector_layout = self.selector_container.layout()
-        if selector_layout is None:
-            # Create layout if it doesn't exist
-            selector_layout = QHBoxLayout(self.selector_container)
-            selector_layout.setContentsMargins(2, 2, 2, 2)
-            selector_layout.setSpacing(2)
+        # Get the top-level layout of the selector container.
+        # The .ui file provides a QVBoxLayout; reuse it and clear its children.
+        top_layout = self.selector_container.layout()
+        if top_layout is None:
+            top_layout = QVBoxLayout(self.selector_container)
         else:
-            # Clear existing layout contents
-            while selector_layout.count():
-                item = selector_layout.takeAt(0)
-                widget = item.widget()
-                if widget:
-                    widget.setParent(None)
-                    widget.deleteLater()
+            # Clear all items from the layout (nested layouts, widgets, spacers)
+            self._clear_layout(top_layout)
 
-        # Add checkbox for hiding empty columns
+        top_layout.setContentsMargins(4, 2, 4, 2)
+        top_layout.setSpacing(2)
+
+        # --- Row 1: checkboxes and options button ---
+        row1 = QHBoxLayout()
+        row1.setSpacing(8)
+
+        # Hide Empty Columns checkbox
         self.hide_empty_checkbox = QCheckBox("Hide Empty Columns")
         UIStyler.setup_checkbox(self.hide_empty_checkbox)
-        # Block signals while setting initial state to prevent unwanted emissions
         self.hide_empty_checkbox.blockSignals(True)
         self.hide_empty_checkbox.setChecked(self.hide_empty_columns)
         self.hide_empty_checkbox.blockSignals(False)
         self.hide_empty_checkbox.stateChanged.connect(self._on_hide_empty_changed)
-        selector_layout.addWidget(self.hide_empty_checkbox)
+        row1.addWidget(self.hide_empty_checkbox)
 
-        # Add checkbox for years limit
+        # Years Limit checkbox
         self.years_limit_checkbox = QCheckBox("Years Limit")
         UIStyler.setup_checkbox(self.years_limit_checkbox)
         self.years_limit_checkbox.blockSignals(True)
         self.years_limit_checkbox.setChecked(self.years_limit_enabled)
         self.years_limit_checkbox.blockSignals(False)
         self.years_limit_checkbox.stateChanged.connect(self._on_years_limit_changed)
-        selector_layout.addWidget(self.years_limit_checkbox)
+        row1.addWidget(self.years_limit_checkbox)
 
-        for col in filter_columns:
-            # Skip the value column - we don't want to filter by values
-            if col == column_info.get('value_col'):
-                continue
+        # Decipher Names checkbox (replaces MESSAGEix codes with readable names)
+        self.decipher_names_checkbox = QCheckBox("Decipher Names")
+        self.decipher_names_checkbox.setToolTip(
+            "Replace MESSAGEix technology/commodity codes with human-readable names"
+        )
+        UIStyler.setup_checkbox(self.decipher_names_checkbox)
+        self.decipher_names_checkbox.blockSignals(True)
+        self.decipher_names_checkbox.setChecked(self.decipher_names)
+        self.decipher_names_checkbox.blockSignals(False)
+        self.decipher_names_checkbox.stateChanged.connect(self._on_decipher_names_changed)
+        row1.addWidget(self.decipher_names_checkbox)
 
-            # Create label
-            label = QLabel(f"{col}:")
-            UIStyler.setup_filter_label(label)
-            selector_layout.addWidget(label)
-
-            # Create combo box
-            combo = QComboBox()
-            UIStyler.setup_combo_box(combo)
-
-            # Add "All" option and unique values
-            unique_values = sorted(df[col].dropna().unique().tolist())
-            combo.addItem("All")
-            for value in unique_values:
-                combo.addItem(str(value))
-
-            # Set default to "All"
-            combo.setCurrentText("All")
-
-            # Restore previous selection if available
-            if col in current_selections and current_selections[col] in [combo.itemText(i) for i in range(combo.count())]:
-                # Block signals while setting initial state to prevent unwanted emissions
-                combo.blockSignals(True)
-                combo.setCurrentText(current_selections[col])
-                combo.blockSignals(False)
-
-            # Connect signal
-            combo.currentTextChanged.connect(self._on_selector_changed)
-
-            selector_layout.addWidget(combo)
-            self.property_selectors[col] = combo
-
-        # --- Variable-analysis controls (only for var_* parameters) ---
-        if self._is_var_parameter and self._available_energy_levels:
-            # Visual separator
-            sep_label = QLabel("|")
-            sep_label.setStyleSheet("color: #aaa; margin: 0 4px;")
-            selector_layout.addWidget(sep_label)
-
-            # Energy Level dropdown
-            level_label = QLabel("Energy Level:")
-            UIStyler.setup_filter_label(level_label)
-            selector_layout.addWidget(level_label)
-
-            self.energy_level_combo = QComboBox()
-            UIStyler.setup_combo_box(self.energy_level_combo)
-            self.energy_level_combo.addItem("All")
-            for level in self._available_energy_levels:
-                self.energy_level_combo.addItem(level)
-            # Restore previous selection if available
-            prev_level = current_selections.get("__energy_level__", "All")
-            idx = self.energy_level_combo.findText(prev_level)
-            if idx >= 0:
-                self.energy_level_combo.blockSignals(True)
-                self.energy_level_combo.setCurrentIndex(idx)
-                self.energy_level_combo.blockSignals(False)
-            self.energy_level_combo.currentTextChanged.connect(self._on_selector_changed)
-            selector_layout.addWidget(self.energy_level_combo)
-
+        # Variable-analysis checkboxes also go in row 1
         if self._is_var_parameter:
-            # Group Technologies checkbox
             self.group_tech_checkbox = QCheckBox("Group Technologies")
             UIStyler.setup_checkbox(self.group_tech_checkbox)
             self.group_tech_checkbox.blockSignals(True)
             self.group_tech_checkbox.setChecked(self._group_techs)
             self.group_tech_checkbox.blockSignals(False)
             self.group_tech_checkbox.stateChanged.connect(self._on_group_tech_changed)
-            selector_layout.addWidget(self.group_tech_checkbox)
+            row1.addWidget(self.group_tech_checkbox)
 
-        # Add stretch before the options button
-        selector_layout.addStretch()
+        row1.addStretch()
 
-        # Add options button (sprocket) at the far right
+        # Options button (sprocket) at far right of row 1
         self.options_button = QPushButton("⚙")
         self.options_button.setToolTip("Year Range Options")
         self.options_button.setFixedSize(28, 24)
@@ -822,7 +809,75 @@ class DataDisplayWidget(QWidget):
             }
         """)
         self.options_button.clicked.connect(self._show_year_options_dialog)
-        selector_layout.addWidget(self.options_button)
+        row1.addWidget(self.options_button)
+
+        top_layout.addLayout(row1)
+
+        # --- Row 2: filter dropdowns ---
+        row2 = QHBoxLayout()
+        row2.setSpacing(4)
+
+        for col in filter_columns:
+            # Skip the value column - we don't want to filter by values
+            if col == column_info.get('value_col'):
+                continue
+
+            # Create label
+            label = QLabel(f"{col}:")
+            UIStyler.setup_filter_label(label)
+            row2.addWidget(label)
+
+            # Create combo box
+            combo = QComboBox()
+            UIStyler.setup_combo_box(combo)
+
+            # Add "All" option and unique values
+            unique_values = sorted(df[col].dropna().unique().tolist())
+            combo.addItem("All")
+            for value in unique_values:
+                combo.addItem(str(value))
+
+            # Set default to "All"
+            combo.setCurrentText("All")
+
+            # Restore previous selection if available
+            if col in current_selections and current_selections[col] in [combo.itemText(i) for i in range(combo.count())]:
+                combo.blockSignals(True)
+                combo.setCurrentText(current_selections[col])
+                combo.blockSignals(False)
+
+            # Connect signal
+            combo.currentTextChanged.connect(self._on_selector_changed)
+
+            row2.addWidget(combo)
+            self.property_selectors[col] = combo
+
+        # Energy Level dropdown (var_* parameters only) also in row 2
+        if self._is_var_parameter and self._available_energy_levels:
+            # sep_label = QLabel("|")
+            # sep_label.setStyleSheet("color: #aaa; margin: 0 0;")
+            # row2.addWidget(sep_label)
+
+            level_label = QLabel("Energy Level:")
+            UIStyler.setup_filter_label(level_label)
+            row2.addWidget(level_label)
+
+            self.energy_level_combo = QComboBox()
+            UIStyler.setup_combo_box(self.energy_level_combo)
+            self.energy_level_combo.addItem("All")
+            for level in self._available_energy_levels:
+                self.energy_level_combo.addItem(level)
+            prev_level = current_selections.get("__energy_level__", "All")
+            idx = self.energy_level_combo.findText(prev_level)
+            if idx >= 0:
+                self.energy_level_combo.blockSignals(True)
+                self.energy_level_combo.setCurrentIndex(idx)
+                self.energy_level_combo.blockSignals(False)
+            self.energy_level_combo.currentTextChanged.connect(self._on_selector_changed)
+            row2.addWidget(self.energy_level_combo)
+
+        row2.addStretch()
+        top_layout.addLayout(row2)
 
     def _on_selector_changed(self):
         """Handle selector value changes - refresh the table display with debouncing"""
@@ -857,6 +912,15 @@ class DataDisplayWidget(QWidget):
         """Handle hide empty columns checkbox state change"""
         self.hide_empty_columns = self.hide_empty_checkbox.isChecked()
         # Emit signal to refresh display (will be connected by parent)
+        self.display_mode_changed.emit()
+
+    def _on_decipher_names_changed(self):
+        """Handle decipher names checkbox state change.
+
+        Toggles replacement of MESSAGEix codes with human-readable names
+        in column headers and text cell values.
+        """
+        self.decipher_names = self.decipher_names_checkbox.isChecked()
         self.display_mode_changed.emit()
 
     def _on_group_tech_changed(self):
