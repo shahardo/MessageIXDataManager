@@ -508,13 +508,33 @@ MESSAGE_IX_COMMODITIES = {
     "uranium": {"description": "Uranium resource"},
 
     # --- End-use / service demands ---
+    "i_therm": {
+        "name": "Industrial thermal",
+        "description": "Industrial thermal energy demand",
+        "level": "useful",
+        "units": "GWa",
+    },
+    "i_spec": {
+        "name": "Industrial specific",
+        "description": "Industrial specific (electric) energy demand",
+        "level": "useful",
+        "units": "GWa",
+    },
+    "i_feed": {
+        "name": "Industrial feedstock",
+        "description": "Industrial feedstock (non-energy) demand",
+        "level": "useful",
+        "units": "GWa",
+    },
     "rc_spec": {
         "name": "Residential/commercial specific",
         "description": "Residential and commercial non-substitutable fuels",
+        "level": "useful",
     },
     "rc_therm": {
         "name": "Residential/commercial thermal",
         "description": "Residential and commercial thermal demand",
+        "level": "useful",
     },
     "transport": {
         "name": "Transportation",
@@ -534,7 +554,7 @@ COMMODITY_CATEGORIES = {
     "Non-commercial": ["non-comm"],
     "Oil Resources": ["crude_1", "crude_2", "crude_3", "crude_4", "crude_5", "crude_6", "crude_7", "crude_8"],
     "Gas Resources": ["gas_1", "gas_2", "gas_3", "gas_4", "gas_5", "gas_6", "gas_7", "gas_8"],
-    "End-use Demands": ["rc_spec", "rc_therm", "transport", "freshwater_supply"],
+    "End-use Demands": ["i_therm", "i_spec", "i_feed", "rc_spec", "rc_therm", "transport", "freshwater_supply"],
 }
 
 # ---------------------------------------------------------------------------

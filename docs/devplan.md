@@ -181,12 +181,36 @@ We will implement the ability to add and remove parameters in the active scenari
 *   Undo/Redo correctly reverses these operations.
 *   Changes are not written to disk until "Save" is clicked.
 
+### Phase 8: MESSAGEix Codelists & Name Deciphering [x] ✅ COMPLETED
+**Objective**: Add official MESSAGEix commodity and technology codelists; provide human-readable name translation throughout the UI.
+
+**Completed**:
+1. [x] Added `MESSAGE_IX_COMMODITIES` (38 entries) and `MESSAGE_IX_TECHNOLOGIES` (422 entries) to `message_ix_schema.py`
+2. [x] Added `COMMODITY_CATEGORIES` (6 categories) and `TECHNOLOGY_CATEGORIES` (17 sector-based categories)
+3. [x] Added `get_code_display_names()` function returning combined code→name mapping
+4. [x] Added `generate_legend_tooltip_script()` for Plotly chart legend hover tooltips (custom HTML div with MutationObserver)
+5. [x] Added "Decipher Names" checkbox in advanced display (default checked) - translates codes in table headers and cell values
+6. [x] Synced decipher state to chart widget legends
+7. [x] Restructured advanced display controls to two rows (Row 1: checkboxes + options, Row 2: filter dropdowns)
+
+### Phase 9: Technology Classification & var_* Display Improvements [x] ✅ COMPLETED
+**Objective**: Improve classification and display of result variables (var_ACT, var_EMISS, etc.).
+
+**Completed**:
+1. [x] Added `{species}t_` prefix patterns to "total emissions" group for techs like `CO2t_TCE`
+2. [x] Enhanced `filter_by_energy_level()` to dynamically detect emission techs via `_EMISSION_TECH_PATTERNS` regex (catches result-only technologies not in input scenario)
+3. [x] Added `emission` column to filter columns for var_EMISS filtering
+4. [x] Added `type_tec` to pivot columns so var_EMISS pivots around technology type
+5. [x] Changed pivot aggregation to `sum` for results data (was first-value, which lost data)
+6. [x] Fixed mixed-type year sorting in `InputFileDashboard` (str vs int comparison error)
+7. [x] Updated `TECHNOLOGY_GROUPS` names to title case (Coal, Natural Gas, Solar, etc.)
+
 ## Future Development - TODO List
 
 - When openning the app, or after openning input file, select the 'parameters' line in the parameters tree and show the input dashboard
 - For postprocessing data, show the same dashboard as for output file.
-- Remove output file code, use only postprocessin.
-- Use consistend color scheme for charts.
+- Remove output file code, use only postprocessing.
+- Use consistent color scheme for charts.
 - ~~Add costs chart, stacked bars by fuel source~~ DONE - Electricity cost by source ($/MWh) stacked bar chart
 - Allow cleaning up input data - remove redundant years, remove un-needed parameters.
 - Allow to run the model directly from the app.

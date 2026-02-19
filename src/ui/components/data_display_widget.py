@@ -1233,24 +1233,29 @@ class DataDisplayWidget(QWidget):
 
         for col in df.columns:
             col_lower = col.lower()
-            if col_lower in ['value', 'val']:
-                value_col = col
-            elif col_lower == 'lvl' and is_results:
-                # For result variables/equations, 'lvl' (level) is the value column
+            if col_lower in ['value', 'val', 'lvl']:
+                print('DEBUG pivot: value col:', col_lower)
                 value_col = col
             elif col_lower in ['year_vtg', 'year_act', 'year', 'period', 'year_vintage', 'year_active', 'year_rel']:
+                print('DEBUG pivot: year col:', col_lower)
                 year_cols.append(col)
             elif col_lower in ['time', 'unit', 'units', 'mrg']:
                 # Ignore these columns completely (mrg = marginal for results)
+                print('DEBUG pivot: ignored col:', col_lower)
                 ignored_cols.append(col)
-            elif col_lower in ['commodity', 'technology', 'type', 'tec', 'category', 'relation']:
+            elif col_lower in ['commodity', 'technology', 'type', 'tec', 'category', 'relation',
+                              'type_tec']:
                 # These become pivot table column headers
                 # 'category' is used by postprocessed results (e.g., technology types, fuel types)
                 # 'relation' is used by REL variable
+                # 'type_tec' is used by var_EMISS (technology type dimension)
+                print('DEBUG pivot: pivot col:', col_lower)
                 pivot_cols.append(col)
             elif col_lower in ['region', 'node', 'node_loc', 'node_rel', 'node_dest', 'node_origin',
-                              'mode', 'level', 'grade', 'fuel', 'sector', 'subcategory']:
+                              'mode', 'level', 'grade', 'fuel', 'sector', 'subcategory',
+                              'emission']:
                 # These are used for filtering
+                print('DEBUG pivot: filter col:', col_lower)
                 filter_cols.append(col)
 
         # If no value column found for results, try 'lvl' as fallback
@@ -1285,7 +1290,7 @@ class DataDisplayWidget(QWidget):
         """Transform DataFrame structure based on data type"""
         # Pivoting logic for both input and results data
         if self._should_pivot(df, column_info):
-            return self._perform_pivot(df, column_info)
+            return self._perform_pivot(df, column_info, is_results)
         else:
             return self._prepare_2d_format(df, column_info)
 
@@ -1307,8 +1312,16 @@ class DataDisplayWidget(QWidget):
         # Pivot if we have year columns, pivot columns, and a value column
         return bool(year_cols and pivot_cols and value_col)
 
-    def _perform_pivot(self, df: pd.DataFrame, column_info: dict) -> pd.DataFrame:
-        """Perform pivot operation on DataFrame"""
+    def _perform_pivot(self, df: pd.DataFrame, column_info: dict, is_results: bool = False) -> pd.DataFrame:
+        """Perform pivot operation on DataFrame.
+
+        Args:
+            df: DataFrame to pivot.
+            column_info: Column classification from ``_identify_columns()``.
+            is_results: True for result variables – uses ``sum`` aggregation
+                so that unfiltered dimensions are aggregated rather than
+                silently dropped.
+        """
         try:
             year_cols = column_info.get('year_cols', [])
             pivot_cols = column_info.get('pivot_cols', [])
@@ -1318,6 +1331,10 @@ class DataDisplayWidget(QWidget):
                 print("DEBUG: Missing required columns for pivot, returning original df")
                 return df
 
+            # Results use sum to aggregate remaining dimensions;
+            # input data picks the first value (typically unique).
+            aggfunc = 'sum' if is_results else (lambda x: x.iloc[0] if len(x) > 0 else np.nan)
+
             # Try different combinations of year and pivot columns
             for index_col in year_cols:
                 for columns_col in pivot_cols:
@@ -1326,7 +1343,7 @@ class DataDisplayWidget(QWidget):
                             values=value_col,
                             index=index_col,
                             columns=columns_col,
-                            aggfunc=lambda x: x.iloc[0] if len(x) > 0 else np.nan
+                            aggfunc=aggfunc
                         )
                         return pivoted
                     except Exception as e:
