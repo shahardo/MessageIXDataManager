@@ -82,12 +82,18 @@ class DataTransformer:
         filtered_any = False
 
         # Filter on ALL year columns found in the DataFrame
-        year_col_names = ['year', 'year_act', 'year_vtg']
+        # Includes type_year which may contain numeric years or categorical
+        # values like "cumulative" – non-numeric rows are kept.
+        year_col_names = ['year', 'year_act', 'year_vtg', 'type_year']
         for year_col in year_col_names:
             if year_col in result_df.columns:
                 try:
                     year_values = pd.to_numeric(result_df[year_col], errors='coerce')
-                    mask = (year_values >= min_year) & (year_values <= max_year)
+                    # Keep rows where the year is in range OR non-numeric
+                    # (e.g. "cumulative" in type_year)
+                    is_numeric = year_values.notna()
+                    in_range = (year_values >= min_year) & (year_values <= max_year)
+                    mask = ~is_numeric | in_range
                     result_df = result_df[mask]
                     filtered_any = True
                 except (TypeError, ValueError):
@@ -102,14 +108,18 @@ class DataTransformer:
                 if year_level in df.index.names:
                     try:
                         year_values = pd.to_numeric(df.index.get_level_values(year_level), errors='coerce')
-                        mask = (year_values >= min_year) & (year_values <= max_year)
+                        is_numeric = year_values.notna()
+                        in_range = (year_values >= min_year) & (year_values <= max_year)
+                        mask = ~is_numeric | in_range
                         return df[mask].copy()
                     except (TypeError, ValueError):
                         pass
         elif hasattr(df.index, 'name') and df.index.name in year_col_names:
             try:
                 year_values = pd.to_numeric(pd.Series(df.index), errors='coerce')
-                mask = (year_values >= min_year) & (year_values <= max_year)
+                is_numeric = year_values.notna()
+                in_range = (year_values >= min_year) & (year_values <= max_year)
+                mask = ~is_numeric | in_range
                 return df[mask.values].copy()
             except (TypeError, ValueError):
                 pass
@@ -168,38 +178,34 @@ class DataTransformer:
 
     @staticmethod
     def _identify_columns(df: pd.DataFrame, is_results: bool = False) -> Dict[str, Union[List[str], Optional[str]]]:
-        """Identify different types of columns in the DataFrame
+        """Identify different types of columns in the DataFrame.
+
+        Uses the canonical column classification from DataDisplayWidget to
+        stay in sync with the table display logic.
 
         Args:
             df: Input DataFrame
             is_results: True if this is results data (variables/equations use 'lvl' column)
         """
+        from ui.components.data_display_widget import DataDisplayWidget
+
         year_cols = []
-        pivot_cols = []  # Columns that become pivot table headers
-        filter_cols = []  # Columns used for filtering
-        ignored_cols = []  # Columns to ignore completely
+        pivot_cols = []
+        filter_cols = []
+        ignored_cols = []
         value_col = None
 
         for col in df.columns:
             col_lower = col.lower()
-            if col_lower in ['value', 'val']:
+            if col_lower in DataDisplayWidget._VALUE_COLS:
                 value_col = col
-            elif col_lower == 'lvl' and is_results:
-                # For result variables/equations, 'lvl' (level) is the value column
-                value_col = col
-            elif col_lower in ['year_vtg', 'year_act', 'year', 'period', 'year_vintage', 'year_rel', 'year_active']:
+            elif col_lower in DataDisplayWidget._YEAR_COLS:
                 year_cols.append(col)
-            elif col_lower in ['time', 'unit', 'units', 'mrg']:
-                # Ignore these columns completely (mrg is marginal for results)
+            elif col_lower in DataDisplayWidget._IGNORED_COLS:
                 ignored_cols.append(col)
-            elif col_lower in ['commodity', 'technology', 'type', 'tec', 'category', 'relation']:
-                # These become pivot table column headers
-                # 'category' is used by postprocessed results (e.g., technology types, fuel types)
-                # 'relation' is used by REL variable
+            elif col_lower in DataDisplayWidget._PIVOT_COLS:
                 pivot_cols.append(col)
-            elif col_lower in ['region', 'node', 'node_loc', 'node_rel', 'node_dest', 'node_origin',
-                              'mode', 'level', 'grade', 'fuel', 'sector', 'subcategory']:
-                # These are used for filtering
+            elif col_lower in DataDisplayWidget._FILTER_COLS:
                 filter_cols.append(col)
 
         # Fallback: if no value column found for results, check for 'lvl'
@@ -237,7 +243,7 @@ class DataTransformer:
         # Pivoting logic for both input and results data
         # Results data uses 'lvl' column as value, identified in _identify_columns
         if DataTransformer._should_pivot(df, column_info):
-            return DataTransformer._perform_pivot(df, column_info)
+            return DataTransformer._perform_pivot(df, column_info, is_results)
         else:
             return DataTransformer._prepare_2d_format(df, column_info)
 
@@ -262,8 +268,16 @@ class DataTransformer:
         return bool(year_cols and pivot_cols and value_col)
 
     @staticmethod
-    def _perform_pivot(df: pd.DataFrame, column_info: dict) -> pd.DataFrame:
-        """Perform pivot operation on DataFrame"""
+    def _perform_pivot(df: pd.DataFrame, column_info: dict, is_results: bool = False) -> pd.DataFrame:
+        """Perform pivot operation on DataFrame.
+
+        Args:
+            df: DataFrame to pivot.
+            column_info: Column classification from ``_identify_columns()``.
+            is_results: True for result variables – uses ``sum`` aggregation
+                so that unfiltered dimensions are aggregated rather than
+                silently dropped.
+        """
         try:
             year_cols = column_info.get('year_cols', [])
             pivot_cols = column_info.get('pivot_cols', [])
@@ -271,6 +285,10 @@ class DataTransformer:
 
             if not (year_cols and pivot_cols and value_col):
                 return df
+
+            # Results use sum to aggregate remaining dimensions;
+            # input data picks the first value (typically unique).
+            aggfunc = 'sum' if is_results else (lambda x: x.iloc[0] if len(x) > 0 else np.nan)
 
             # Try different combinations of year and pivot columns
             for index_col in year_cols:
@@ -280,7 +298,7 @@ class DataTransformer:
                             values=value_col,
                             index=index_col,
                             columns=columns_col,
-                            aggfunc=lambda x: x.iloc[0] if len(x) > 0 else np.nan
+                            aggfunc=aggfunc
                         )
                         return pivoted
                     except Exception as e:

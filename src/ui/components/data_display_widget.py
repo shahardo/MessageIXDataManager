@@ -340,6 +340,7 @@ class DataDisplayWidget(QWidget):
         'land_type': 'land type',
         'rating': 'rating',
         'grade': 'grade',
+        'lvl_temporal': 'temporal level',
         'shares': 'shares',
         'relation': 'relation',
         'value': 'value'
@@ -590,12 +591,16 @@ class DataDisplayWidget(QWidget):
         code_names = self._get_code_display_names() if self.decipher_names else {}
         for i, col in enumerate(df.columns):
             col_str = str(col)
-            # Use dimension display name first, then decipher code, then raw name
-            display_name = self.DIMENSION_DISPLAY_NAMES.get(col_str, col_str)
-            # In advanced mode columns are pivoted values (tech/commodity codes)
-            # — decipher them when the checkbox is on.
-            if display_name == col_str and col_str in code_names:
-                display_name = code_names[col_str]
+            # When deciphering is on, translate dimension names (type_emission →
+            # emission type) and MESSAGEix codes (coal_ppl → Coal power plant).
+            # When off, show raw column names unchanged.
+            if self.decipher_names:
+                display_name = self.DIMENSION_DISPLAY_NAMES.get(col_str, col_str)
+                # In advanced mode columns are pivoted values (tech/commodity codes)
+                if display_name == col_str and col_str in code_names:
+                    display_name = code_names[col_str]
+            else:
+                display_name = col_str
             header_item = QTableWidgetItem(display_name)
             # Always show the original code as tooltip so the user can identify it
             if display_name != col_str:
@@ -704,6 +709,8 @@ class DataDisplayWidget(QWidget):
             widget = item.widget()
             sub_layout = item.layout()
             if widget is not None:
+                # Hide before detaching so it doesn't flash as a top-level window
+                widget.hide()
                 widget.setParent(None)
                 widget.deleteLater()
             elif sub_layout is not None:
@@ -822,8 +829,9 @@ class DataDisplayWidget(QWidget):
             if col == column_info.get('value_col'):
                 continue
 
-            # Create label
-            label = QLabel(f"{col}:")
+            # Create label (use dimension display name when deciphering is on)
+            col_label = self.DIMENSION_DISPLAY_NAMES.get(col, col) if self.decipher_names else col
+            label = QLabel(f"{col_label}:")
             UIStyler.setup_filter_label(label)
             row2.addWidget(label)
 
@@ -946,8 +954,10 @@ class DataDisplayWidget(QWidget):
             self.years_limit_checkbox.blockSignals(True)
             self.years_limit_checkbox.setChecked(self.user_prefs.limit_enabled)
             self.years_limit_checkbox.blockSignals(False)
-        # Refresh display
-        self.display_mode_changed.emit()
+        # Emit only options_changed – both display_mode_changed and
+        # options_changed trigger _refresh_current_display() in MainWindow,
+        # so emitting both caused a redundant double-refresh (and the
+        # visible flash of widgets being briefly re-parented).
         self.options_changed.emit()
 
     # ------------------------------------------------------------------
@@ -1183,12 +1193,18 @@ class DataDisplayWidget(QWidget):
         filtered_any = False
 
         # Filter on ALL year columns found in the DataFrame
-        year_col_names = ['year', 'year_act', 'year_vtg']
+        # Includes type_year which may contain numeric years or categorical
+        # values like "cumulative" – non-numeric rows are kept.
+        year_col_names = ['year', 'year_act', 'year_vtg', 'type_year']
         for year_col in year_col_names:
             if year_col in result_df.columns:
                 try:
                     year_values = pd.to_numeric(result_df[year_col], errors='coerce')
-                    mask = (year_values >= self.min_year) & (year_values <= self.max_year)
+                    # Keep rows where the year is in range OR non-numeric
+                    # (e.g. "cumulative" in type_year)
+                    is_numeric = year_values.notna()
+                    in_range = (year_values >= self.min_year) & (year_values <= self.max_year)
+                    mask = ~is_numeric | in_range
                     result_df = result_df[mask]
                     filtered_any = True
                 except (TypeError, ValueError):
@@ -1203,23 +1219,62 @@ class DataDisplayWidget(QWidget):
                 if year_level in df.index.names:
                     try:
                         year_values = pd.to_numeric(df.index.get_level_values(year_level), errors='coerce')
-                        mask = (year_values >= self.min_year) & (year_values <= self.max_year)
+                        is_numeric = year_values.notna()
+                        in_range = (year_values >= self.min_year) & (year_values <= self.max_year)
+                        mask = ~is_numeric | in_range
                         return df[mask].copy()
                     except (TypeError, ValueError):
                         pass
         elif hasattr(df.index, 'name') and df.index.name in year_col_names:
             try:
                 year_values = pd.to_numeric(pd.Series(df.index), errors='coerce')
-                mask = (year_values >= self.min_year) & (year_values <= self.max_year)
+                is_numeric = year_values.notna()
+                in_range = (year_values >= self.min_year) & (year_values <= self.max_year)
+                mask = ~is_numeric | in_range
                 return df[mask.values].copy()
             except (TypeError, ValueError):
                 pass
 
         return result_df
 
+    # Column classification sets for _identify_columns().
+    # Derived from MESSAGE_IX_PARAMETERS dimension names in message_ix_schema.py.
+    _VALUE_COLS = frozenset(['value', 'val', 'lvl'])
+    _YEAR_COLS = frozenset([
+        'year_vtg', 'year_act', 'year', 'period',
+        'year_vintage', 'year_active', 'year_rel',
+        'type_year',  # bound_emission, tax_emission (categorical)
+    ])
+    _IGNORED_COLS = frozenset([
+        'time', 'time_origin', 'time_dest',  # sub-annual time slices
+        'unit', 'units',                       # units metadata
+        'mrg',                                 # marginal (results)
+    ])
+    _PIVOT_COLS = frozenset([
+        'commodity', 'technology', 'tec',      # core technology/commodity
+        'type', 'category',                    # postprocessed results categories
+        'relation',                            # generic relations (REL variable)
+        'type_tec', 'type_emission',           # emission accounting dimensions
+        'shares',                              # share constraint identifier
+        'land_scenario',                       # land-use scenario dimension
+    ])
+    _FILTER_COLS = frozenset([
+        'region', 'node', 'node_loc', 'node_rel', 'node_dest', 'node_origin',
+        'node_share',                          # share constraint node
+        'mode', 'level', 'lvl_temporal',       # temporal level (time_order)
+        'grade', 'rating',                     # resource grades, reliability bins
+        'fuel', 'sector', 'subcategory',       # additional classifiers
+        'emission',                            # emission species
+        'type_addon',                          # add-on technology type
+        'land_type',                           # land-use type
+    ])
+
     def _identify_columns(self, df: pd.DataFrame, is_results: bool = False) -> Dict[str, Union[List[str], Optional[str]]]:
         """
         Identify different types of columns in the DataFrame.
+
+        Classification is based on standard MESSAGEix dimension names
+        (see MESSAGE_IX_PARAMETERS in message_ix_schema.py).
 
         Args:
             df: The DataFrame to analyze
@@ -1233,29 +1288,15 @@ class DataDisplayWidget(QWidget):
 
         for col in df.columns:
             col_lower = col.lower()
-            if col_lower in ['value', 'val', 'lvl']:
-                print('DEBUG pivot: value col:', col_lower)
+            if col_lower in self._VALUE_COLS:
                 value_col = col
-            elif col_lower in ['year_vtg', 'year_act', 'year', 'period', 'year_vintage', 'year_active', 'year_rel']:
-                print('DEBUG pivot: year col:', col_lower)
+            elif col_lower in self._YEAR_COLS:
                 year_cols.append(col)
-            elif col_lower in ['time', 'unit', 'units', 'mrg']:
-                # Ignore these columns completely (mrg = marginal for results)
-                print('DEBUG pivot: ignored col:', col_lower)
+            elif col_lower in self._IGNORED_COLS:
                 ignored_cols.append(col)
-            elif col_lower in ['commodity', 'technology', 'type', 'tec', 'category', 'relation',
-                              'type_tec']:
-                # These become pivot table column headers
-                # 'category' is used by postprocessed results (e.g., technology types, fuel types)
-                # 'relation' is used by REL variable
-                # 'type_tec' is used by var_EMISS (technology type dimension)
-                print('DEBUG pivot: pivot col:', col_lower)
+            elif col_lower in self._PIVOT_COLS:
                 pivot_cols.append(col)
-            elif col_lower in ['region', 'node', 'node_loc', 'node_rel', 'node_dest', 'node_origin',
-                              'mode', 'level', 'grade', 'fuel', 'sector', 'subcategory',
-                              'emission']:
-                # These are used for filtering
-                print('DEBUG pivot: filter col:', col_lower)
+            elif col_lower in self._FILTER_COLS:
                 filter_cols.append(col)
 
         # If no value column found for results, try 'lvl' as fallback

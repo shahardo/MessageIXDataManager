@@ -266,3 +266,222 @@ class TestTransformToAdvancedView:
 
         assert not full_result.empty
         assert isinstance(full_result.index, pd.Index)
+
+
+class TestIdentifyColumnsSchema:
+    """Verify _identify_columns covers all MESSAGE_IX_PARAMETERS dimensions."""
+
+    def test_all_messageix_dims_classified(self, sample_widget):
+        """Every dimension from MESSAGE_IX_PARAMETERS must be classified."""
+        from core.message_ix_schema import MESSAGE_IX_PARAMETERS
+
+        # Collect all unique dimension names across all parameters
+        all_dims = set()
+        for pdef in MESSAGE_IX_PARAMETERS.values():
+            all_dims.update(pdef.get("dims", []))
+
+        # Build a dummy DataFrame with all dims + 'value'
+        cols = sorted(all_dims) + ["value"]
+        df = pd.DataFrame([["x"] * len(cols)], columns=cols)
+
+        info = sample_widget._identify_columns(df, is_results=False)
+        classified = set(
+            info["year_cols"]
+            + info["pivot_cols"]
+            + info["filter_cols"]
+            + info["ignored_cols"]
+        )
+        if info["value_col"]:
+            classified.add(info["value_col"])
+
+        unclassified = set(cols) - classified
+        assert not unclassified, f"Unclassified columns: {unclassified}"
+
+    def test_bound_emission_pivots(self, sample_widget):
+        """bound_emission (input param) should have year, pivot, and value cols."""
+        df = pd.DataFrame({
+            "node": ["R11_AFR", "R11_AFR"],
+            "type_emission": ["CO2", "CH4"],
+            "type_tec": ["all", "all"],
+            "type_year": ["cumulative", "cumulative"],
+            "value": [100.0, 50.0],
+        })
+        info = sample_widget._identify_columns(df, is_results=False)
+        assert info["year_cols"], "type_year should be a year column"
+        assert info["pivot_cols"], "type_emission/type_tec should be pivot columns"
+        assert info["value_col"] == "value"
+        # Pivot should be possible
+        assert sample_widget._should_pivot(df, info)
+
+    def test_emission_scaling_columns(self, sample_widget):
+        """emission_scaling has dims [type_emission, emission] — both should be classified."""
+        df = pd.DataFrame({
+            "type_emission": ["CO2", "CH4"],
+            "emission": ["CO2_TCE", "CH4_TCE"],
+            "value": [1.0, 25.0],
+        })
+        info = sample_widget._identify_columns(df, is_results=False)
+        assert "type_emission" in info["pivot_cols"]
+        assert "emission" in info["filter_cols"]
+        assert info["value_col"] == "value"
+
+    def test_share_constraint_columns(self, sample_widget):
+        """share_commodity_up has dims [shares, node_share, year_act, time]."""
+        df = pd.DataFrame({
+            "shares": ["share_grp"],
+            "node_share": ["R11_AFR"],
+            "year_act": [2030],
+            "time": ["year"],
+            "value": [0.5],
+        })
+        info = sample_widget._identify_columns(df, is_results=False)
+        assert "shares" in info["pivot_cols"]
+        assert "node_share" in info["filter_cols"]
+        assert "year_act" in info["year_cols"]
+        assert "time" in info["ignored_cols"]
+
+    def test_land_use_columns(self, sample_widget):
+        """land_use has dims [node, land_scenario, year, land_type]."""
+        df = pd.DataFrame({
+            "node": ["R11_AFR"],
+            "land_scenario": ["SSP2"],
+            "year": [2030],
+            "land_type": ["forest"],
+            "value": [100.0],
+        })
+        info = sample_widget._identify_columns(df, is_results=False)
+        assert "land_scenario" in info["pivot_cols"]
+        assert "land_type" in info["filter_cols"]
+        assert "year" in info["year_cols"]
+
+    def test_data_transformer_matches_widget(self):
+        """DataTransformer._identify_columns must match DataDisplayWidget's classification."""
+        from utils.data_transformer import DataTransformer
+        from core.message_ix_schema import MESSAGE_IX_PARAMETERS
+
+        # Collect all unique dimension names
+        all_dims = set()
+        for pdef in MESSAGE_IX_PARAMETERS.values():
+            all_dims.update(pdef.get("dims", []))
+
+        cols = sorted(all_dims) + ["value"]
+        df = pd.DataFrame([["x"] * len(cols)], columns=cols)
+
+        info = DataTransformer._identify_columns(df, is_results=False)
+        classified = set(
+            info["year_cols"] + info["pivot_cols"]
+            + info["filter_cols"] + info["ignored_cols"]
+        )
+        if info["value_col"]:
+            classified.add(info["value_col"])
+
+        unclassified = set(cols) - classified
+        assert not unclassified, f"DataTransformer has unclassified columns: {unclassified}"
+
+    def test_data_transformer_bound_emission_pivots(self):
+        """DataTransformer chart path should pivot bound_emission correctly."""
+        from utils.data_transformer import DataTransformer
+
+        df = pd.DataFrame({
+            "node": ["R11_AFR", "R11_AFR", "R11_CPA", "R11_CPA"],
+            "type_emission": ["CO2", "CH4", "CO2", "CH4"],
+            "type_tec": ["all", "all", "all", "all"],
+            "type_year": ["cumulative", "cumulative", "cumulative", "cumulative"],
+            "value": [100.0, 50.0, 200.0, 75.0],
+        })
+        result = DataTransformer.transform_for_display(
+            df, is_results=False, display_mode="advanced",
+            filters=None, hide_empty=False, for_chart=True
+        )
+        # Should be pivoted (not the raw 4-row table)
+        assert result.shape != df.shape, "DataFrame should have been pivoted"
+
+
+class TestYearFiltering:
+    """Tests for year filtering including type_year column."""
+
+    def test_widget_filters_type_year_numeric(self, sample_widget):
+        """Widget year filtering should filter numeric type_year values."""
+        # Set up year limits
+        sample_widget.user_prefs.min_year = 2025
+        sample_widget.user_prefs.max_year = 2040
+
+        df = pd.DataFrame({
+            "node": ["A", "A", "A", "A"],
+            "type_emission": ["CO2", "CO2", "CO2", "CO2"],
+            "type_tec": ["all", "all", "all", "all"],
+            "type_year": [2020, 2030, 2040, 2050],
+            "value": [10.0, 20.0, 30.0, 40.0],
+        })
+        result = sample_widget._apply_year_filtering(df)
+        # Should keep 2030 and 2040, filter out 2020 and 2050
+        assert len(result) == 2
+        assert list(result["type_year"]) == [2030, 2040]
+
+    def test_widget_keeps_non_numeric_type_year(self, sample_widget):
+        """Non-numeric type_year values (e.g. 'cumulative') should be kept."""
+        sample_widget.user_prefs.min_year = 2025
+        sample_widget.user_prefs.max_year = 2040
+
+        df = pd.DataFrame({
+            "node": ["A", "A", "A"],
+            "type_emission": ["CO2", "CO2", "CO2"],
+            "type_tec": ["all", "all", "all"],
+            "type_year": ["cumulative", 2020, 2030],
+            "value": [100.0, 10.0, 20.0],
+        })
+        result = sample_widget._apply_year_filtering(df)
+        # Should keep "cumulative" (non-numeric) and 2030 (in range), drop 2020
+        assert len(result) == 2
+        kept_years = list(result["type_year"])
+        assert "cumulative" in kept_years
+        assert 2030 in kept_years
+
+    def test_transformer_filters_type_year(self):
+        """DataTransformer should filter type_year when applying year limits."""
+        from utils.data_transformer import DataTransformer
+
+        df = pd.DataFrame({
+            "node": ["A", "A", "A", "A"],
+            "type_emission": ["CO2", "CO2", "CO2", "CO2"],
+            "type_tec": ["all", "all", "all", "all"],
+            "type_year": [2020, 2030, 2040, 2050],
+            "value": [10.0, 20.0, 30.0, 40.0],
+        })
+        options = {"YearsLimitEnabled": True, "MinYear": 2025, "MaxYear": 2040}
+        result = DataTransformer.apply_year_filtering(df, options)
+        assert len(result) == 2
+        assert list(result["type_year"]) == [2030, 2040]
+
+    def test_transformer_keeps_non_numeric_type_year(self):
+        """DataTransformer should keep non-numeric type_year values."""
+        from utils.data_transformer import DataTransformer
+
+        df = pd.DataFrame({
+            "node": ["A", "A", "A"],
+            "type_emission": ["CO2", "CO2", "CO2"],
+            "type_tec": ["all", "all", "all"],
+            "type_year": ["cumulative", 2020, 2030],
+            "value": [100.0, 10.0, 20.0],
+        })
+        options = {"YearsLimitEnabled": True, "MinYear": 2025, "MaxYear": 2040}
+        result = DataTransformer.apply_year_filtering(df, options)
+        assert len(result) == 2
+        kept_years = list(result["type_year"])
+        assert "cumulative" in kept_years
+        assert 2030 in kept_years
+
+    def test_standard_year_column_still_works(self, sample_widget):
+        """Standard 'year' column filtering should still work correctly."""
+        sample_widget.user_prefs.min_year = 2025
+        sample_widget.user_prefs.max_year = 2040
+
+        df = pd.DataFrame({
+            "node": ["A", "A", "A"],
+            "technology": ["t1", "t1", "t1"],
+            "year": [2020, 2030, 2050],
+            "value": [10.0, 20.0, 30.0],
+        })
+        result = sample_widget._apply_year_filtering(df)
+        assert len(result) == 1
+        assert list(result["year"]) == [2030]
