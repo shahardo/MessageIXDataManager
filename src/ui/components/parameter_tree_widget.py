@@ -428,13 +428,13 @@ class ParameterTreeWidget(QTreeWidget):
         """Categorize a postprocessed result based on its name"""
         name_lower = result_name.lower()
 
-        # Electricity/Power sector
-        if any(keyword in name_lower for keyword in ['electricity', 'power plant', 'elec']):
-            return "Electricity"
-
-        # Prices
-        elif 'price' in name_lower:
+        # Prices (check before electricity so "Electricity Price" → Prices)
+        if 'price' in name_lower:
             return "Prices"
+
+        # Electricity/Power sector
+        elif any(keyword in name_lower for keyword in ['electricity', 'power plant', 'elec']):
+            return "Electricity"
 
         # Emissions
         elif any(keyword in name_lower for keyword in ['emission', 'ghg', 'co2']):

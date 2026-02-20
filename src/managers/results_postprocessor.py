@@ -395,6 +395,10 @@ class ResultsPostprocessor:
         # Get ACT filtered by technology only (not by node - aggregate all nodes)
         df1 = self.msg.var("ACT", {"technology": tecs})
 
+        # Filter ACT to plotyrs so that out-of-range years don't appear
+        if not df1.empty and 'year_act' in df1.columns and self.plotyrs:
+            df1 = df1[df1['year_act'].isin(self.plotyrs)]
+
         # Get input/output parameter filtered by technology only
         df2 = self.msg.par(parname, {"technology": tecs})
 

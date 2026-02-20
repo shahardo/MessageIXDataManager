@@ -56,8 +56,8 @@ class FindController:
                 child = parent_item.child(i)
                 item_name = child.text(0)
 
-                # Skip category headers (they contain counts)
-                if not item_name.startswith(("Parameters", "Results", "Economic", "Variables", "Sets")) and not item_name.endswith(")"):
+                # Skip empty names and category headers (they contain counts)
+                if item_name and not item_name.startswith(("Parameters", "Results", "Economic", "Variables", "Sets")) and not item_name.endswith(")"):
                     self.parameter_matches.append((item_name, child))
 
                 # Recursively collect from children
