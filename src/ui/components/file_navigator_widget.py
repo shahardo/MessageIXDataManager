@@ -744,38 +744,43 @@ class FileNavigatorWidget(QWidget):
         self.update_scenarios(scenarios)
 
 
-class ScenarioCardWidget(QWidget):
-    """Clickable scenario card widget with selection highlighting"""
+class ScenarioCardWidget(QFrame):
+    """Clickable scenario card widget with selection highlighting.
+
+    Uses QFrame (not QWidget) so that Qt stylesheet background colours
+    are painted correctly without needing a custom paintEvent.
+    """
     clicked = pyqtSignal()
 
     STYLE_NORMAL = """
-        QWidget#scenarioCard {
+        QFrame#scenarioCard {
             background-color: #f8f9fa;
             border: 1px solid #dee2e6;
             border-radius: 4px;
             margin: 2px 0;
             padding: 8px;
         }
-        QWidget#scenarioCard:hover {
+        QFrame#scenarioCard:hover {
             background-color: #e9ecef;
         }
     """
     STYLE_SELECTED = """
-        QWidget#scenarioCard {
-            background-color: #d0e4f7;
-            border: 2px solid #007bff;
+        QFrame#scenarioCard {
+            background-color: #e3f0fc;
+            border: 2px solid #7abaed;
             border-radius: 4px;
             margin: 2px 0;
             padding: 7px;
         }
-        QWidget#scenarioCard:hover {
-            background-color: #c0d8f0;
+        QFrame#scenarioCard:hover {
+            background-color: #d6e9f8;
         }
     """
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setObjectName("scenarioCard")
+        self.setFrameShape(QFrame.StyledPanel)
         self._is_selected = False
         self.setStyleSheet(self.STYLE_NORMAL)
         self.setCursor(Qt.PointingHandCursor)

@@ -286,6 +286,7 @@ class MainWindow(QMainWindow):
         # Instead of replacing entire containers, connect to existing widgets
 
         # Connect data display to existing widgets
+        self.data_display.scenario_title = self.scenario_title
         self.data_display.param_title = self.param_title
         self.data_display.view_toggle_button = self.view_toggle_button
         self.data_display.param_table = self.param_table
@@ -402,7 +403,9 @@ class MainWindow(QMainWindow):
             self.selected_scenario = target_scenario
             self.selected_input_file = target_scenario.input_file
             self.selected_results_file = target_scenario.results_file
-            
+            self.file_navigator.select_scenario(target_scenario.name)
+            self.scenario_title.setText(f"Scenario: {target_scenario.name}")
+
             self._switch_to_multi_section_view(target_scenario)
             self._clear_data_display()
             
@@ -427,6 +430,7 @@ class MainWindow(QMainWindow):
             self.selected_scenario = temp_scenario
             self.selected_input_file = temp_scenario.input_file
             self.selected_results_file = temp_scenario.results_file
+            self.scenario_title.setText(f"Scenario: {temp_scenario.name}")
 
             self._switch_to_multi_section_view(temp_scenario)
             self._clear_data_display()
@@ -464,6 +468,7 @@ class MainWindow(QMainWindow):
 
         # Sync the navigator's visual selection state
         self.file_navigator.select_scenario(scenario.name)
+        self.scenario_title.setText(f"Scenario: {scenario.name}")
 
         # Set selected files based on what's available
         self.selected_input_file = scenario.input_file

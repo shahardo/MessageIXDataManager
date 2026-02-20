@@ -417,6 +417,7 @@ class DataDisplayWidget(QWidget):
         self._filter_change_timer.timeout.connect(self._emit_display_mode_changed)
 
         # Widgets will be assigned externally from .ui file
+        self.scenario_title: Optional[QLabel] = None
         self.param_title: QLabel
         self.view_toggle_button: QCheckBox
         self.param_table: QTableWidget
