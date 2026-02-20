@@ -98,7 +98,8 @@ class TestScenarioData:
         scenario = ScenarioData()
         df = pd.DataFrame({'value': [1]})
         param = Parameter('test', df, {})
-        scenario.add_parameter(param)
+        # Use mark_modified=False so the parameter starts unmodified
+        scenario.add_parameter(param, mark_modified=False, add_to_history=False)
 
         # Initially not modified
         assert len(scenario.modified) == 0

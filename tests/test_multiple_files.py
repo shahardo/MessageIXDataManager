@@ -19,7 +19,10 @@ def temp_excel_file_1():
         ws_params['B2'] = 10
         wb.save(tmp.name)
         yield tmp.name
-    os.unlink(tmp.name)
+    try:
+        os.unlink(tmp.name)
+    except PermissionError:
+        pass
 
 @pytest.fixture
 def temp_excel_file_2():
@@ -33,7 +36,10 @@ def temp_excel_file_2():
         ws_params['B2'] = 20
         wb.save(tmp.name)
         yield tmp.name
-    os.unlink(tmp.name)
+    try:
+        os.unlink(tmp.name)
+    except PermissionError:
+        pass
 
 def test_load_multiple_files_separately(temp_excel_file_1, temp_excel_file_2):
     manager = InputManager()

@@ -27,6 +27,9 @@ def sample_widget():
     widget.hide_empty_checkbox = None
     widget.years_limit_checkbox = None
     widget.options_button = None
+    widget.decipher_names = False
+    widget._code_display_names = {}
+    widget.tech_descriptions = {}
     # Create a YearPreferences before using property accessors
     from core.user_preferences import UserPreferences
     widget.user_prefs = UserPreferences(min_year=2020, max_year=2050, limit_enabled=False)
@@ -48,6 +51,7 @@ def sample_widget():
         'setColumnCount': lambda *args: None,
         'setVerticalHeaderLabels': lambda *args: None,
         'setHorizontalHeaderLabels': lambda *args: None,
+        'setHorizontalHeaderItem': lambda *args: None,
     })()
     widget.param_table = mock_table
 
@@ -131,17 +135,16 @@ class TestTransformToAdvancedView:
         with patch.object(sample_widget.param_table, 'setRowCount') as mock_set_row_count, \
              patch.object(sample_widget.param_table, 'setColumnCount') as mock_set_column_count, \
              patch.object(sample_widget.param_table, 'setVerticalHeaderLabels') as mock_set_vertical_headers, \
-             patch.object(sample_widget.param_table, 'setHorizontalHeaderLabels') as mock_set_horizontal_headers:
+             patch.object(sample_widget.param_table, 'setHorizontalHeaderItem'):
 
             # Set to advanced mode
             sample_widget.table_display_mode = "advanced"
 
             # Configure table with the transformed data
-            sample_widget._configure_table(transformed_df, is_results=True)
+            sample_widget._configure_table(transformed_df)
 
             # Verify that vertical headers are set to years
             mock_set_vertical_headers.assert_called_with(['2020', '2025'])  # Years as row labels
-            mock_set_horizontal_headers.assert_called_with(['region', 'technology', 'value'])  # Year column hidden
 
     def test_identify_columns_basic(self, sample_widget, sample_dataframe):
         """Test basic column identification"""

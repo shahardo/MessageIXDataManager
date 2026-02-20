@@ -296,6 +296,11 @@ class TestAddPostprocessedResults:
 class TestParameterTreeCategorization:
     """Test that postprocessed results are properly categorized for tree display."""
 
+    @pytest.fixture(autouse=True)
+    def _qt_app(self, qapp):
+        """Ensure a QApplication exists before creating ParameterTreeWidget."""
+        pass
+
     def test_categorize_postprocessed_electricity(self):
         """Test categorization of electricity-related postprocessed results."""
         from ui.components.parameter_tree_widget import ParameterTreeWidget

@@ -13,6 +13,11 @@ from core.data_models import ScenarioData, Parameter
 class TestFindController:
     """Test cases for FindController class"""
 
+    @pytest.fixture(autouse=True)
+    def _qt_app(self, qapp):
+        """Ensure a QApplication exists before creating real Qt widgets."""
+        pass
+
     def setup_method(self):
         """Set up test fixtures"""
         # Create real Qt widgets

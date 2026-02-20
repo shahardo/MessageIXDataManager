@@ -62,8 +62,8 @@ class TestSolverManager:
             if mod in sys.modules:
                 del sys.modules[mod]
 
-        # Mock import to raise ImportError
-        with patch.dict('sys.modules', {}, clear=True):
+        # Mock import to raise ImportError for ixmp/message_ix only
+        with patch.dict('sys.modules', {'ixmp': None, 'message_ix': None}):
             with patch('builtins.__import__', side_effect=ImportError("No module named 'ixmp'")):
                 result = manager.detect_messageix_environment()
                 assert result is False

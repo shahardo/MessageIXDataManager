@@ -60,7 +60,10 @@ class TestResultsAnalyzer:
         with tempfile.NamedTemporaryFile(suffix='.xlsx', delete=False) as tmp:
             wb.save(tmp.name)
             yield tmp.name
-        os.unlink(tmp.name)
+        try:
+            os.unlink(tmp.name)
+        except PermissionError:
+            pass
 
     def test_initialization(self):
         """Test ResultsAnalyzer initialization"""
@@ -227,8 +230,14 @@ class TestResultsAnalyzer:
             assert 'var_COST' in combined.get_parameter_names()
             assert 'var_REVENUE' in combined.get_parameter_names()
 
-        os.unlink(tmp1.name)
-        os.unlink(tmp2.name)
+        try:
+            os.unlink(tmp1.name)
+        except PermissionError:
+            pass
+        try:
+            os.unlink(tmp2.name)
+        except PermissionError:
+            pass
 
     def test_get_loaded_file_paths(self, temp_results_file):
         """Test getting loaded file paths"""
@@ -328,7 +337,10 @@ class TestResultsAnalyzer:
             assert results is not None
             assert len(results.parameters) >= 1
 
-        os.unlink(tmp.name)
+        try:
+            os.unlink(tmp.name)
+        except PermissionError:
+            pass
 
     def test_file_not_found(self):
         """Test handling of nonexistent files"""
@@ -349,7 +361,10 @@ class TestResultsAnalyzer:
             with pytest.raises(ValueError):
                 analyzer.load_results_file(tmp_path)
         finally:
-            os.unlink(tmp_path)
+            try:
+                os.unlink(tmp_path)
+            except PermissionError:
+                pass
 
     def test_metadata_creation(self, temp_results_file):
         """Test that metadata is correctly created for results"""

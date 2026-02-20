@@ -81,8 +81,11 @@ class TestInputManager:
             wb.save(tmp.name)
             yield tmp.name
 
-        # Cleanup
-        os.unlink(tmp.name)
+        # Cleanup — ignore PermissionError on Windows when file is still held
+        try:
+            os.unlink(tmp.name)
+        except PermissionError:
+            pass
 
     def test_load_excel_file_success(self, temp_excel_file):
         """Test successful loading of Excel file"""

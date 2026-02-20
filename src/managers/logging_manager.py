@@ -172,7 +172,7 @@ class LoggingManager:
         # Create log record with extra attributes
         extra = {'category': category}
         if details:
-            extra['details'] = json.dumps(details)
+            extra['details'] = details  # keep as dict; SQLiteHandler.emit serializes
         if config_id is not None:
             extra['config_id'] = str(config_id)
 
@@ -199,7 +199,7 @@ class LoggingManager:
         """Log solver execution"""
         details = {'command': command, 'status': status}
         if duration:
-            details['duration_seconds'] = str(duration)
+            details['duration_seconds'] = duration
 
         level = 'INFO' if status == 'completed' else 'WARNING' if status == 'stopped' else 'ERROR'
         message = f"Solver execution {status}"
