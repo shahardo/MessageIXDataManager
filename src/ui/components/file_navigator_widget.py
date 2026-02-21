@@ -477,15 +477,25 @@ class FileNavigatorWidget(QWidget):
         )
 
         if result == QMessageBox.Yes:
+            was_selected = (self.selected_scenario_name == scenario.name)
+
             # Remove from session manager
             self.session_manager.remove_scenario(scenario.name)
-            
+
             # Remove from current list
             self.current_scenarios = [s for s in self.current_scenarios if s.name != scenario.name]
-            
+
+            # If the deleted scenario was selected, automatically select another one
+            if was_selected:
+                if self.current_scenarios:
+                    self.selected_scenario_name = self.current_scenarios[0].name
+                    self.scenario_selected.emit(self.current_scenarios[0])
+                else:
+                    self.selected_scenario_name = None
+
             # Update display
             self.update_scenarios(self.current_scenarios)
-            
+
             # Emit signals
             self.scenario_deleted.emit(scenario.name)
             self.file_removed.emit(scenario.input_file, "input")
