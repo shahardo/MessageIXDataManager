@@ -5,10 +5,11 @@ Shows tables listing all commodities, technologies, years, and regions from all 
 along with summary tables showing parameter coverage.
 """
 
-from typing import Any, Dict, List, Set
+from typing import Any, Dict, List, Optional, Set
 import pandas as pd
 
 from ui.components.base_dashboard import BaseDashboard
+from core.message_ix_schema import get_code_display_names
 
 
 class InputFileDashboard(BaseDashboard):
@@ -57,16 +58,19 @@ class InputFileDashboard(BaseDashboard):
         # Create parameter coverage mappings
         tech_coverage, commodity_coverage = self._create_coverage_mappings(scenario)
 
+        # Fetch code → display-name mapping once for use across all tabs
+        translations = get_code_display_names()
+
         # Generate HTML content for each tab
         self._render_overview_tab(len(commodities), len(technologies), len(years), len(regions), len(scenario.parameters))
-        self._render_list_tab('commodities', sorted(commodities), "All Commodities")
-        self._render_list_tab('technologies', sorted(technologies), "All Technologies")
+        self._render_list_tab('commodities', sorted(commodities), "All Commodities", translations)
+        self._render_list_tab('technologies', sorted(technologies), "All Technologies", translations)
         # Sort years numerically (convert all to int for consistent sorting)
         sorted_years = sorted(years, key=lambda y: int(y) if str(y).lstrip('-').isdigit() else float('inf'))
         self._render_list_tab('years', [str(y) for y in sorted_years], "All Years")
         self._render_list_tab('regions', sorted(regions), "All Regions")
-        self._render_tech_summary_tab(tech_coverage, list(technologies))
-        self._render_commodity_summary_tab(commodity_coverage, list(commodities))
+        self._render_tech_summary_tab(tech_coverage, list(technologies), translations)
+        self._render_commodity_summary_tab(commodity_coverage, list(commodities), translations)
 
     def _extract_unique_values(self, scenario) -> tuple[Set[str], Set[str], Set[str], Set[str]]:
         """Extract unique commodities, technologies, years, and regions from all parameters"""
@@ -295,8 +299,13 @@ class InputFileDashboard(BaseDashboard):
 
         return 0
 
-    def _render_list_tab(self, tab_name: str, items: List[str], title: str):
-        """Render a tab showing a list of items"""
+    def _render_list_tab(self, tab_name: str, items: List[str], title: str,
+                         translations: Optional[Dict[str, str]] = None):
+        """Render a tab showing a list of items.
+
+        When *translations* is provided, items are shown in a two-column table
+        (Code | Display Name).  Otherwise the original card grid is used.
+        """
         if tab_name not in self.web_views:
             return
 
@@ -307,7 +316,7 @@ class InputFileDashboard(BaseDashboard):
         if not chunks:
             html = self._create_empty_list_html(title)
         else:
-            html = self._create_list_html(title, chunks[0])
+            html = self._create_list_html(title, chunks[0], translations)
 
             # Add pagination if needed
             if len(chunks) > 1:
@@ -349,8 +358,16 @@ class InputFileDashboard(BaseDashboard):
         </html>
         """
 
-    def _create_list_html(self, title: str, items: List[str]) -> str:
-        """Create HTML for item list"""
+    def _create_list_html(self, title: str, items: List[str],
+                          translations: Optional[Dict[str, str]] = None) -> str:
+        """Create HTML for item list.
+
+        When *translations* is provided, renders a searchable two-column table
+        (Code | Display Name).  Without translations, renders a card grid.
+        """
+        if translations is not None:
+            return self._create_translated_table_html(title, items, translations)
+
         html = f"""
         <!DOCTYPE html>
         <html>
@@ -401,7 +418,6 @@ class InputFileDashboard(BaseDashboard):
             <div class="item-grid" id="itemGrid">
         """
 
-        # Add items
         for item in items:
             html += f'                <div class="item-card">{item}</div>\n'
 
@@ -430,7 +446,100 @@ class InputFileDashboard(BaseDashboard):
 
         return html
 
-    def _render_tech_summary_tab(self, tech_coverage: Dict[str, Set[str]], all_technologies: List[str]):
+    def _create_translated_table_html(self, title: str, items: List[str],
+                                      translations: Dict[str, str]) -> str:
+        """Create HTML for a searchable two-column table: Code | Display Name."""
+        html = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <style>
+                body {{
+                    font-family: Arial, sans-serif;
+                    padding: 20px;
+                    background-color: #f8f9fa;
+                }}
+                h2 {{
+                    color: #2c3e50;
+                    margin-bottom: 15px;
+                    font-size: 18px;
+                }}
+                .search-box {{
+                    margin-bottom: 15px;
+                    padding: 8px;
+                    width: 100%;
+                    box-sizing: border-box;
+                    border: 1px solid #ddd;
+                    border-radius: 4px;
+                }}
+                .list-table {{
+                    width: 100%;
+                    border-collapse: collapse;
+                    background-color: white;
+                    border-radius: 8px;
+                    overflow: hidden;
+                    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+                }}
+                .list-table th {{
+                    background-color: #3498db;
+                    color: white;
+                    font-weight: bold;
+                    padding: 10px 14px;
+                    text-align: left;
+                    font-size: 12px;
+                }}
+                .list-table td {{
+                    padding: 8px 14px;
+                    border-bottom: 1px solid #e0e0e0;
+                    font-size: 12px;
+                    color: #2c3e50;
+                }}
+                .list-table td.display-name {{
+                    color: #555;
+                }}
+                .list-table tr:hover td {{
+                    background-color: #f5f5f5;
+                }}
+            </style>
+        </head>
+        <body>
+            <h2>{title}</h2>
+            <input type="text" class="search-box" placeholder="Search..." onkeyup="filterRows()">
+            <table class="list-table" id="listTable">
+                <thead>
+                    <tr>
+                        <th>Code</th>
+                        <th>Display Name</th>
+                    </tr>
+                </thead>
+                <tbody>
+        """
+
+        for item in items:
+            display_name = translations.get(item, '')
+            html += f'                    <tr><td>{item}</td><td class="display-name">{display_name}</td></tr>\n'
+
+        html += """
+                </tbody>
+            </table>
+
+            <script>
+                function filterRows() {
+                    const filter = document.querySelector('.search-box').value.toLowerCase();
+                    document.querySelectorAll('#listTable tbody tr').forEach(row => {
+                        const text = row.textContent.toLowerCase();
+                        row.style.display = text.includes(filter) ? '' : 'none';
+                    });
+                }
+            </script>
+        </body>
+        </html>
+        """
+
+        return html
+
+    def _render_tech_summary_tab(self, tech_coverage: Dict[str, Set[str]], all_technologies: List[str],
+                                  translations: Optional[Dict[str, str]] = None):
         """Render technology summary tab showing which parameters reference which technologies"""
         if 'tech_summary' not in self.web_views:
             return
@@ -520,6 +629,7 @@ class InputFileDashboard(BaseDashboard):
                     <thead>
                         <tr>
                             <th>Technology</th>
+                            <th>Display Name</th>
         """
 
         # Add parameter columns
@@ -533,9 +643,10 @@ class InputFileDashboard(BaseDashboard):
                     <tbody>
         """
 
-        # Add technology rows
+        # Add technology rows (code + translated name + parameter check-marks)
         for tech in all_technologies:
-            html += f'                        <tr><td>{tech}</td>\n'
+            display_name = (translations or {}).get(tech, '')
+            html += f'                        <tr><td>{tech}</td><td style="color:#555">{display_name}</td>\n'
 
             for param_name in sorted_params:
                 has_tech = tech in tech_coverage.get(param_name, set())
@@ -583,7 +694,8 @@ class InputFileDashboard(BaseDashboard):
         self.web_views['tech_summary'].setHtml(html)
         self.web_views['tech_summary'].update()
 
-    def _render_commodity_summary_tab(self, commodity_coverage: Dict[str, Set[str]], all_commodities: List[str]):
+    def _render_commodity_summary_tab(self, commodity_coverage: Dict[str, Set[str]], all_commodities: List[str],
+                                       translations: Optional[Dict[str, str]] = None):
         """Render commodity summary tab showing which parameters reference which commodities"""
         if 'commodity_summary' not in self.web_views:
             return
@@ -678,6 +790,7 @@ class InputFileDashboard(BaseDashboard):
                     <thead>
                         <tr>
                             <th>Commodity</th>
+                            <th>Display Name</th>
         """
 
         # Add parameter columns
@@ -691,9 +804,10 @@ class InputFileDashboard(BaseDashboard):
                     <tbody>
         """
 
-        # Add commodity rows
+        # Add commodity rows (code + translated name + parameter check-marks)
         for commodity in all_commodities:
-            html += f'                        <tr><td>{commodity}</td>\n'
+            display_name = (translations or {}).get(commodity, '')
+            html += f'                        <tr><td>{commodity}</td><td style="color:#555">{display_name}</td>\n'
 
             for param_name in sorted_params:
                 has_commodity = commodity in commodity_coverage.get(param_name, set())
