@@ -445,58 +445,59 @@ class MainWindow(QMainWindow):
 
     def _on_scenario_selected(self, scenario: Scenario):
         """Handle scenario selection in navigator"""
-        print(f"DEBUG: Scenario selected: {scenario.name}")
-        # Invalidate cached level map when switching scenarios
-        self._level_tech_map = {}
-        print(f"DEBUG: Scenario input_file: {scenario.input_file}")
-        print(f"DEBUG: Scenario results_file: {scenario.results_file}")
-        
-        # Ensure files are loaded
-        if scenario.input_file and not self.input_manager.get_scenario_by_file_path(scenario.input_file):
-             print(f"DEBUG: Loading input file for scenario: {scenario.input_file}")
-             self.input_file_handler.load_files([scenario.input_file], self.update_progress, self._append_to_console)
-             
-        if scenario.results_file and not self.results_analyzer.get_results_by_file_path(scenario.results_file):
-             print(f"DEBUG: Loading results file for scenario: {scenario.results_file}")
-             self.results_file_handler.load_files([scenario.results_file], self.update_progress, self._append_to_console)
-             
-        if scenario.message_scenario_file and scenario.message_scenario_file not in self.loaded_data_files:
-             print(f"DEBUG: Loading data file for scenario: {scenario.message_scenario_file}")
-             self._load_data_file(scenario.message_scenario_file)
-        
-        self.selected_scenario = scenario
+        with WaitCursorContext(force=True):
+            print(f"DEBUG: Scenario selected: {scenario.name}")
+            # Invalidate cached level map when switching scenarios
+            self._level_tech_map = {}
+            print(f"DEBUG: Scenario input_file: {scenario.input_file}")
+            print(f"DEBUG: Scenario results_file: {scenario.results_file}")
 
-        # Sync the navigator's visual selection state
-        self.file_navigator.select_scenario(scenario.name)
-        self.scenario_title.setText(f"Scenario: {scenario.name}")
+            # Ensure files are loaded
+            if scenario.input_file and not self.input_manager.get_scenario_by_file_path(scenario.input_file):
+                 print(f"DEBUG: Loading input file for scenario: {scenario.input_file}")
+                 self.input_file_handler.load_files([scenario.input_file], self.update_progress, self._append_to_console)
 
-        # Set selected files based on what's available
-        self.selected_input_file = scenario.input_file
-        self.selected_results_file = scenario.results_file
-        
-        # Remember the currently displayed parameter before rebuilding the tree
-        prev_parameter = self.current_displayed_parameter
-        prev_is_results = self.current_displayed_is_results
+            if scenario.results_file and not self.results_analyzer.get_results_by_file_path(scenario.results_file):
+                 print(f"DEBUG: Loading results file for scenario: {scenario.results_file}")
+                 self.results_file_handler.load_files([scenario.results_file], self.update_progress, self._append_to_console)
 
-        # Always use multi-section view for all scenarios
-        self._switch_to_multi_section_view(scenario)
+            if scenario.message_scenario_file and scenario.message_scenario_file not in self.loaded_data_files:
+                 print(f"DEBUG: Loading data file for scenario: {scenario.message_scenario_file}")
+                 self._load_data_file(scenario.message_scenario_file)
 
-        # Try to re-select the previously displayed parameter in the new tree
-        restored = False
-        if prev_parameter:
-            restored = self._auto_select_parameter_if_exists(
-                prev_parameter, prev_is_results
-            )
+            self.selected_scenario = scenario
 
-        if not restored:
-            # Parameter not found in this scenario — clear the data view
-            self._clear_data_display()
+            # Sync the navigator's visual selection state
+            self.file_navigator.select_scenario(scenario.name)
+            self.scenario_title.setText(f"Scenario: {scenario.name}")
 
-            # Fall back to selecting the appropriate section header
-            if scenario.input_file:
-                self._auto_select_section("parameters")
-            elif scenario.results_file:
-                self._auto_select_section("results")
+            # Set selected files based on what's available
+            self.selected_input_file = scenario.input_file
+            self.selected_results_file = scenario.results_file
+
+            # Remember the currently displayed parameter before rebuilding the tree
+            prev_parameter = self.current_displayed_parameter
+            prev_is_results = self.current_displayed_is_results
+
+            # Always use multi-section view for all scenarios
+            self._switch_to_multi_section_view(scenario)
+
+            # Try to re-select the previously displayed parameter in the new tree
+            restored = False
+            if prev_parameter:
+                restored = self._auto_select_parameter_if_exists(
+                    prev_parameter, prev_is_results
+                )
+
+            if not restored:
+                # Parameter not found in this scenario — clear the data view
+                self._clear_data_display()
+
+                # Fall back to selecting the appropriate section header
+                if scenario.input_file:
+                    self._auto_select_section("parameters")
+                elif scenario.results_file:
+                    self._auto_select_section("results")
 
         # Save current session state
         self._save_current_session_state()
@@ -732,7 +733,16 @@ class MainWindow(QMainWindow):
             self.selected_scenario.message_scenario_file = None
 
     def _on_parameter_selected(self, parameter_name: str, is_results: bool):
-        """Handle parameter/result selection in tree"""
+        """Handle parameter/result selection in tree.
+
+        Uses a wait cursor for the entire operation so the user gets
+        immediate visual feedback while data is being loaded and rendered.
+        """
+        with WaitCursorContext(force=True):
+            self._on_parameter_selected_impl(parameter_name, is_results)
+
+    def _on_parameter_selected_impl(self, parameter_name: str, is_results: bool):
+        """Inner implementation of parameter selection (called under wait cursor)."""
         if parameter_name is None:
             # Category selected, clear display
             self.current_displayed_parameter = None
