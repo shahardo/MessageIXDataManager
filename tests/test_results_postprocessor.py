@@ -12,6 +12,9 @@ from managers.results_postprocessor import (
     run_postprocessing,
     add_postprocessed_results
 )
+from analysis.base_analyzer import BaseAnalyzer
+from analysis.energy_balance_analyzer import EnergyBalanceAnalyzer
+from analysis.electricity_analyzer import ElectricityAnalyzer
 
 
 class TestScenarioDataWrapper:
@@ -192,7 +195,7 @@ class TestResultsPostprocessor:
     def test_group_basic(self):
         """Test basic grouping operation."""
         scenario = ScenarioData()
-        processor = ResultsPostprocessor(scenario)
+        msg = ScenarioDataWrapper(scenario)
 
         df = pd.DataFrame({
             'year_act': [2020, 2020, 2030, 2030],
@@ -200,7 +203,7 @@ class TestResultsPostprocessor:
             'product': [100, 50, 80, 70]
         })
 
-        result = processor._group(df, ['year_act', 'technology'], 'product', 0.0, None)
+        result = BaseAnalyzer(msg, scenario, [], {})._group(df, ['year_act', 'technology'], 'product', 0.0, None)
 
         assert isinstance(result, pd.DataFrame)
         assert 2020 in result.index
@@ -559,13 +562,11 @@ class TestYearFiltering:
             Parameter('input', pd.DataFrame(input_rows), {'dims': ['technology', 'commodity']})
         )
 
-        # Run postprocessor
-        processor = ResultsPostprocessor(scenario)
-        processor.set_plot_years([2020, 2025, 2030])  # Custom plotyrs for this test
-
-        # Use _model_output directly to test filtering
+        # Use _model_output directly via BaseAnalyzer to test year filtering
+        plotyrs = [2020, 2025, 2030]
+        msg = ScenarioDataWrapper(scenario)
         tecs = [transport_tech]
-        df, df2 = processor._model_output(tecs, 'World', 'input')
+        df, df2 = BaseAnalyzer(msg, scenario, plotyrs, {})._model_output(tecs, 'World', 'input')
 
         # Check that only plotyrs years are in df (after filtering)
         if not df.empty:
@@ -609,12 +610,10 @@ class TestYearFiltering:
             Parameter('historical_activity', pd.DataFrame(hist_rows), {'dims': ['technology', 'year_act']})
         )
 
-        # Run postprocessor
-        processor = ResultsPostprocessor(scenario)
-        # Default plotyrs is [2020, 2025, 2030, 2035, 2040, 2045, 2050]
-
-        # Use _attach_history to test
-        act_hist = processor._attach_history([tech])
+        # Use _attach_history directly via BaseAnalyzer
+        plotyrs = list(range(2020, 2051, 5))  # Default: [2020, 2025, ..., 2050]
+        msg = ScenarioDataWrapper(scenario)
+        act_hist = BaseAnalyzer(msg, scenario, plotyrs, {})._attach_history([tech])
 
         # Should return historical data (before 2020), not be empty
         if not act_hist.empty:
@@ -767,33 +766,34 @@ class TestEnergyBalanceAnalyses:
         from the domestic market). The method should use 'output' to match
         the working _calculate_trade approach.
         """
-        processor = ResultsPostprocessor(trade_scenario)
-        processor.set_plot_years([2020, 2025, 2030])
+        msg = ScenarioDataWrapper(trade_scenario)
+        plotyrs = [2020, 2025, 2030]
+        results = {}
+        analyzer = EnergyBalanceAnalyzer(msg, trade_scenario, plotyrs, results)
+        analyzer._calculate_energy_exports_by_fuel('World', 2020)
 
-        # Call the method directly
-        processor._calculate_energy_exports_by_fuel('World', 2020)
-
-        assert "Energy exports by fuel (PJ)" in processor.results, \
+        assert "Energy exports by fuel (PJ)" in results, \
             "Export technologies with output parameter should produce results"
-        df = processor.results["Energy exports by fuel (PJ)"]
+        df = results["Energy exports by fuel (PJ)"]
         assert not df.empty
 
     def test_exports_and_imports_have_correct_commodities(self, trade_scenario):
         """Test that exports and imports show the right fuel commodities."""
-        processor = ResultsPostprocessor(trade_scenario)
-        processor.set_plot_years([2020, 2025, 2030])
+        msg = ScenarioDataWrapper(trade_scenario)
+        plotyrs = [2020, 2025, 2030]
+        results = {}
+        analyzer = EnergyBalanceAnalyzer(msg, trade_scenario, plotyrs, results)
+        analyzer._calculate_energy_exports_by_fuel('World', 2020)
+        analyzer._calculate_energy_imports_by_fuel('World', 2020)
 
-        processor._calculate_energy_exports_by_fuel('World', 2020)
-        processor._calculate_energy_imports_by_fuel('World', 2020)
-
-        if "Energy exports by fuel (PJ)" in processor.results:
-            df_exp = processor.results["Energy exports by fuel (PJ)"]
+        if "Energy exports by fuel (PJ)" in results:
+            df_exp = results["Energy exports by fuel (PJ)"]
             # Should have coal and gas columns (from coal_exp, gas_exp)
             assert 'coal' in df_exp.columns or 'gas' in df_exp.columns, \
                 f"Expected coal or gas in columns, got: {df_exp.columns.tolist()}"
 
-        if "Energy imports by fuel (PJ)" in processor.results:
-            df_imp = processor.results["Energy imports by fuel (PJ)"]
+        if "Energy imports by fuel (PJ)" in results:
+            df_imp = results["Energy imports by fuel (PJ)"]
             assert 'coal' in df_imp.columns or 'gas' in df_imp.columns, \
                 f"Expected coal or gas in columns, got: {df_imp.columns.tolist()}"
 
@@ -806,15 +806,16 @@ class TestEnergyBalanceAnalyses:
         # Clear the technology set
         trade_scenario.sets['technology'] = pd.Series(dtype=str)
 
-        processor = ResultsPostprocessor(trade_scenario)
-        processor.set_plot_years([2020, 2025, 2030])
+        msg = ScenarioDataWrapper(trade_scenario)
+        plotyrs = [2020, 2025, 2030]
+        results = {}
+        analyzer = EnergyBalanceAnalyzer(msg, trade_scenario, plotyrs, results)
+        analyzer._calculate_energy_exports_by_fuel('World', 2020)
+        analyzer._calculate_energy_imports_by_fuel('World', 2020)
 
-        processor._calculate_energy_exports_by_fuel('World', 2020)
-        processor._calculate_energy_imports_by_fuel('World', 2020)
-
-        assert "Energy exports by fuel (PJ)" in processor.results, \
+        assert "Energy exports by fuel (PJ)" in results, \
             "Should find export technologies even without technology set"
-        assert "Energy imports by fuel (PJ)" in processor.results, \
+        assert "Energy imports by fuel (PJ)" in results, \
             "Should find import technologies even without technology set"
 
 
@@ -886,13 +887,14 @@ class TestFeedstockByFuel:
 
     def test_feedstock_has_correct_fuels(self, feedstock_scenario):
         """Test feedstock shows correct fuel commodities."""
-        processor = ResultsPostprocessor(feedstock_scenario)
-        processor.set_plot_years([2020, 2025, 2030])
+        msg = ScenarioDataWrapper(feedstock_scenario)
+        plotyrs = [2020, 2025, 2030]
+        results = {}
+        analyzer = EnergyBalanceAnalyzer(msg, feedstock_scenario, plotyrs, results)
+        analyzer._calculate_feedstock_by_fuel('World', 2020)
 
-        processor._calculate_feedstock_by_fuel('World', 2020)
-
-        assert "Feedstock by fuel (PJ)" in processor.results
-        df = processor.results["Feedstock by fuel (PJ)"]
+        assert "Feedstock by fuel (PJ)" in results
+        df = results["Feedstock by fuel (PJ)"]
         # Should have columns for coal, gas, lightoil
         assert 'coal' in df.columns or 'gas' in df.columns, \
             f"Expected fuel commodities in columns, got: {df.columns.tolist()}"
@@ -997,12 +999,12 @@ class TestElectricityCostBySource:
 
     def test_no_inf_values(self, cost_scenario):
         """Electricity cost by source must not contain inf values."""
-        processor = ResultsPostprocessor(cost_scenario)
-        processor.set_plot_years([2020, 2030])
-        processor._calculate_electricity_price_by_source('World', 2020)
+        msg = ScenarioDataWrapper(cost_scenario)
+        results = {}
+        ElectricityAnalyzer(msg, cost_scenario, [2020, 2030], results)._calculate_electricity_price_by_source('World', 2020)
 
-        assert "Electricity cost by source ($/MWh)" in processor.results
-        df = processor.results["Electricity cost by source ($/MWh)"]
+        assert "Electricity cost by source ($/MWh)" in results
+        df = results["Electricity cost by source ($/MWh)"]
         assert not df.empty
 
         # No inf or NaN values
@@ -1013,12 +1015,12 @@ class TestElectricityCostBySource:
 
     def test_no_inf_with_zero_activity(self, zero_activity_scenario):
         """Zero-activity technologies must not produce inf values."""
-        processor = ResultsPostprocessor(zero_activity_scenario)
-        processor.set_plot_years([2020, 2030])
-        processor._calculate_electricity_price_by_source('World', 2020)
+        msg = ScenarioDataWrapper(zero_activity_scenario)
+        results = {}
+        ElectricityAnalyzer(msg, zero_activity_scenario, [2020, 2030], results)._calculate_electricity_price_by_source('World', 2020)
 
-        assert "Electricity cost by source ($/MWh)" in processor.results
-        df = processor.results["Electricity cost by source ($/MWh)"]
+        assert "Electricity cost by source ($/MWh)" in results
+        df = results["Electricity cost by source ($/MWh)"]
         assert not df.empty
 
         assert not np.isinf(df.values).any(), \
@@ -1094,12 +1096,12 @@ class TestElectricityCostBySource:
                       {'dims': ['technology']})
         )
 
-        processor = ResultsPostprocessor(scenario)
-        processor.set_plot_years(years)
-        processor._calculate_electricity_price_by_source('World', 2020)
+        msg = ScenarioDataWrapper(scenario)
+        results = {}
+        ElectricityAnalyzer(msg, scenario, years, results)._calculate_electricity_price_by_source('World', 2020)
 
-        assert "Electricity cost by source ($/MWh)" in processor.results
-        df = processor.results["Electricity cost by source ($/MWh)"]
+        assert "Electricity cost by source ($/MWh)" in results
+        df = results["Electricity cost by source ($/MWh)"]
 
         # Coal should have non-zero cost in 2020 and 2025
         assert df.loc[2020, 'coal'] > 0, "Coal should have cost in 2020"
@@ -1121,11 +1123,11 @@ class TestElectricityCostBySource:
         giving an inflated value.  The fix computes cost contributions that
         are additive (share the same total-generation denominator).
         """
-        processor = ResultsPostprocessor(cost_scenario)
-        processor.set_plot_years([2020, 2030])
-        processor._calculate_electricity_price_by_source('World', 2020)
+        msg = ScenarioDataWrapper(cost_scenario)
+        results = {}
+        ElectricityAnalyzer(msg, cost_scenario, [2020, 2030], results)._calculate_electricity_price_by_source('World', 2020)
 
-        df = processor.results["Electricity cost by source ($/MWh)"]
+        df = results["Electricity cost by source ($/MWh)"]
 
         # "wind onshore" maps to wind_ppl + wind_res in _get_technology_mappings
         assert 'wind onshore' in df.columns, \
@@ -1156,11 +1158,11 @@ class TestElectricityCostBySource:
 
     def test_cost_contributions_additive(self, cost_scenario):
         """Sum of all source contributions should equal system average LCOE."""
-        processor = ResultsPostprocessor(cost_scenario)
-        processor.set_plot_years([2020, 2030])
-        processor._calculate_electricity_price_by_source('World', 2020)
+        msg = ScenarioDataWrapper(cost_scenario)
+        results = {}
+        ElectricityAnalyzer(msg, cost_scenario, [2020, 2030], results)._calculate_electricity_price_by_source('World', 2020)
 
-        df = processor.results["Electricity cost by source ($/MWh)"]
+        df = results["Electricity cost by source ($/MWh)"]
 
         for year in [2020, 2030]:
             if year in df.index:
@@ -1376,12 +1378,12 @@ class TestElectricityCostBySource:
         )
 
         # ── Run calculation ──────────────────────────────────────────
-        processor = ResultsPostprocessor(scenario)
-        processor.set_plot_years(YEARS)
-        processor._calculate_electricity_price_by_source('World', Y1)
+        msg = ScenarioDataWrapper(scenario)
+        results = {}
+        ElectricityAnalyzer(msg, scenario, YEARS, results)._calculate_electricity_price_by_source('World', Y1)
 
-        assert "Electricity cost by source ($/MWh)" in processor.results
-        df = processor.results["Electricity cost by source ($/MWh)"]
+        assert "Electricity cost by source ($/MWh)" in results
+        df = results["Electricity cost by source ($/MWh)"]
         assert not df.empty, f"Result DataFrame is empty"
 
         # No inf / NaN

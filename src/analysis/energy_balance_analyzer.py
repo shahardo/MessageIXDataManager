@@ -96,10 +96,16 @@ class EnergyBalanceAnalyzer(BaseAnalyzer):
                 self.results["Useful energy (PJ)"] = df * self.UNIT_GWA_TO_PJ
 
     def _calculate_trade(self, nodeloc: str, yr: int) -> None:
-        """Calculate energy imports and exports."""
+        """Calculate energy imports and exports (totals across all commodities).
+
+        Convention in MESSAGEix: export technologies are named *_exp, import
+        technologies are named *_imp.  We use the 'output' parameter because that
+        tells us what commodity is being traded and its volume coefficient.
+        """
         order = self._get_commodity_order()
 
-        # Exports
+        # Export techs: query from the technology *set* (not ACT fallback)
+        # so we only see technologies that are actually defined for this region
         tecs_exp = [x for x in self.msg.set("technology") if "_exp" in str(x)]
         if tecs_exp:
             df, df2 = self._model_output(tecs_exp, nodeloc, "output")
@@ -109,7 +115,7 @@ class EnergyBalanceAnalyzer(BaseAnalyzer):
                 df = self._com_order(df.add(df_hist, fill_value=0), order)
                 self.results["Energy exports (PJ)"] = df * self.UNIT_GWA_TO_PJ
 
-        # Imports
+        # Import techs: strict _imp suffix to avoid matching e.g. 'simple_ppl'
         tecs_imp = [x for x in self.msg.set("technology") if str(x).endswith("_imp")]
         if tecs_imp:
             df, df2 = self._model_output(tecs_imp, nodeloc, "output")
@@ -120,24 +126,38 @@ class EnergyBalanceAnalyzer(BaseAnalyzer):
                 self.results["Energy imports (PJ)"] = df * self.UNIT_GWA_TO_PJ
 
     def _calculate_energy_exports_by_fuel(self, nodeloc: str, yr: int) -> None:
-        """Calculate energy exports grouped by fuel commodity."""
+        """Calculate energy exports grouped by fuel commodity.
+
+        Uses _get_all_technology_names() (which falls back to ACT when the
+        technology set is empty) so the result is robust to partially-loaded data.
+        Uses the 'output' parameter rather than 'input' because export technologies
+        often only define what they export (output) not what they consume (input).
+        """
         order = self._get_commodity_order()
+        # Fall back to ACT-based discovery if technology set was not loaded
         tecs_exp = [x for x in self._get_all_technology_names() if "_exp" in str(x)]
         if not tecs_exp:
             return
 
+        # output parameter: tells us which commodity is being exported and how much
         df, df2 = self._model_output(tecs_exp, nodeloc, "output")
         if df.empty:
             return
 
+        # Aggregate by (year, commodity) and apply commodity ordering
         df = self._group(df, ["year_act", "commodity"], "product", 0.0, yr)
         df_hist = self._add_history(tecs_exp, nodeloc, df2, "commodity")
         df = self._com_order(df.add(df_hist, fill_value=0), order)
         self.results["Energy exports by fuel (PJ)"] = df * self.UNIT_GWA_TO_PJ
 
     def _calculate_energy_imports_by_fuel(self, nodeloc: str, yr: int) -> None:
-        """Calculate energy imports grouped by fuel commodity."""
+        """Calculate energy imports grouped by fuel commodity.
+
+        Mirror of _calculate_energy_exports_by_fuel. Import technologies output
+        the imported commodity so 'output' is the correct parameter to query.
+        """
         order = self._get_commodity_order()
+        # Strict suffix _imp (not just contains) to avoid false positives
         tecs_imp = [x for x in self._get_all_technology_names() if str(x).endswith("_imp")]
         if not tecs_imp:
             return

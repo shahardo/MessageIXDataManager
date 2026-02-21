@@ -369,13 +369,26 @@ class ElectricityAnalyzer(BaseAnalyzer):
                 self.results["Electricity LCOE ($/MWh)"] = result_df
 
     def _calculate_electricity_price_by_source(self, nodeloc: str, yr: int) -> None:
-        """Calculate electricity generation cost breakdown by source."""
+        """Calculate electricity generation cost breakdown by source.
+
+        Method: for each technology, compute total costs (VOM + FOM + CAPEX + fuel + emissions)
+        in M$/yr, then express as a cost contribution per MWh of TOTAL system generation:
+
+            cost_contribution[tec, year] = total_cost[tec, year]
+                                            / total_system_generation[year]
+                                            × 0.1142   (M$/GWa → $/MWh)
+
+        This additive formulation lets the stacked bar sum to the system-average LCOE.
+        Technologies with zero activity in a year contribute zero cost.
+        """
+        # Find electricity-producing technologies (secondary output of 'electr')
         output_par = self.msg.par("output", {"commodity": "electr", "level": "secondary"})
         if output_par.empty:
             return
 
         tecs = list(set(output_par.technology))
 
+        # Get activity levels and restrict to plot years
         act = self.msg.var("ACT", {"technology": tecs})
         if act.empty:
             return
@@ -384,15 +397,18 @@ class ElectricityAnalyzer(BaseAnalyzer):
         if act.empty:
             return
 
+        # Aggregate activity: sum across modes/vintages; drop zero-activity rows
+        # (technologies that have been retired should not carry any costs)
         act_grouped = act.groupby(['year_act', 'technology'])['lvl'].sum().reset_index()
         act_grouped = act_grouped[act_grouped['lvl'] > 0]
         if act_grouped.empty:
             return
 
         costs = act_grouped.copy()
-        costs['total_cost'] = 0.0
+        costs['total_cost'] = 0.0  # will accumulate all 5 cost components
 
-        # 1. Variable O&M
+        # 1. Variable O&M: total_cost += ACT × var_cost
+        #    (var_cost in M$/GWa, ACT in GWa → product in M$)
         var_cost = self.msg.par("var_cost", {"technology": tecs})
         if not var_cost.empty:
             vc_avg = var_cost.groupby(['year_act', 'technology'])['value'].mean().reset_index()
@@ -400,7 +416,8 @@ class ElectricityAnalyzer(BaseAnalyzer):
             costs['total_cost'] += costs['lvl'] * costs['value'].fillna(0)
             costs.drop(columns=['value'], inplace=True)
 
-        # 2. Fixed O&M
+        # 2. Fixed O&M: total_cost += CAP × fix_cost
+        #    (fix_cost in M$/GW·yr, CAP in GW → product in M$/yr)
         cap = self.msg.var("CAP", {"technology": tecs})
         fix_cost = self.msg.par("fix_cost", {"technology": tecs})
 
@@ -417,18 +434,21 @@ class ElectricityAnalyzer(BaseAnalyzer):
             costs['total_cost'] += costs['fom_cost'].fillna(0)
             costs.drop(columns=['fom_cost'], inplace=True)
 
-        # 3. Investment Cost (Annualized)
+        # 3. Annualized Investment Cost: total_cost += CAP_NEW × inv_cost × CRF
+        #    Each vintage is active from year_vtg to year_vtg + lifetime.
+        #    CRF = r(1+r)^L / ((1+r)^L - 1) converts overnight cost to annual payment.
         cap_new = self.msg.var("CAP_NEW", {"technology": tecs})
         inv_cost = self.msg.par("inv_cost", {"technology": tecs})
         lifetime = self.msg.par("technical_lifetime", {"technology": tecs})
 
-        r = 0.05
+        r = 0.05  # default discount rate
         ir_param = self.msg.par("interest_rate")
         if not ir_param.empty:
             r = ir_param['value'].mean()
 
         if not cap_new.empty and not inv_cost.empty:
             inv_cost_renamed = inv_cost.rename(columns={'value': 'value_cost'})
+            # Join: each vintage of new capacity gets its investment cost
             inv_data = cap_new.merge(inv_cost_renamed, on=['node_loc', 'technology', 'year_vtg'])
 
             if not lifetime.empty:
@@ -437,11 +457,13 @@ class ElectricityAnalyzer(BaseAnalyzer):
                 inv_data = inv_data.merge(lt_avg, on='technology', how='left')
                 inv_data['lifetime'] = inv_data['lifetime'].fillna(30)
             else:
-                inv_data['lifetime'] = 30
+                inv_data['lifetime'] = 30  # fallback: 30-year default lifetime
 
             inv_data['crf'] = inv_data['lifetime'].apply(lambda l: self._calculate_crf(r, l))
+            # Annualised cost = capacity installed × overnight cost × CRF
             inv_data['ann_cost'] = inv_data['lvl'] * inv_data['value_cost'] * inv_data['crf']
 
+            # Spread annualised cost across all active years (vtg ≤ y < vtg + lifetime)
             ann_costs = []
             for _, row in inv_data.iterrows():
                 vtg = int(row['year_vtg'])
@@ -456,30 +478,36 @@ class ElectricityAnalyzer(BaseAnalyzer):
 
             if ann_costs:
                 ac_df = pd.DataFrame(ann_costs)
+                # Sum contributions from multiple vintages active in the same year
                 ac_grouped = ac_df.groupby(['year_act', 'technology'])['inv_cost'].sum().reset_index()
 
                 costs = costs.merge(ac_grouped, on=['year_act', 'technology'], how='left')
                 costs['total_cost'] += costs['inv_cost'].fillna(0)
                 costs.drop(columns=['inv_cost'], inplace=True)
 
-        # 4. Fuel Costs
+        # 4. Fuel Costs: total_cost += ACT × input_efficiency × commodity_price
+        #    (input in PJ/GWa, price in M$/PJ, ACT in GWa → M$/yr)
         input_par = self.msg.par("input", {"technology": tecs})
         price_com = self.msg.var("PRICE_COMMODITY", {"node": nodeloc})
 
         if not input_par.empty and not price_com.empty:
+            # Average efficiency across modes/vintages per (year, technology, commodity)
             in_avg = input_par.groupby(['year_act', 'technology', 'commodity'])['value'].mean().reset_index()
             pr_avg = price_com.groupby(['year', 'commodity'])['lvl'].mean().reset_index()
 
+            # Join on both year and commodity to get correct year-specific prices
             fuel_calc = in_avg.merge(pr_avg, left_on=['year_act', 'commodity'], right_on=['year', 'commodity'], how='inner')
-            fuel_calc['fuel_unit_cost'] = fuel_calc['value'] * fuel_calc['lvl']
+            fuel_calc['fuel_unit_cost'] = fuel_calc['value'] * fuel_calc['lvl']  # M$/GWa per unit input
 
+            # Sum over multiple input commodities per technology
             fuel_cost_per_act = fuel_calc.groupby(['year_act', 'technology'])['fuel_unit_cost'].sum().reset_index()
 
             costs = costs.merge(fuel_cost_per_act, on=['year_act', 'technology'], how='left')
             costs['total_cost'] += costs['lvl'] * costs['fuel_unit_cost'].fillna(0)
             costs.drop(columns=['fuel_unit_cost'], inplace=True)
 
-        # 5. Emission Costs
+        # 5. Emission Costs: total_cost += ACT × emission_factor × carbon_price
+        #    (emission_factor in tCO2/GWa, price in M$/tCO2, ACT in GWa → M$/yr)
         emission_factor = self.msg.par("emission_factor", {"technology": tecs})
         emission_price = self.msg.var("PRICE_EMISSION", {"node": nodeloc})
 
@@ -487,31 +515,38 @@ class ElectricityAnalyzer(BaseAnalyzer):
             ef_avg = emission_factor.groupby(['year_act', 'technology', 'emission'])['value'].mean().reset_index()
             ep_avg = emission_price.groupby(['year', 'emission'])['lvl'].mean().reset_index()
 
+            # Join on year + emission type so CO2, CH4, etc. are priced separately
             em_calc = ef_avg.merge(ep_avg, left_on=['year_act', 'emission'], right_on=['year', 'emission'], how='inner')
-            em_calc['em_unit_cost'] = em_calc['value'] * em_calc['lvl']
+            em_calc['em_unit_cost'] = em_calc['value'] * em_calc['lvl']  # M$/GWa per unit activity
 
+            # Sum over all emission types per technology
             em_cost_per_act = em_calc.groupby(['year_act', 'technology'])['em_unit_cost'].sum().reset_index()
 
             costs = costs.merge(em_cost_per_act, on=['year_act', 'technology'], how='left')
             costs['total_cost'] += costs['lvl'] * costs['em_unit_cost'].fillna(0)
             costs.drop(columns=['em_unit_cost'], inplace=True)
 
-        # Calculate cost contribution per MWh of total generation
+        # Convert to cost contribution per MWh of TOTAL system generation.
+        # Using total generation as denominator (not per-technology) ensures the
+        # contributions are additive and sum to the system-average cost.
         yearly_total_act = costs.groupby('year_act')['lvl'].transform('sum')
         costs['cost_contribution'] = 0.0
         nonzero_mask = yearly_total_act > 0
         costs.loc[nonzero_mask, 'cost_contribution'] = (
             costs.loc[nonzero_mask, 'total_cost'] / yearly_total_act[nonzero_mask]
-        ) * 0.1142
+        ) * 0.1142  # M$/GWa → $/MWh conversion
 
+        # Guard against any division artefacts
         costs['cost_contribution'] = costs['cost_contribution'].replace(
             [float('inf'), float('-inf')], 0
         ).fillna(0)
 
+        # Pivot to wide format (year_act index, technology columns)
         result_df = costs[['year_act', 'technology', 'cost_contribution']].pivot(
             index='year_act', columns='technology', values='cost_contribution'
         )
 
+        # Map individual technologies to named fuel categories (e.g. coal_ppl → "coal")
         result_mapped = self._mappings(result_df, groupby="technology")
         self.results["Electricity cost by source ($/MWh)"] = result_mapped
 

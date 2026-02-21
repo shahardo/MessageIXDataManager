@@ -366,13 +366,17 @@ class BaseAnalyzer:
         if df.empty:
             return pd.DataFrame()
 
+        # Keep only the columns we care about, then sum within each group
         cols_to_keep = groupby + [result]
         df = df[cols_to_keep].groupby(groupby, as_index=False).sum()
 
         if keep_long:
+            # Standardize the value column name for long-format callers
             df = df.rename(columns={result: 'value'})
             return df
         else:
+            # Pivot: groupby[0] → row index (usually year_act)
+            #        groupby[1] → columns (usually commodity or technology)
             df = pd.pivot_table(
                 df, index=groupby[0], columns=groupby[1], values=result, fill_value=0
             )
@@ -388,41 +392,67 @@ class BaseAnalyzer:
         if df1.empty or df2.empty:
             return pd.DataFrame()
 
+        # Average efficiency/cost coefficients across modes/years before merging.
+        # Including commodity in the group key keeps multi-commodity technologies
+        # (e.g. a technology that produces both electricity and heat) correct.
         agg_cols = ["technology"]
         if "commodity" in df2.columns:
             agg_cols.append("commodity")
 
         df2_agg = df2.groupby(agg_cols, as_index=False)[column2].mean()
+        # Left-join: every activity row gets the matching coefficient
         df = df1.merge(df2_agg, how="left", on="technology")
+        # The 'product' column = activity × efficiency (e.g. GWa × PJ/GWa = PJ)
         df["product"] = df.loc[:, column1] * df.loc[:, column2]
 
         return df
 
     def _attach_history(self, tec: List[str]) -> pd.DataFrame:
-        """Get historical activity data."""
+        """Get historical activity data for technologies in plotyrs years.
+
+        Returns a wide-format DataFrame (year_act index, technology columns).
+        Note: filters to plotyrs, so pre-model historical years are not included.
+        """
         parname = "historical_activity"
+        # Only fetch rows whose year_act falls within the plot period
         act_hist = self.msg.par(parname, {"technology": tec, "year_act": self.plotyrs})
         if act_hist.empty:
             return pd.DataFrame(index=self.plotyrs)
 
         act_hist = act_hist[["technology", "year_act", "value"]]
+        # Pivot to wide format: rows = years, columns = technologies
         act_hist = act_hist.pivot(index="year_act", columns="technology").fillna(0)
+        # Drop all-zero technology columns (no historical activity)
         act_hist = act_hist[act_hist.columns[(act_hist > 0).any()]]
         if len(act_hist.columns) > 0:
-            act_hist.columns = act_hist.columns.droplevel(0)
+            act_hist.columns = act_hist.columns.droplevel(0)  # remove multi-level header
         return act_hist
 
     def _add_history(self, tecs: List[str], nodeloc: str,
                      df2: pd.DataFrame, groupby: str) -> pd.DataFrame:
-        """Add historical data to results."""
+        """Add pre-model historical data to a model-period result DataFrame.
+
+        Computes historical energy flow as:
+            historical_activity × mean(efficiency/output coefficient)
+        and groups by (year_act, groupby) to match the shape of model results.
+
+        Args:
+            tecs: Technology list to query historical_activity for
+            nodeloc: Node location (region) to filter by
+            df2: The efficiency/output parameter DataFrame (from _model_output)
+            groupby: Column to pivot on (e.g. 'commodity' or 'technology')
+        """
         df1_hist = self.msg.par(
             "historical_activity", {"technology": tecs, "node_loc": nodeloc}
         )
         if df1_hist.empty:
             return pd.DataFrame(index=self.plotyrs)
 
+        # Rename 'value' → 'lvl' so _multiply_df can treat it like an ACT variable
         df1_hist = df1_hist.rename({"value": "lvl"}, axis=1)
 
+        # Average the parameter (e.g. output efficiency) across vintage years and
+        # other dimensions, keeping only the dimensional columns that _multiply_df needs
         df2_hist = (
             df2.groupby(
                 ["year_act", "technology", "mode", "node_loc", "commodity", "time"],
@@ -433,7 +463,9 @@ class BaseAnalyzer:
         if 'year_vtg' in df2_hist.columns:
             df2_hist = df2_hist.drop(["year_vtg"], axis=1)
 
+        # Multiply historical activity by the efficiency coefficient
         df_hist = self._multiply_df(df1_hist, "lvl", df2_hist, "value")
+        # Aggregate to wide format (year_act × groupby)
         df_hist = self._group(df_hist, ["year_act", groupby], "product", 0.0, None)
         return df_hist
 
@@ -462,24 +494,37 @@ class BaseAnalyzer:
                       parname: str, coms: Optional[Any] = None) -> Tuple[pd.DataFrame, pd.DataFrame]:
         """Get model output by combining activity with parameters.
 
-        Note: nodeloc parameter is kept for API compatibility but NOT used for filtering.
-        Data from all nodes is aggregated together in the results.
+        Core calculation pattern:  result = ACT × parameter_value
+        e.g. electricity_output = activity(GWa) × output_efficiency(PJ/GWa)
+
+        Returns a tuple of:
+          - df: merged DataFrame with a 'product' column (activity × coefficient)
+          - df2: the raw parameter DataFrame (needed by _add_history for coefficients)
+
+        Note: nodeloc parameter is kept for API compatibility but NOT used for
+        filtering. All nodes are aggregated, since most MESSAGEix scenarios are
+        single-region and the 'World' node already covers everything.
         """
+        # Get technology activity, filtered to plot years only.
+        # This is the key fix for years outside plotyrs appearing in results.
         df1 = self.msg.var("ACT", {"technology": tecs})
 
         if not df1.empty and 'year_act' in df1.columns and self.plotyrs:
             df1 = df1[df1['year_act'].isin(self.plotyrs)]
 
+        # Get the efficiency/output/input coefficient for these technologies
         df2 = self.msg.par(parname, {"technology": tecs})
 
         if df1.empty or df2.empty:
             return pd.DataFrame(), pd.DataFrame()
 
+        # Optionally restrict to specific output/input commodities
         if coms:
             if isinstance(coms, str):
                 coms = [coms]
             df2 = df2.loc[df2["commodity"].isin(coms)]
 
+        # Compute product = ACT × coefficient (energy flow)
         df = self._multiply_df(df1, "lvl", df2, "value")
         return df, df2
 

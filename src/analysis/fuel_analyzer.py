@@ -29,7 +29,14 @@ class FuelAnalyzer(BaseAnalyzer):
         self._calculate_gas_utilization_by_sector(nodeloc, yr)
 
     def _calculate_gas_results(self, nodeloc: str, yr: int) -> None:
-        """Calculate natural gas demand by sector."""
+        """Calculate natural gas demand by sector.
+
+        Pattern used for all fuel demand calculations:
+          1. Find technologies that consume the fuel (via 'input' parameter)
+          2. Compute energy flow: ACT × input_efficiency = fuel consumed (GWa)
+          3. Group by (year, technology), add historical data
+          4. Map technologies to sectors via _mappings() and convert to PJ
+        """
         order = self._get_commodity_order()
         gas_tecs = self._get_technologies_by_input_fuel(["gas"])
 
@@ -39,6 +46,7 @@ class FuelAnalyzer(BaseAnalyzer):
                 df = self._group(df, ["year_act", "technology"], "product", 0.0, yr)
                 df_hist = self._add_history(gas_tecs, nodeloc, df2, "technology")
                 df = df.add(df_hist, fill_value=0)
+                # _mappings() aggregates technologies into sector groups (Power, Industry, etc.)
                 self.results["Gas demand (PJ)"] = self._mappings(df) * self.UNIT_GWA_TO_PJ
 
     def _calculate_coal_results(self, nodeloc: str, yr: int) -> None:
@@ -79,7 +87,12 @@ class FuelAnalyzer(BaseAnalyzer):
                 self.results["Biomass demand (PJ)"] = self._mappings(df) * self.UNIT_GWA_TO_PJ
 
     def _calculate_gas_supply_by_source(self, nodeloc: str, yr: int) -> None:
-        """Calculate gas supply by source (production, imports, exports)."""
+        """Calculate gas supply by source (production, imports, exports).
+
+        Total supply = domestic production + imports − exports.
+        Each source is stored separately so the stacked chart shows the breakdown.
+        Exports appear as a negative bar in the chart.
+        """
         gas_commodities = ["gas"]
         results = {}
 

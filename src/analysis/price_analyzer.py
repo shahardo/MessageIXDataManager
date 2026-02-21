@@ -23,37 +23,45 @@ class PriceAnalyzer(BaseAnalyzer):
         self._calculate_prices_by_fuel(nodeloc, yr)
 
     def _calculate_prices(self, nodeloc: str, yr: int) -> None:
-        """Calculate commodity prices."""
-        # Electricity price
+        """Calculate commodity prices by energy level.
+
+        MESSAGEix PRICE_COMMODITY is in M$/GWa.  Converting to $/MWh:
+            1 M$/GWa = 1e6 $ / (8760 × 1000 MWh) ≈ 0.1142 $/MWh
+        Only electricity and useful-energy prices are converted; primary/secondary
+        energy prices are left in native units (M$/GWa) as they are fuels priced
+        in different systems.
+        """
+        # Electricity price (secondary level, 'electr' commodity)
         price = self.msg.var("PRICE_COMMODITY", {"node": nodeloc, "level": "secondary"})
         if not price.empty:
             price = price.loc[price.year.isin(self.plotyrs)]
             df1 = price[["year", "commodity", "lvl"]]
             df1 = df1.loc[df1["commodity"] == "electr"].copy()
-            df1["lvl"] = df1["lvl"] * 0.1142  # convert $/GWa -> $/MWh
+            df1["lvl"] = df1["lvl"] * 0.1142  # M$/GWa → $/MWh
             df = self._group(df1, ["year", "commodity"], "lvl", 0.0, yr)
             self.results["Electricity Price ($/MWh)"] = df
 
-        # Primary energy prices
+        # Primary energy commodity prices (fuels at extraction/production level)
         price = self.msg.var("PRICE_COMMODITY", {"node": nodeloc, "level": "primary"})
         if not price.empty:
             df1 = price[["year", "commodity", "lvl"]]
             df = self._group(df1, ["year", "commodity"], "lvl", 0.0, yr)
             self.results["Primary Energy Prices ($/MWh)"] = df
 
-        # Secondary energy prices
+        # Secondary energy commodity prices (processed fuels)
         price = self.msg.var("PRICE_COMMODITY", {"node": nodeloc, "level": "secondary"})
         if not price.empty:
             df1 = price[["year", "commodity", "lvl"]]
             df = self._group(df1, ["year", "commodity"], "lvl", 0.0, yr)
             self.results["Secondary Energy Prices ($/MWh)"] = df
 
-        # Useful energy prices
+        # Useful energy prices (end-use commodities: transport, heat, spec. electricity)
         price = self.msg.var("PRICE_COMMODITY", {"node": nodeloc, "level": "useful"})
         if not price.empty:
             df1 = price[["year", "commodity", "lvl"]]
+            # Restrict to the demand-side useful energy commodities
             df1 = df1.loc[df1.commodity.isin(['i_spec', 'i_therm', 'rc_spec', 'rc_therm', 'transport'])].copy()
-            df1["lvl"] = df1["lvl"] * 0.1142  # convert $/GWa -> $/MWh
+            df1["lvl"] = df1["lvl"] * 0.1142  # M$/GWa → $/MWh
             df = self._group(df1, ["year", "commodity"], "lvl", 0.0, yr)
             self.results["Energy Prices ($/MWh)"] = df
 

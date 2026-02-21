@@ -27,8 +27,11 @@ class EmissionsAnalyzer(BaseAnalyzer):
     def _calculate_emissions(self, nodeloc: str, yr: int) -> None:
         """Calculate total GHG emissions.
 
-        Combines model EMISS variable with historical_emission parameter.
+        Combines model EMISS variable (solver output: ACT × emission_factor,
+        pre-aggregated per emission type) with historical_emission parameter
+        (pre-model input data).
         """
+        # Try node-filtered query first; fall back if the node key is absent
         df_model = self.msg.var("EMISS", {"node": nodeloc})
         if df_model.empty:
             df_model = self.msg.var("EMISS")
@@ -72,7 +75,15 @@ class EmissionsAnalyzer(BaseAnalyzer):
                 self.results["Total GHG emissions (MtCeq)"] = result_df
 
     def _calculate_emissions_by_sector(self, nodeloc: str, yr: int) -> None:
-        """Calculate CO2 emissions by technology based on fuel consumption."""
+        """Calculate CO2 emissions by technology based on fuel consumption.
+
+        Uses approximate default emission factors (tCO2/GWa equivalent input)
+        when scenario-specific emission_factor parameters are not available.
+        This is a proxy calculation; the EMISS variable from the solver is
+        more accurate when available.
+        """
+        # Default CO2 emission factors in tCO2 per unit fuel input (GWa thermal)
+        # These approximate IPCC default factors for fossil fuels
         fuel_emission_factors = {
             "coal": 3.0, "coal_rc": 3.0, "coal_i": 3.0,
             "crudeoil": 2.4, "lightoil": 2.4, "loil_rc": 2.4, "loil_i": 2.4,

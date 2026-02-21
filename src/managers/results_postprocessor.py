@@ -196,46 +196,6 @@ class ResultsPostprocessor:
             return name[start + 1:end]
         return 'N/A'
 
-    # =========================================================================
-    # Backward-Compatible Delegation Methods
-    # Tests and external code that accessed private methods directly on
-    # ResultsPostprocessor can continue to work via these thin delegates.
-    # =========================================================================
-
-    def _make_base_analyzer(self):
-        """Create a BaseAnalyzer instance for delegation."""
-        from analysis.base_analyzer import BaseAnalyzer
-        return BaseAnalyzer(self.msg, self.scenario, self.plotyrs, self.results)
-
-    def _group(self, df, groupby, result, limit, lyr, keep_long=False):
-        """Delegate to BaseAnalyzer._group."""
-        return self._make_base_analyzer()._group(df, groupby, result, limit, lyr, keep_long)
-
-    def _model_output(self, tecs, nodeloc, parname, coms=None):
-        """Delegate to BaseAnalyzer._model_output."""
-        return self._make_base_analyzer()._model_output(tecs, nodeloc, parname, coms)
-
-    def _attach_history(self, tec):
-        """Delegate to BaseAnalyzer._attach_history."""
-        return self._make_base_analyzer()._attach_history(tec)
-
-    def _calculate_energy_exports_by_fuel(self, nodeloc, yr):
-        """Delegate to EnergyBalanceAnalyzer._calculate_energy_exports_by_fuel."""
-        EnergyBalanceAnalyzer(self.msg, self.scenario, self.plotyrs, self.results)._calculate_energy_exports_by_fuel(nodeloc, yr)
-
-    def _calculate_energy_imports_by_fuel(self, nodeloc, yr):
-        """Delegate to EnergyBalanceAnalyzer._calculate_energy_imports_by_fuel."""
-        EnergyBalanceAnalyzer(self.msg, self.scenario, self.plotyrs, self.results)._calculate_energy_imports_by_fuel(nodeloc, yr)
-
-    def _calculate_feedstock_by_fuel(self, nodeloc, yr):
-        """Delegate to EnergyBalanceAnalyzer._calculate_feedstock_by_fuel."""
-        EnergyBalanceAnalyzer(self.msg, self.scenario, self.plotyrs, self.results)._calculate_feedstock_by_fuel(nodeloc, yr)
-
-    def _calculate_electricity_price_by_source(self, nodeloc, yr):
-        """Delegate to ElectricityAnalyzer._calculate_electricity_price_by_source."""
-        ElectricityAnalyzer(self.msg, self.scenario, self.plotyrs, self.results)._calculate_electricity_price_by_source(nodeloc, yr)
-
-
 # =============================================================================
 # Module-level convenience functions
 # =============================================================================
