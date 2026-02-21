@@ -193,6 +193,20 @@ We will implement the ability to add and remove parameters in the active scenari
 6. [x] Synced decipher state to chart widget legends
 7. [x] Restructured advanced display controls to two rows (Row 1: checkboxes + options, Row 2: filter dropdowns)
 
+### Phase 10: Architecture Consolidation — Refactoring Guide 5 [x] ✅ PARTIALLY COMPLETED
+
+**Objective**: Decompose the results processing monolith; standardise dashboard inheritance. See `docs/refactoring_guide_5.md` for full spec.
+
+**Completed (2026-02-21)**:
+1. [x] **Analysis Package** (`src/analysis/`): Created 7 domain-specific files — `base_analyzer.py`, `electricity_analyzer.py`, `emissions_analyzer.py`, `energy_balance_analyzer.py`, `fuel_analyzer.py`, `sector_analyzer.py`, `price_analyzer.py`
+2. [x] **ResultsPostprocessor**: Reduced from ~3025 to < 300 lines; now a thin facade orchestrating domain analyzers via a shared `results` dict
+3. [x] **ResultsAnalyzer**: Reduced from ~941 to < 310 lines; pure data loader; business logic delegated to `ElectricityAnalyzer` static methods
+4. [x] **Dashboard Hierarchy**: `InputFileDashboard` and `ResultsFileDashboard` both inherit `BaseDashboard`; duplicate setup code removed
+
+**Pending**:
+- [ ] Phase 5.4: Verify `DataDisplayWidget` delegates to `DataTransformer`; remove duplicate transform methods
+- [ ] Phase 5.5: Dead code purge in `MainWindow` (legacy `_load_data_file`, `_load_zipped_csv_data`, `_open_input_file`)
+
 ### Phase 9: Technology Classification & var_* Display Improvements [x] ✅ COMPLETED
 **Objective**: Improve classification and display of result variables (var_ACT, var_EMISS, etc.).
 

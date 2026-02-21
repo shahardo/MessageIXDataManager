@@ -5,13 +5,13 @@ Shows tables listing all commodities, technologies, years, and regions from all 
 along with summary tables showing parameter coverage.
 """
 
-from PyQt5.QtWidgets import QWidget
-from PyQt5.QtWebEngineWidgets import QWebEngineView
-from PyQt5 import uic
 from typing import Any, Dict, List, Set
 import pandas as pd
 
-class InputFileDashboard(QWidget):
+from ui.components.base_dashboard import BaseDashboard
+
+
+class InputFileDashboard(BaseDashboard):
     """
     Dashboard widget for displaying input file comprehensive overview.
 
@@ -25,30 +25,17 @@ class InputFileDashboard(QWidget):
     """
 
     def __init__(self, input_manager):
-        super().__init__()
+        super().__init__(ui_file='src/ui/input_file_dashboard.ui')
         self.input_manager = input_manager
-        self.current_scenario = None
 
-        # Load UI from .ui file
-        ui_file = 'src/ui/input_file_dashboard.ui'
-        ui_loaded = False
-        try:
-            uic.loadUi(ui_file, self)
-            print("Input file dashboard UI loaded successfully")
-            ui_loaded = True
-        except Exception as e:
-            print(f"Error loading UI: {e}")
-            # Continue without UI for testing purposes
-
-        if not ui_loaded or not hasattr(self, 'dashboardTabs'):
+        if not self._ui_loaded or not hasattr(self, 'dashboardTabs'):
             # UI load failed or in test environment
-            self.web_views = {}
             return
 
         self.dashboardTabs.currentChanged.connect(self._on_tab_changed)
 
-        # Map web views from UI file or create mocks for testing
-        self.web_views = {
+        # Map web views from UI file and configure them via BaseDashboard
+        self.setup_web_views({
             'overview': self.overviewWebView,
             'commodities': self.commoditiesWebView,
             'technologies': self.technologiesWebView,
@@ -56,62 +43,30 @@ class InputFileDashboard(QWidget):
             'regions': self.regionsWebView,
             'tech_summary': self.techSummaryWebView,
             'commodity_summary': self.commoditySummaryWebView
-        }
+        })
 
-        # Enable JavaScript for web views
-        self._setup_web_views()
-
-    def _setup_web_views(self):
-        """Set up web view settings"""
-        from PyQt5.QtWebEngineWidgets import QWebEngineSettings
-
-        for web_view in self.web_views.values():
-            settings = web_view.settings()
-            settings.setAttribute(QWebEngineSettings.JavascriptEnabled, True)
-            settings.setAttribute(QWebEngineSettings.LocalContentCanAccessRemoteUrls, True)
-            settings.setAttribute(QWebEngineSettings.AllowRunningInsecureContent, True)
-            settings.setAttribute(QWebEngineSettings.LocalContentCanAccessFileUrls, True)
-
-            # Allow loading of local files
-            profile = web_view.page().profile()
-            profile.setPersistentCookiesPolicy(0)  # No persistent cookies
-
-            web_view.setEnabled(True)
-            web_view.setVisible(True)
-            web_view.setMinimumSize(200, 200)
-
-    def update_dashboard(self, scenario: Any):
-        """Update the dashboard with data from the input scenario"""
-        self.current_scenario = scenario
-
-        if not scenario or not scenario.parameters:
-            # Show placeholder if no scenario loaded
-            for web_view in self.web_views.values():
-                self._show_placeholder(web_view, "No input file data available")
+    def _on_scenario_updated(self, scenario: Any) -> None:
+        """Render all tabs with data from the input scenario."""
+        if not scenario.parameters:
+            self.show_all_placeholders("No input file data available")
             return
 
-        try:
-            # Extract all unique values from all parameters
-            commodities, technologies, years, regions = self._extract_unique_values(scenario)
+        # Extract all unique values from all parameters
+        commodities, technologies, years, regions = self._extract_unique_values(scenario)
 
-            # Create parameter coverage mappings
-            tech_coverage, commodity_coverage = self._create_coverage_mappings(scenario)
+        # Create parameter coverage mappings
+        tech_coverage, commodity_coverage = self._create_coverage_mappings(scenario)
 
-            # Generate HTML content for each tab
-            self._render_overview_tab(len(commodities), len(technologies), len(years), len(regions), len(scenario.parameters))
-            self._render_list_tab('commodities', sorted(commodities), "All Commodities")
-            self._render_list_tab('technologies', sorted(technologies), "All Technologies")
-            # Sort years numerically (convert all to int for consistent sorting)
-            sorted_years = sorted(years, key=lambda y: int(y) if str(y).lstrip('-').isdigit() else float('inf'))
-            self._render_list_tab('years', [str(y) for y in sorted_years], "All Years")
-            self._render_list_tab('regions', sorted(regions), "All Regions")
-            self._render_tech_summary_tab(tech_coverage, list(technologies))
-            self._render_commodity_summary_tab(commodity_coverage, list(commodities))
-
-        except Exception as e:
-            print(f"Error updating input file dashboard: {str(e)}")
-            for web_view in self.web_views.values():
-                self._show_placeholder(web_view, f"Error: {str(e)}")
+        # Generate HTML content for each tab
+        self._render_overview_tab(len(commodities), len(technologies), len(years), len(regions), len(scenario.parameters))
+        self._render_list_tab('commodities', sorted(commodities), "All Commodities")
+        self._render_list_tab('technologies', sorted(technologies), "All Technologies")
+        # Sort years numerically (convert all to int for consistent sorting)
+        sorted_years = sorted(years, key=lambda y: int(y) if str(y).lstrip('-').isdigit() else float('inf'))
+        self._render_list_tab('years', [str(y) for y in sorted_years], "All Years")
+        self._render_list_tab('regions', sorted(regions), "All Regions")
+        self._render_tech_summary_tab(tech_coverage, list(technologies))
+        self._render_commodity_summary_tab(commodity_coverage, list(commodities))
 
     def _extract_unique_values(self, scenario) -> tuple[Set[str], Set[str], Set[str], Set[str]]:
         """Extract unique commodities, technologies, years, and regions from all parameters"""
@@ -585,7 +540,6 @@ class InputFileDashboard(QWidget):
             for param_name in sorted_params:
                 has_tech = tech in tech_coverage.get(param_name, set())
                 cell_content = '✓' if has_tech else ''
-                cell_class = 'check-mark' if has_tech else ''
                 html += f'                            <td class="check-cell">{cell_content}</td>\n'
 
             html += '                        </tr>\n'
@@ -793,18 +747,3 @@ class InputFileDashboard(QWidget):
             tab_name = tab_names[index]
             if tab_name in self.web_views:
                 self.web_views[tab_name].update()
-
-    def _show_placeholder(self, web_view: QWebEngineView, message: str):
-        """Show placeholder in a web view"""
-        html = f"""
-        <html>
-        <body style="display: flex; justify-content: center; align-items: center;
-                     height: 100%; font-family: Arial, sans-serif; background: #f8f9fa;">
-            <div style="text-align: center; color: #666;">
-                <p>{message}</p>
-            </div>
-        </body>
-        </html>
-        """
-
-        web_view.setHtml(html)

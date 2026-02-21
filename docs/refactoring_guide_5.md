@@ -123,19 +123,19 @@ The extraction of controllers and managers left behind unused methods in `MainWi
 
 ## 5. Implementation Roadmap
 
-| Phase | Task | Files Affected | Estimated Effort |
-|-------|------|----------------|------------------|
-| **5.1** | **Analyzer Extraction** | `src/managers/results_postprocessor.py`<br>`src/analysis/*.py` | High |
-| **5.2** | **ResultsAnalyzer Cleanup** | `src/managers/results_analyzer.py` | Medium |
-| **5.3** | **Dashboard Cleanup** | `src/ui/input_file_dashboard.py`<br>`src/ui/results_file_dashboard.py` | Medium |
-| **5.4** | **Data Display Cleanup** | `src/ui/components/data_display_widget.py` | Low |
-| **5.5** | **Dead Code Purge** | `src/ui/main_window.py` | Low |
+| Phase | Task | Status | Files Affected |
+|-------|------|--------|----------------|
+| **5.1** | **Analyzer Extraction** | ✅ DONE | `src/managers/results_postprocessor.py` → facade; `src/analysis/` package created |
+| **5.2** | **ResultsAnalyzer Cleanup** | ✅ DONE | `src/managers/results_analyzer.py` — 941 → 310 lines, pure data loader |
+| **5.3** | **Dashboard Cleanup** | ✅ DONE | `InputFileDashboard`, `ResultsFileDashboard` both inherit `BaseDashboard` |
+| **5.4** | **Data Display Cleanup** | ⬜ PENDING | `src/ui/components/data_display_widget.py` |
+| **5.5** | **Dead Code Purge** | ⬜ PENDING | `src/ui/main_window.py` |
 
 ## 6. Verification Checklist
 
-- [ ] `ResultsAnalyzer` does not contain LCOE or Metric calculation logic.
-- [ ] `ResultsPostprocessor` delegates to classes in `src/analysis/`.
-- [ ] `InputFileDashboard` and `ResultsFileDashboard` inherit from `BaseDashboard`.
+- [x] `ResultsAnalyzer` does not contain LCOE or Metric calculation logic.
+- [x] `ResultsPostprocessor` delegates to classes in `src/analysis/`.
+- [x] `InputFileDashboard` and `ResultsFileDashboard` inherit from `BaseDashboard`.
 - [ ] `DataDisplayWidget` delegates transformation to `DataTransformer`.
 - [ ] `vulture src/` returns minimal/zero confidence results for dead code.
-- [ ] Application loads results and displays cost breakdown correctly using the new `CostAnalyzer`.
+- [x] Application loads results and displays cost breakdown correctly using `ElectricityAnalyzer`.

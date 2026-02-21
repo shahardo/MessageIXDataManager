@@ -27,11 +27,20 @@ src/
 │   ├── message_ix_schema.py # MESSAGEix parameter definitions, codelists, tooltips
 │   ├── user_preferences.py  # Shared user preferences (UserPreferences QObject)
 │   └── view_state.py        # ViewState and ViewStateManager classes
+├── analysis/               # Domain-specific result analyzers (created in refactoring guide 5)
+│   ├── __init__.py               # Package init re-exporting all analyzers
+│   ├── base_analyzer.py          # ScenarioDataWrapper + BaseAnalyzer with shared helpers
+│   ├── electricity_analyzer.py   # Generation, capacity, LCOE, cost breakdown, dashboard metrics
+│   ├── emissions_analyzer.py     # GHG emissions by type, sector, fuel
+│   ├── energy_balance_analyzer.py # Primary/final energy, trade, feedstock, oil derivatives
+│   ├── fuel_analyzer.py          # Gas, coal, oil, biomass supply and use
+│   ├── sector_analyzer.py        # Buildings, industry, transport energy use
+│   └── price_analyzer.py         # Energy prices by level, sector, fuel
 ├── managers/               # Business logic layer
 │   ├── base_data_manager.py      # Abstract base with Observer pattern
 │   ├── input_manager.py          # Load/parse input Excel files
-│   ├── results_analyzer.py       # Load/parse results Excel files
-│   ├── results_postprocessor.py  # Postprocessing calculations (LCOE, generation, emissions)
+│   ├── results_analyzer.py       # Load/parse results Excel files (pure data loader, < 300 lines)
+│   ├── results_postprocessor.py  # Facade/orchestrator delegating to src/analysis/ domain analyzers
 │   ├── solver_manager.py         # MESSAGEix solver execution
 │   ├── session_manager.py        # Application state persistence
 │   ├── parameter_manager.py      # Parameter validation/creation
@@ -133,9 +142,12 @@ var_* Parameter → TechnologyClassifier.filter_by_energy_level()
 - **UndoManager**: Manages undo/redo stack with Command objects
 - **UserPreferences**: Shared QObject holding `min_year`, `max_year`, `limit_enabled` with a `changed` signal
 - **DashboardChartMixin**: Shared chart rendering methods (stacked bar, pie, placeholder) used by `ResultsFileDashboard` and `PostprocessingDashboard`
-- **ResultsPostprocessor**: Calculates derived metrics from MESSAGEix results (electricity generation, costs, emissions, etc.)
+- **ResultsPostprocessor**: Thin facade/orchestrator — delegates to domain analyzers in `src/analysis/`, then converts shared `results` dict to `Parameter` objects
+- **BaseAnalyzer**: Base class for all domain analyzers; holds shared state (`msg`, `scenario`, `plotyrs`, `results`) and provides helpers (`_group`, `_model_output`, `_add_history`, `_multiply_df`, etc.)
+- **ElectricityAnalyzer**: Electricity generation, capacity, LCOE, cost breakdown, dashboard metrics (static methods `calculate_dashboard_metrics`, `calculate_electricity_cost_breakdown`)
 - **TechnologyClassifier**: Maps technologies to energy levels, provides grouping (coal, gas, emissions, etc.), and filters var_* data by energy level with dynamic emission detection
-- **InputFileDashboard**: Overview dashboard showing commodities, technologies, years, regions, and parameter coverage matrices
+- **InputFileDashboard**: Inherits `BaseDashboard`; shows commodities, technologies, years, regions, and parameter coverage matrices
+- **ResultsFileDashboard**: Inherits `DashboardChartMixin, BaseDashboard`; shows result metrics and charts
 
 ### Results Variable Display (var_*)
 
@@ -278,7 +290,9 @@ pytest -v tests/
 | `src/core/message_ix_schema.py` | MESSAGEix schema, codelists (commodities, technologies), tooltip scripts |
 | `src/managers/commands.py` | Undo/redo command objects |
 | `src/managers/input_manager.py` | Input file parsing |
-| `src/managers/results_postprocessor.py` | Postprocessing calculations (LCOE, generation, emissions) |
+| `src/managers/results_postprocessor.py` | Thin facade — orchestrates `src/analysis/` domain analyzers |
+| `src/analysis/base_analyzer.py` | `ScenarioDataWrapper` + `BaseAnalyzer` with shared calculation helpers |
+| `src/analysis/electricity_analyzer.py` | Electricity generation, LCOE, cost breakdown, dashboard metrics |
 | `src/ui/components/data_display_widget.py` | Table display with editing, pivoting, name deciphering |
 | `src/ui/components/chart_widget.py` | Plotly chart visualization with legend tooltips |
 | `src/ui/input_file_dashboard.py` | Input file overview dashboard |

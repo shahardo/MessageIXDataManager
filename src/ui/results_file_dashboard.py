@@ -4,15 +4,13 @@ Results File Dashboard - displays specific metrics and charts for results files
 Shows a dashboard with metrics at the top and 4 charts in a 2x2 grid when a results file is selected.
 """
 
-from PyQt5.QtWidgets import QWidget
-from PyQt5.QtWebEngineWidgets import QWebEngineView
-from PyQt5 import uic
 from typing import Any
 
 from .dashboard_chart_mixin import DashboardChartMixin
+from ui.components.base_dashboard import BaseDashboard
 
 
-class ResultsFileDashboard(DashboardChartMixin, QWidget):
+class ResultsFileDashboard(DashboardChartMixin, BaseDashboard):
     """
     Dashboard widget for displaying results file specific visualizations.
 
@@ -24,23 +22,10 @@ class ResultsFileDashboard(DashboardChartMixin, QWidget):
     """
 
     def __init__(self, results_analyzer):
-        super().__init__()
+        super().__init__(ui_file='src/ui/results_file_dashboard.ui')
         self.results_analyzer = results_analyzer
-        self.current_scenario = None
 
-        # Load UI from .ui file
-        ui_file = 'src/ui/results_file_dashboard.ui'
-        ui_loaded = False
-        try:
-            uic.loadUi(ui_file, self)
-            print("Results file dashboard UI loaded successfully")
-            ui_loaded = True
-        except Exception as e:
-            print(f"Error loading UI: {e}")
-            # Continue without UI for testing purposes
-
-            # Map chart views from UI file or create mocks for testing
-        if ui_loaded and hasattr(self, 'primary_energy_demand_chart'):
+        if self._ui_loaded and hasattr(self, 'primary_energy_demand_chart'):
             # Overview tab charts
             self.chart_views = {
                 'primary_energy_demand': self.primary_energy_demand_chart,
@@ -221,7 +206,7 @@ class ResultsFileDashboard(DashboardChartMixin, QWidget):
                     "No electricity generation data available"
                 )
 
-            # Electricity costs chart (new functionality)
+            # Electricity costs chart
             if 'electricity_costs_by_fuel' in self.electricity_chart_views:
                 self._render_electricity_costs_chart()
 
@@ -233,22 +218,17 @@ class ResultsFileDashboard(DashboardChartMixin, QWidget):
     def _render_electricity_costs_chart(self):
         """Render electricity costs by fuel source chart"""
         try:
-            print("DEBUG: Starting electricity costs chart rendering")
             # Calculate electricity costs breakdown
             cost_df = self.results_analyzer.calculate_electricity_cost_breakdown(self.current_scenario)
-            print(f"DEBUG: Cost DataFrame shape: {cost_df.shape}")
-            print(f"DEBUG: Cost DataFrame columns: {cost_df.columns.tolist()}")
-            print(f"DEBUG: Cost DataFrame empty? {cost_df.empty}")
 
             if cost_df.empty:
-                print("DEBUG: Cost DataFrame is empty, showing placeholder")
                 self.show_chart_placeholder(
                     self.electricity_chart_views['electricity_costs_by_fuel'],
                     "No electricity cost data available"
                 )
                 return
 
-            # Group by fuel categories and aggregate costs
+            # Map technologies to fuel categories for aggregation
             fuel_mapping = {
                 'Coal': ['coal'],
                 'Fuels': ['heavy fuel oil', 'light oil'],
@@ -261,126 +241,26 @@ class ResultsFileDashboard(DashboardChartMixin, QWidget):
                 'Geothermal': ['geothermal'],
             }
 
-            print(f"DEBUG: Original technologies: {cost_df['technology'].unique().tolist()}")
-
-            # Map technologies to fuel categories
-            cost_df['fuel_category'] = 'Other'  # Default
+            cost_df['fuel_category'] = 'Other'
             for fuel, techs in fuel_mapping.items():
                 mask = cost_df['technology'].str.lower().isin([t.lower() for t in techs])
                 cost_df.loc[mask, 'fuel_category'] = fuel
 
-            print(f"DEBUG: Fuel categories: {cost_df['fuel_category'].unique().tolist()}")
-
             # Aggregate by fuel category and year
             fuel_costs = cost_df.groupby(['fuel_category', 'year_act'])['Unit_Total_LCOE_Proxy'].sum().reset_index()
-            print(f"DEBUG: Fuel costs shape: {fuel_costs.shape}")
-            print(f"DEBUG: Fuel costs sample: {fuel_costs.head()}")
 
-            # Create detailed cost breakdown table (technologies as columns, cost components as rows)
-            print("\n" + "="*120)
-            print("ELECTRICITY COST BREAKDOWN BY TECHNOLOGY ($/MWh)")
-            print("="*120)
-
-            # Get all unique years and technologies
-            years = sorted(cost_df['year_act'].unique())
-            technologies = sorted(cost_df['technology'].unique())
-
-            # Create table with technologies as columns, years as sub-headers
-            # Header row 1: Technology names
-            header1 = "Cost Component".ljust(15)
-            for tech in technologies:
-                header1 += f"{tech[:10]:>12}"  # Truncate technology names
-            print(header1)
-
-            # Header row 2: Years under each technology
-            header2 = "".ljust(15)
-            for tech in technologies:
-                tech_years = sorted(cost_df[cost_df['technology'] == tech]['year_act'].unique())
-                year_str = "/".join([str(y) for y in tech_years[:3]])  # Show first 3 years
-                if len(tech_years) > 3:
-                    year_str += "+"
-                header2 += f"{year_str:>12}"
-            print(header2)
-            print("-" * len(header1))
-
-            # Create table rows for each cost component
-            cost_components = ['Unit_capex', 'Unit_fom', 'Unit_vom', 'Unit_fuel', 'Unit_em', 'Unit_Total_LCOE_Proxy']
-            component_names = ['Capex', 'Fixed Opex', 'Var Opex', 'Fuel', 'Emissions', 'Total LCOE']
-
-            for component, comp_name in zip(cost_components, component_names):
-                if component in cost_df.columns:
-                    row = comp_name.ljust(15)
-                    for tech in technologies:
-                        tech_data = cost_df[cost_df['technology'] == tech]
-                        if not tech_data.empty and component in tech_data.columns:
-                            # Get costs for each year for this technology
-                            tech_costs = []
-                            for year in years:
-                                year_data = tech_data[tech_data['year_act'] == year]
-                                if not year_data.empty and component in year_data.columns:
-                                    cost_val = year_data[component].iloc[0] if len(year_data) > 0 else 0.0
-                                    tech_costs.append(f"{cost_val:.1f}")
-                                else:
-                                    tech_costs.append("0.0")
-
-                            # Join year costs with slashes, limit to 3 years for readability
-                            cost_str = "/".join(tech_costs[:3])
-                            if len(tech_costs) > 3:
-                                cost_str += "+"
-                            row += f"{cost_str:>12}"
-                        else:
-                            row += "     0.0/0.0"[:12].rjust(12)
-                    print(row)
-
-            print("="*120)
-
-            # Also show the original format for reference
-            print("\nAVERAGE COST BREAKDOWN BY FUEL SOURCE ($/MWh)")
-            print("-" * 60)
-            for fuel in sorted(cost_df['fuel_category'].unique()):
-                fuel_data = cost_df[cost_df['fuel_category'] == fuel]
-                print(f"\n{fuel.upper()}:")
-                for _, row in fuel_data.iterrows():
-                    print(f"  {row['year_act']}: Total=${row['Unit_Total_LCOE_Proxy']:.2f}/MWh "
-                          f"(Capex=${row.get('Unit_capex',0):.2f}, "
-                          f"FOM=${row.get('Unit_fom',0):.2f}, "
-                          f"VOM=${row.get('Unit_vom',0):.2f}, "
-                          f"Fuel=${row.get('Unit_fuel',0):.2f}, "
-                          f"Em=${row.get('Unit_em',0):.2f})")
-
-            # Populate the cost breakdown table in the dashboard
+            # Populate the cost breakdown table
             self._populate_cost_breakdown_table(cost_df)
 
-            # Also show detailed breakdown by fuel category
-            print("\nCOST BREAKDOWN BY FUEL CATEGORY:")
-            print("-" * 50)
-            for fuel in sorted(cost_df['fuel_category'].unique()):
-                fuel_data = cost_df[cost_df['fuel_category'] == fuel]
-                print(f"\n{fuel.upper()}:")
-                for _, row in fuel_data.iterrows():
-                    print(f"  {row['year_act']}: Total=${row['Unit_Total_LCOE_Proxy']:.2f}/MWh "
-                          f"(Capex=${row.get('Unit_capex',0):.2f}, "
-                          f"FOM=${row.get('Unit_fom',0):.2f}, "
-                          f"VOM=${row.get('Unit_vom',0):.2f}, "
-                          f"Fuel=${row.get('Unit_fuel',0):.2f}, "
-                          f"Em=${row.get('Unit_em',0):.2f})")
-
-            # Pivot to get years as columns, fuels as series
+            # Pivot to get years as columns, fuels as rows for charting
             pivot_df = fuel_costs.pivot(index='fuel_category', columns='year_act', values='Unit_Total_LCOE_Proxy').fillna(0)
-            print(f"DEBUG: Pivot DataFrame shape: {pivot_df.shape}")
-            print(f"DEBUG: Pivot DataFrame: {pivot_df}")
 
-            # Prepare data for stacked bar chart
             years = sorted(pivot_df.columns.tolist())
             data_dict = {}
             for fuel in pivot_df.index:
                 data_dict[fuel] = pivot_df.loc[fuel, years].tolist()
 
-            print(f"DEBUG: Years: {years}")
-            print(f"DEBUG: Data dict: {data_dict}")
-
             if not data_dict:
-                print("DEBUG: No data to plot, showing placeholder")
                 self.show_chart_placeholder(
                     self.electricity_chart_views['electricity_costs_by_fuel'],
                     "No cost data to display"
@@ -394,7 +274,6 @@ class ResultsFileDashboard(DashboardChartMixin, QWidget):
                 'Electricity Costs by Fuel Source ($/MWh)',
                 'Electricity Costs by Fuel Source'
             )
-            print("DEBUG: Chart rendering completed successfully")
 
         except Exception as e:
             print(f"Error calculating electricity costs: {str(e)}")
@@ -409,7 +288,6 @@ class ResultsFileDashboard(DashboardChartMixin, QWidget):
         """Populate the cost breakdown table with technology cost data"""
         try:
             if not hasattr(self, 'cost_breakdown_table'):
-                print("DEBUG: Cost breakdown table widget not found")
                 return
 
             # Clear existing table
@@ -418,7 +296,6 @@ class ResultsFileDashboard(DashboardChartMixin, QWidget):
             self.cost_breakdown_table.setColumnCount(0)
 
             if cost_df.empty:
-                print("DEBUG: Cost DataFrame is empty, not populating table")
                 return
 
             # Get unique technologies and years
@@ -464,7 +341,6 @@ class ResultsFileDashboard(DashboardChartMixin, QWidget):
 
             # Resize columns to fit content
             self.cost_breakdown_table.resizeColumnsToContents()
-            print(f"DEBUG: Populated cost breakdown table with {len(technologies)} technologies and {len(years)} years")
 
         except Exception as e:
             print(f"Error populating cost breakdown table: {str(e)}")
