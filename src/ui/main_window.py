@@ -241,6 +241,7 @@ class MainWindow(QMainWindow):
         """Set up the UI components using composition"""
         # Create component instances, passing existing widgets from .ui file
         self.file_navigator = FileNavigatorWidget(session_manager=self.session_manager)
+        self.file_navigator.confirm_delete_callback = self._confirm_scenario_delete
         self.param_tree = ParameterTreeWidget()
         self.data_display = DataDisplayWidget(user_prefs=self.user_prefs)
         self.chart_widget = ChartWidget()
@@ -539,11 +540,13 @@ class MainWindow(QMainWindow):
                 if input_scenario:
                     param_names = input_scenario.get_parameter_names()
                     combined_data.options = input_scenario.options
+                    # Share the sets reference so save_scenario can write the Sets sheet
+                    combined_data.sets = input_scenario.sets
                     # Copy input parameters to combined data
                     for param_name in param_names:
                         param = input_scenario.get_parameter(param_name)
                         if param:
-                            combined_data.add_parameter(param)
+                            combined_data.add_parameter(param, mark_modified=False, add_to_history=False)
 
             if scenario.results_file:
                 results_scenario = self.results_analyzer.get_results_by_file_path(scenario.results_file)
@@ -553,7 +556,7 @@ class MainWindow(QMainWindow):
                     for param_name in param_names:
                         param = results_scenario.get_parameter(param_name)
                         if param:
-                            combined_data.add_parameter(param)
+                            combined_data.add_parameter(param, mark_modified=False, add_to_history=False)
 
             if scenario.message_scenario_file:
                 if scenario.message_scenario_file not in self.loaded_data_files:
@@ -564,7 +567,7 @@ class MainWindow(QMainWindow):
                     for param_name in data_scenario.get_parameter_names():
                         param = data_scenario.get_parameter(param_name)
                         if param:
-                            combined_data.add_parameter(param)
+                            combined_data.add_parameter(param, mark_modified=False, add_to_history=False)
 
             # Run postprocessing on combined data (needs both input params and result vars)
             # This calculates derived metrics like electricity generation, emissions, etc.
@@ -885,8 +888,9 @@ class MainWindow(QMainWindow):
         if not param_name:
             return
 
-        # Use the edit handler to process the change
-        success = self.edit_handler.handle_cell_value_change(mode, row_or_year, col_or_tech, new_value, self.undo_manager)
+        # Use the edit handler to process the change (pass param_name so the handler
+        # doesn't need to re-derive it via the stub _get_current_displayed_parameter)
+        success = self.edit_handler.handle_cell_value_change(mode, row_or_year, col_or_tech, new_value, self.undo_manager, param_name)
 
         if success:
             # Update UI elements
@@ -1574,10 +1578,21 @@ class MainWindow(QMainWindow):
             self._remove_last_opened_file(scenario.results_file, "results")
 
     # Progress bar methods
-    def show_progress_bar(self, maximum=100):
-        """Show and initialize the progress bar"""
+    def show_progress_bar(self, maximum=100, message: str = ""):
+        """Show and initialize the progress bar.
+
+        If *message* is given it is embedded in the bar's format string
+        (e.g. "Saving foo.xlsx…  42%") so the statusbar text area is not
+        needed and the two don't compete for space.
+        """
         self.progress_bar.setMaximum(maximum)
         self.progress_bar.setValue(0)
+        if message:
+            self.progress_bar.setFormat(f"{message}  %p%")
+            self.progress_bar.setTextVisible(True)
+        else:
+            self.progress_bar.setFormat("%p%")
+        self.statusbar.clearMessage()   # hide text while the bar is visible
         self.progress_bar.setVisible(True)
 
     def update_progress(self, value, message=None):
@@ -1587,9 +1602,9 @@ class MainWindow(QMainWindow):
             self.statusbar.showMessage(message)
 
     def hide_progress_bar(self):
-        """Hide the progress bar"""
+        """Hide the progress bar and reset its format."""
         self.progress_bar.setVisible(False)
-        self.statusbar.showMessage("Ready")
+        self.progress_bar.setFormat("%p%")
 
     # Console methods
     def _append_to_console(self, message: str):
@@ -1776,8 +1791,10 @@ class MainWindow(QMainWindow):
             self.statusbar.showMessage("No changes to save")
             return
 
-        # Determine the file path
-        if self.current_view == "input" and self.selected_input_file:
+        # Determine the file path.
+        # In multi-section view, save to the input file (input params are what
+        # the user edits; results/variables are read-only derived data).
+        if self.current_view in ("input", "multi") and self.selected_input_file:
             file_path = self.selected_input_file
         elif self.current_view == "results" and self.selected_results_file:
             file_path = self.selected_results_file
@@ -1786,16 +1803,16 @@ class MainWindow(QMainWindow):
             self._save_file_as()
             return
 
-        # Confirm save
+        # Confirm save — Save is the default so pressing Enter confirms
         modified_count = self.data_export_manager.get_modified_parameters_count(scenario)
         reply = QMessageBox.question(
             self, "Confirm Save",
             f"Save {modified_count} modified parameter(s) to {os.path.basename(file_path)}?",
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.Yes
+            QMessageBox.Save | QMessageBox.Cancel,
+            QMessageBox.Save
         )
 
-        if reply != QMessageBox.Yes:
+        if reply != QMessageBox.Save:
             return
 
         # Save the file
@@ -1823,59 +1840,78 @@ class MainWindow(QMainWindow):
     def _perform_save(self, scenario: ScenarioData, file_path: str, is_save_as: bool):
         """Perform the actual save operation"""
         try:
-            self.statusbar.showMessage("Saving...")
+            # Embed the filename in the progress bar format so the status text
+            # area is free (the bar and the message used to compete for space).
+            self.show_progress_bar(100, f"Saving {os.path.basename(file_path)}…")
 
-            # Show progress bar
-            self.show_progress_bar(100)
+            # Use a progress-only callback so the "Saving …" status message
+            # is not overridden by individual sheet names mid-save.
+            with WaitCursorContext(force=True):
+                success = self.data_export_manager.save_scenario(
+                    scenario, file_path,
+                    modified_only=True,
+                    progress_callback=lambda pct, _msg: self.progress_bar.setValue(pct),
+                )
 
-            # Perform save
-            success = self.data_export_manager.save_scenario(scenario, file_path, modified_only=True)
-
-            # Hide progress bar
             self.hide_progress_bar()
 
             if success:
-                # Clear modified flags after successful save
                 self.data_export_manager.clear_modified_flags(scenario)
-
-                # Update status
                 if is_save_as:
                     self.statusbar.showMessage(f"Saved as: {os.path.basename(file_path)}")
                     self._append_to_console(f"✓ Saved scenario as: {file_path}")
+                    self.setWindowTitle(f"MessageIX Data Manager - {os.path.basename(file_path)}")
                 else:
                     self.statusbar.showMessage(f"Saved: {os.path.basename(file_path)}")
                     self._append_to_console(f"✓ Saved changes to: {file_path}")
-
-                # Update window title if this was the first save
-                if is_save_as:
-                    self.setWindowTitle(f"MessageIX Data Manager - {os.path.basename(file_path)}")
-
             else:
                 QMessageBox.critical(self, "Save Failed", f"Failed to save file: {file_path}")
                 self.statusbar.showMessage("Save failed")
 
         except Exception as e:
-            # Hide progress bar on error
             self.hide_progress_bar()
             QMessageBox.critical(self, "Save Error", f"Error saving file: {str(e)}")
             self.statusbar.showMessage("Save failed")
 
+    def _confirm_scenario_delete(self, scenario) -> bool:
+        """
+        Check for unsaved changes before a scenario is deleted from the navigator.
+
+        Called by FileNavigatorWidget via confirm_delete_callback.
+
+        Returns:
+            True to proceed with deletion, False to cancel.
+        """
+        # Edits are only tracked on the currently-selected scenario's combined data.
+        if (self.selected_scenario and self.selected_scenario.name == scenario.name
+                and hasattr(self, 'current_combined_data')
+                and self.data_export_manager.has_modified_data(self.current_combined_data)):
+            reply = QMessageBox.question(
+                self, "Unsaved Changes",
+                f"Scenario '{scenario.name}' has unsaved changes.\n"
+                "Do you want to save before removing it?",
+                QMessageBox.Save | QMessageBox.Discard | QMessageBox.Cancel,
+                QMessageBox.Save
+            )
+            if reply == QMessageBox.Save:
+                self._save_file()
+                # If data is still modified (save was cancelled or failed), abort deletion
+                if self.data_export_manager.has_modified_data(self.current_combined_data):
+                    return False
+            elif reply == QMessageBox.Cancel:
+                return False
+            # Discard → proceed
+        return True
+
     def closeEvent(self, a0):
         """Handle application close event - check for unsaved changes"""
-        # Check for unsaved changes before closing
-        has_unsaved_changes = False
-
-        # Check input scenarios
-        input_scenario = self.input_manager.get_current_scenario()
-        if input_scenario:
-            if self.data_export_manager.has_modified_data(input_scenario):
-                has_unsaved_changes = True
-
-        # Check results scenarios
-        results_scenario = self.results_analyzer.get_current_results()
-        if results_scenario:
-            if self.data_export_manager.has_modified_data(results_scenario):
-                has_unsaved_changes = True
+        # Check for unsaved changes before closing.
+        # Modifications are tracked on current_combined_data, not on the raw
+        # input_manager scenarios (which never have their .modified set populated).
+        has_unsaved_changes = (
+            hasattr(self, 'current_combined_data')
+            and self.data_export_manager.has_modified_data(self.current_combined_data)
+        )
 
         if has_unsaved_changes:
             reply = QMessageBox.question(

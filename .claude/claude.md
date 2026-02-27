@@ -257,6 +257,7 @@ Allways use venv 'env':
 env/scripts/activate
 ```
 
+As possible, don't run the full tests suits, only run tests for the code that was modified.
 ```bash
 # Run all tests
 pytest tests/
@@ -278,7 +279,13 @@ pytest -v tests/
 
 ### Known Test Issues
 - `test_data_models.py::test_mark_modified` - Pre-existing failure (test expects modified set empty after clear, but add_parameter marks it)
-- Full test suite may crash during Qt/WebEngine teardown (not related to test logic)
+- Full test suite exits with code 1 due to Qt/WebEngine teardown crash — this is not a test failure (589 passed, 4 skipped is the current baseline)
+
+### Test Scope Policy
+- **Run only the tests related to the files changed**, not the full suite on every edit
+- The user runs the full suite when needed
+- Example: editing `data_export_manager.py` → run `pytest tests/test_data_export_manager.py`
+- Example: editing `data_display_widget.py` or `edit_handler.py` → run `pytest tests/test_edit_handler.py` (if it exists)
 
 ## Important Files
 

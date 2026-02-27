@@ -603,6 +603,10 @@ class DataDisplayWidget(QWidget):
             else:
                 display_name = col_str
             header_item = QTableWidgetItem(display_name)
+            # Always store the original column code in UserRole so that
+            # _sync_pivot_change_to_raw_data can match against the raw
+            # DataFrame regardless of whether decipher-names is active.
+            header_item.setData(Qt.UserRole, col_str)
             # Always show the original code as tooltip so the user can identify it
             if display_name != col_str:
                 header_item.setToolTip(col_str)
@@ -1105,18 +1109,24 @@ class DataDisplayWidget(QWidget):
         year = None
         technology = None
 
-        # Get year from vertical header (row)
+        # Get year from vertical header (row).
+        # Years in the pivot index may be stored as floats (e.g. "2020.0"),
+        # so go through float first to avoid ValueError on non-integer strings.
         vertical_header = self.param_table.verticalHeaderItem(row)
         if vertical_header:
             try:
-                year = int(vertical_header.text())
-            except ValueError:
+                year = int(float(vertical_header.text()))
+            except (ValueError, TypeError):
                 pass
 
-        # Get technology from horizontal header (column)
+        # Get technology (pivot column value) from horizontal header.
+        # Use the original code stored in UserRole rather than the display text,
+        # so DataFrame comparison works correctly even when decipher-names is on
+        # (e.g., header shows "Electricity" but df column contains "electr").
         horizontal_header = self.param_table.horizontalHeaderItem(col)
         if horizontal_header:
-            technology = horizontal_header.text()
+            original_code = horizontal_header.data(Qt.UserRole)
+            technology = original_code if original_code else horizontal_header.text()
 
         # Emit signal with change information
         # This will be connected to MainWindow which has access to the scenario data

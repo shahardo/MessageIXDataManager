@@ -12,6 +12,7 @@ from core.data_models import Scenario
 from managers.session_manager import SessionManager
 from utils.error_handler import ErrorHandler
 import os
+from typing import Callable, Optional
 
 
 class FileNavigatorWidget(QWidget):
@@ -39,6 +40,9 @@ class FileNavigatorWidget(QWidget):
         self.current_scenarios = []
         self.selected_scenario_name = None  # Track which scenario is selected
         self._scenario_cards = {}  # scenario_name -> ScenarioCardWidget
+        # Optional callback set by MainWindow to check for unsaved changes before deletion.
+        # Signature: (scenario: Scenario) -> bool  (True = proceed, False = cancel)
+        self.confirm_delete_callback: Optional[Callable[[Scenario], bool]] = None
 
         self.setup_ui()
         self.load_initial_state()
@@ -477,6 +481,10 @@ class FileNavigatorWidget(QWidget):
         )
 
         if result == QMessageBox.Yes:
+            # Check for unsaved changes via callback from MainWindow
+            if self.confirm_delete_callback and not self.confirm_delete_callback(scenario):
+                return  # User cancelled
+
             was_selected = (self.selected_scenario_name == scenario.name)
 
             # Remove from session manager

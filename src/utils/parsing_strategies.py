@@ -45,18 +45,45 @@ class SetParsingStrategy(ParsingStrategy):
                 self._parse_individual_set_sheet(sheet, sheet_name, scenario)
 
     def can_parse_sheet(self, sheet: Any, sheet_name: str) -> bool:
-        """Check if this is a set sheet"""
-        # Common set sheet names
-        set_sheet_names = ['sets', 'set', 'Sets', 'Set']
-        if sheet_name in set_sheet_names:
+        """Check if this is a set sheet.
+
+        Recognises:
+          - Combined set sheets named "Sets" / "Set"
+          - Individual set sheets: any single-column sheet whose data rows
+            contain only string (non-numeric) values.  This handles all
+            MESSAGEix set names without a hardcoded list.
+        """
+        if sheet_name.lower() in ['sets', 'set']:
             return True
 
-        # Individual set sheets (common MESSAGEix sets)
-        potential_set_sheets = ['node', 'technology', 'commodity', 'level', 'year', 'mode', 'time']
-        if sheet_name in potential_set_sheets:
-            return True
+        return self._is_individual_set_sheet(sheet)
 
-        return False
+    def _is_individual_set_sheet(self, sheet: Any) -> bool:
+        """Return True when the sheet looks like a single-column string set.
+
+        Heuristic: read the first several rows; every row must have at most
+        one non-None cell, and data rows (after the header) must be strings,
+        not numbers.  Parameter sheets always have multiple columns and at
+        least one numeric value column, so they will not match.
+        """
+        try:
+            rows = list(sheet.iter_rows(min_row=1, max_row=8, values_only=True))
+            if len(rows) < 2:
+                return False
+            # Every row must have at most 1 non-empty cell (single column)
+            for row in rows:
+                non_empty = [v for v in row if v is not None and str(v).strip()]
+                if len(non_empty) > 1:
+                    return False
+            # Data rows (skip header) must have at least one string value
+            data_rows = rows[1:]
+            return any(
+                isinstance(r[0], str) and r[0].strip()
+                for r in data_rows
+                if r and r[0] is not None
+            )
+        except Exception:
+            return False
 
     def _parse_combined_sets_sheet(self, sheet: Any, scenario: ScenarioData) -> None:
         """Parse a combined sets sheet"""
@@ -74,7 +101,20 @@ class SetParsingStrategy(ParsingStrategy):
                     scenario.sets[set_name] = pd.Series(set_values)
 
     def _parse_individual_set_sheet(self, sheet: Any, set_name: str, scenario: ScenarioData) -> None:
-        """Parse an individual set sheet"""
+        """Parse an individual set sheet.
+
+        Preserves the original A1 header text in Series.name so that
+        _export_to_xlsx can write it back faithfully (e.g. sheet
+        "level_renewable" may have A1 = "level", not "level_renewable").
+        """
+        # Capture the A1 label (data starts at row 2, but we need row 1 for save)
+        first_row = list(sheet.iter_rows(min_row=1, max_row=1, values_only=True))
+        a1_value = (
+            str(first_row[0][0]).strip()
+            if first_row and first_row[0] and first_row[0][0] is not None
+            else set_name
+        )
+
         set_values = []
         for row in sheet.iter_rows(min_row=2, values_only=True):
             if row[0] is not None:
@@ -82,7 +122,8 @@ class SetParsingStrategy(ParsingStrategy):
                 if val_str and val_str not in set_values:
                     set_values.append(val_str)
         if set_values:
-            scenario.sets[set_name] = pd.Series(set_values)
+            # Store A1 label in Series.name so it survives the round-trip
+            scenario.sets[set_name] = pd.Series(set_values, name=a1_value)
 
 
 class ParameterParsingStrategy(ParsingStrategy):
@@ -112,29 +153,39 @@ class ParameterParsingStrategy(ParsingStrategy):
         return self._is_parameter_sheet(sheet)
 
     def _is_parameter_sheet(self, sheet: Any) -> bool:
-        """Check if sheet contains parameter-like data"""
+        """Check if sheet contains parameter-like data.
+
+        Accepts two layouts:
+          1. Mixed string+number rows — classic MESSAGEix parameters
+             (dimension columns + numeric value column).
+          2. Multi-column all-string rows — categorical mapping sheets such as
+             cat_emission, cat_tec, map_node that have no numeric value column.
+
+        Single-column string sheets are handled by SetParsingStrategy and
+        therefore excluded here (they never reach this check first).
+        """
         try:
             rows = list(sheet.iter_rows(min_row=1, max_row=10, values_only=True))
             if len(rows) < 2:
                 return False
 
-            # Check for headers
+            # Header row must have at least one string
             headers = rows[0]
             if not headers or not any(isinstance(h, str) and h.strip() for h in headers):
                 return False
 
-            # Check for data rows with mixed types (typical of parameters)
-            data_rows = rows[1:]
-            has_mixed_data = False
-            for row in data_rows[:5]:  # Check first few rows
-                if row and len(row) > 1:
-                    has_strings = any(isinstance(cell, str) and cell.strip() for cell in row)
-                    has_numbers = any(isinstance(cell, (int, float)) and not pd.isna(cell) for cell in row)
-                    if has_strings and has_numbers:
-                        has_mixed_data = True
-                        break
+            # Inspect data rows: any row with ≥2 non-empty cells where at least
+            # one cell is a string qualifies (covers both mixed and all-string).
+            for row in rows[1:6]:
+                if not row:
+                    continue
+                non_empty = [c for c in row if c is not None and str(c).strip() != '']
+                if len(non_empty) < 2:
+                    continue
+                if any(isinstance(c, str) for c in non_empty):
+                    return True
 
-            return has_mixed_data
+            return False
 
         except Exception:
             return False

@@ -29,7 +29,8 @@ class EditHandler:
         self.get_current_scenario = get_current_scenario_callback
         self.data_display = data_display
 
-    def handle_cell_value_change(self, mode: str, row_or_year, col_or_tech, new_value, undo_manager) -> bool:
+    def handle_cell_value_change(self, mode: str, row_or_year, col_or_tech, new_value,
+                                  undo_manager, param_name: Optional[str] = None) -> bool:
         """
         Handle cell value changes from table editing.
 
@@ -39,6 +40,8 @@ class EditHandler:
             col_or_tech: Column name for raw mode, technology name for advanced mode
             new_value: New value to set
             undo_manager: Undo manager for recording operations
+            param_name: Currently displayed parameter name (preferred); falls back to
+                        _get_current_displayed_parameter() if not supplied.
 
         Returns:
             True if edit was handled successfully
@@ -48,8 +51,9 @@ class EditHandler:
         if not scenario:
             return False
 
-        # Get the currently displayed parameter
-        param_name = self._get_current_displayed_parameter()
+        # Resolve the parameter name (caller should always pass it; fallback kept for safety)
+        if not param_name:
+            param_name = self._get_current_displayed_parameter()
         if not param_name:
             return False
 
@@ -140,37 +144,42 @@ class EditHandler:
         # Identify column types
         column_info = self.data_display._identify_columns(df)
 
-        # Find the year column and technology column
-        year_col = None
+        value_col = column_info.get('value_col')
+
+        # Find the technology (pivot) column
         tech_col = None
-
-        for col in column_info['year_cols']:
-            if col in df.columns:
-                year_col = col
-                break
-
         for col in column_info['pivot_cols']:
             if col in df.columns:
                 tech_col = col
                 break
 
-        value_col = column_info.get('value_col')
-
-        if not (year_col and tech_col and value_col):
+        if not (tech_col and value_col):
             return None
-
-        # Find rows that match the year and technology (robust comparison)
-        try:
-            year_values = pd.to_numeric(df[year_col], errors='coerce')
-        except:
-            year_values = df[year_col]  # Fallback if conversion fails
 
         tech_values = df[tech_col].astype(str).str.strip()
-        mask = (year_values == year) & (tech_values == str(technology).strip())
-        matching_rows = df[mask]
 
-        if matching_rows.empty:
+        # Try every candidate year column until a matching row is found.
+        # _perform_pivot may have used a different year column than year_cols[0],
+        # so we must not hard-code the first one.
+        year_col = None
+        mask = None
+        for col in column_info['year_cols']:
+            if col not in df.columns:
+                continue
+            try:
+                year_values = pd.to_numeric(df[col], errors='coerce')
+            except Exception:
+                year_values = df[col]
+            candidate_mask = (year_values == year) & (tech_values == str(technology).strip())
+            if candidate_mask.any():
+                year_col = col
+                mask = candidate_mask
+                break
+
+        if year_col is None or mask is None or not mask.any():
             return None
+
+        matching_rows = df[mask]
 
         # Get old value and update
         old_value = matching_rows[value_col].iloc[0] if not matching_rows.empty else None
