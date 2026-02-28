@@ -1,322 +1,286 @@
 """
-Tests for Solver Manager
+Tests for SolverManager and SolverWorker.
+
+SolverManager is a plain Python class (no Qt dependency), so all detection
+and command-building tests run without a QApplication.
+
+SolverWorker tests require a running QApplication; pytest-qt provides the
+``qtbot`` fixture which arranges that automatically.
 """
 
-import pytest
 import os
 import sys
-import tempfile
-import threading
-import time
-from unittest.mock import patch, MagicMock, call
+from unittest.mock import MagicMock, patch
 
-# Add src directory to path for imports
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+import pytest
+
+# Make src importable
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from managers.solver_manager import SolverManager
 
 
-class TestSolverManager:
-    """Test cases for SolverManager"""
+# ===========================================================================
+# SolverManager — MESSAGEix environment detection
+# ===========================================================================
 
-    def test_initialization(self):
-        """Test SolverManager initialization"""
+class TestDetectMessageix:
+    """
+    detect_messageix() runs the probe in a subprocess; we mock subprocess.run
+    to control the simulated outcome without spawning a real process.
+    """
+
+    def _make_proc(self, returncode: int, stdout: str = "", stderr: str = "") -> MagicMock:
+        proc = MagicMock()
+        proc.returncode = returncode
+        proc.stdout = stdout
+        proc.stderr = stderr
+        return proc
+
+    def test_available(self):
         manager = SolverManager()
-        assert manager.current_process is None
-        assert not manager.is_running
-        assert manager.execution_thread is None
-        assert manager.output_callback is None
-        assert manager.status_callback is None
+        with patch("subprocess.run", return_value=self._make_proc(0, stdout="OK")):
+            assert manager.detect_messageix() is True
 
-    def test_set_callbacks(self):
-        """Test setting output and status callbacks"""
+    def test_unavailable_nonzero_exit(self):
         manager = SolverManager()
+        with patch("subprocess.run",
+                   return_value=self._make_proc(1, stderr="No module named 'ixmp'")):
+            assert manager.detect_messageix() is False
 
-        def output_cb(msg):
-            pass
-
-        def status_cb(status):
-            pass
-
-        manager.set_output_callback(output_cb)
-        manager.set_status_callback(status_cb)
-
-        assert manager.output_callback == output_cb
-        assert manager.status_callback == status_cb
-
-    def test_detect_messageix_environment_available(self):
-        """Test detecting message_ix environment when available"""
+    def test_unavailable_crash(self):
+        """Subprocess crash (exception from subprocess.run) → False, not a crash."""
         manager = SolverManager()
+        with patch("subprocess.run", side_effect=Exception("process crashed")):
+            assert manager.detect_messageix() is False
 
-        with patch.dict('sys.modules', {'ixmp': MagicMock(), 'message_ix': MagicMock()}):
+    def test_backward_compat_alias(self):
+        """detect_messageix_environment() must delegate to detect_messageix()."""
+        manager = SolverManager()
+        with patch.object(manager, "detect_messageix", return_value=True) as m:
             result = manager.detect_messageix_environment()
             assert result is True
+            m.assert_called_once()
 
-    def test_detect_messageix_environment_unavailable(self):
-        """Test detecting message_ix environment when unavailable"""
+
+# ===========================================================================
+# SolverManager — GAMS detection
+# ===========================================================================
+
+class TestDetectGams:
+    def test_gams_on_path(self):
         manager = SolverManager()
+        with patch("shutil.which", return_value="/usr/local/bin/gams"):
+            assert manager.detect_gams() is True
 
-        # Remove message_ix modules if they exist
-        modules_to_remove = ['ixmp', 'message_ix']
-        for mod in modules_to_remove:
-            if mod in sys.modules:
-                del sys.modules[mod]
-
-        # Mock import to raise ImportError for ixmp/message_ix only
-        with patch.dict('sys.modules', {'ixmp': None, 'message_ix': None}):
-            with patch('builtins.__import__', side_effect=ImportError("No module named 'ixmp'")):
-                result = manager.detect_messageix_environment()
-                assert result is False
-
-    def test_get_available_solvers(self):
-        """Test getting available solvers"""
+    def test_gams_not_on_path_no_env(self):
         manager = SolverManager()
-        solvers = manager.get_available_solvers()
+        with patch("shutil.which", return_value=None), \
+             patch.dict("os.environ", {}, clear=True), \
+             patch("os.path.isdir", return_value=False):  # block common-path fallback
+            assert manager.detect_gams() is False
 
-        assert isinstance(solvers, list)
-        assert len(solvers) > 0  # Should always return at least glpk
-
-        # Should include glpk as fallback
-        assert 'glpk' in solvers
-
-    def test_get_available_solvers_with_cplex(self):
-        """Test detecting CPLEX solver"""
+    def test_gams_via_gamsdir_env(self, tmp_path):
+        gams_exe = tmp_path / "gams.exe"
+        gams_exe.touch()
         manager = SolverManager()
+        with patch("shutil.which", return_value=None), \
+             patch.dict("os.environ", {"GAMSDIR": str(tmp_path)}):
+            assert manager.detect_gams() is True
 
-        with patch.dict('sys.modules', {'cplex': MagicMock()}):
+    def test_gamsdir_present_but_exe_absent(self, tmp_path):
+        manager = SolverManager()
+        with patch("shutil.which", return_value=None), \
+             patch.dict("os.environ", {"GAMSDIR": str(tmp_path)}), \
+             patch("os.path.isdir", return_value=False):  # block common-path fallback
+            assert manager.detect_gams() is False
+
+
+# ===========================================================================
+# SolverManager — solver discovery
+# ===========================================================================
+
+class TestGetAvailableSolvers:
+    def test_no_gams_returns_empty(self):
+        manager = SolverManager()
+        with patch.object(manager, "detect_gams", return_value=False):
+            assert manager.get_available_solvers() == []
+
+    def test_gams_present_always_includes_glpk(self):
+        """GLPK is bundled with every GAMS installation — always included."""
+        manager = SolverManager()
+        with patch.object(manager, "detect_gams", return_value=True), \
+             patch.dict("sys.modules", {"cplex": None, "gurobipy": None}):
             solvers = manager.get_available_solvers()
-            assert 'cplex' in solvers
+            assert "glpk" in solvers
+            assert "cplex" not in solvers
+            assert "gurobi" not in solvers
 
-    def test_get_available_solvers_with_gurobi(self):
-        """Test detecting Gurobi solver"""
+    def test_cplex_detected_when_package_importable(self):
         manager = SolverManager()
+        with patch.object(manager, "detect_gams", return_value=True), \
+             patch.object(manager, "_glpk_available_via_gams", return_value=True), \
+             patch.dict("sys.modules", {"cplex": MagicMock(), "gurobipy": None}):
+            assert "cplex" in manager.get_available_solvers()
 
-        with patch.dict('sys.modules', {'gurobipy': MagicMock()}):
-            solvers = manager.get_available_solvers()
-            assert 'gurobi' in solvers
-
-    def test_build_solver_command(self):
-        """Test building solver command"""
+    def test_gurobi_detected_when_package_importable(self):
         manager = SolverManager()
-        cmd = manager._build_solver_command('/path/to/input.xlsx', 'glpk')
+        with patch.object(manager, "detect_gams", return_value=True), \
+             patch.object(manager, "_glpk_available_via_gams", return_value=True), \
+             patch.dict("sys.modules", {"cplex": None, "gurobipy": MagicMock()}):
+            assert "gurobi" in manager.get_available_solvers()
+
+
+# ===========================================================================
+# SolverManager — command building
+# ===========================================================================
+
+class TestBuildSolverCommand:
+    def test_returns_list_with_run_messageix(self, tmp_path):
+        manager = SolverManager()
+        input_file = str(tmp_path / "model.xlsx")
+        cmd = manager.build_solver_command(input_file, "glpk", "TestModel", "base")
 
         assert isinstance(cmd, list)
-        assert len(cmd) >= 3
-        assert 'mock_solver.py' in cmd[1]
-        assert cmd[2] == '/path/to/input.xlsx'
-        assert cmd[3] == 'glpk'
+        assert cmd[0] == sys.executable
+        assert "run_messageix.py" in cmd[1]
 
-    def test_build_solver_command_with_config(self):
-        """Test building solver command with configuration"""
+    def test_all_required_flags_present(self, tmp_path):
         manager = SolverManager()
-        config = {'timeout': 300, 'threads': 4}
-        cmd = manager._build_solver_command('/path/to/input.xlsx', 'glpk', config)
+        input_file = str(tmp_path / "model.xlsx")
+        cmd = manager.build_solver_command(input_file, "cplex", "MyModel", "scenario1")
 
-        assert isinstance(cmd, list)
-        # Config is not used in current implementation, but command should still be built
-        assert 'mock_solver.py' in cmd[1]
+        assert "--input" in cmd and input_file in cmd
+        assert "--solver" in cmd and "cplex" in cmd
+        assert "--model" in cmd and "MyModel" in cmd
+        assert "--scenario" in cmd and "scenario1" in cmd
+        assert "--output-dir" in cmd
 
-    def test_run_solver_file_not_found(self):
-        """Test running solver with nonexistent file"""
+    def test_default_output_dir_is_input_dir(self, tmp_path):
         manager = SolverManager()
+        input_file = str(tmp_path / "model.xlsx")
+        cmd = manager.build_solver_command(input_file, "glpk", "M", "s")
 
-        result = manager.run_solver('/nonexistent/file.xlsx', 'glpk')
-        assert result is False
+        idx = cmd.index("--output-dir")
+        assert cmd[idx + 1] == str(tmp_path)
 
-    @patch('subprocess.Popen')
-    def test_run_solver_success(self, mock_popen):
-        """Test successful solver execution"""
+    def test_explicit_output_dir(self, tmp_path):
         manager = SolverManager()
+        input_file = str(tmp_path / "model.xlsx")
+        out_dir = str(tmp_path / "out")
+        cmd = manager.build_solver_command(input_file, "glpk", "M", "s",
+                                           output_dir=out_dir)
 
-        # Create a temp input file
-        with tempfile.NamedTemporaryFile(suffix='.xlsx', delete=False) as tmp:
-            tmp_path = tmp.name
+        idx = cmd.index("--output-dir")
+        assert cmd[idx + 1] == out_dir
 
-        # Mock the process
-        mock_process = MagicMock()
-        mock_process.poll.return_value = 0  # Success
-        mock_process.stdout.readline.return_value = ''
-        mock_process.returncode = 0
-        mock_popen.return_value = mock_process
 
-        result = manager.run_solver(tmp_path, 'glpk')
-        assert result is True
-        assert manager.is_running is True
+# ===========================================================================
+# SolverManager — create_worker
+# ===========================================================================
 
-        # Verify Popen was called
-        mock_popen.assert_called_once()
-
-        os.unlink(tmp_path)
-
-    @patch('subprocess.Popen')
-    def test_run_solver_already_running(self, mock_popen):
-        """Test running solver when already running"""
+class TestCreateWorker:
+    def test_returns_solver_worker_instance(self, qtbot):
+        """create_worker() must return a SolverWorker that is not yet running."""
+        from managers.solver_worker import SolverWorker
         manager = SolverManager()
-        manager.is_running = True
+        worker = manager.create_worker(["echo", "hello"])
+        assert isinstance(worker, SolverWorker)
+        assert not worker.isRunning()
 
-        result = manager.run_solver('/path/to/file.xlsx', 'glpk')
-        assert result is False
 
-        # Popen should not have been called
-        mock_popen.assert_not_called()
+# ===========================================================================
+# SolverWorker — subprocess integration (requires QApplication via qtbot)
+# ===========================================================================
 
-    @patch('subprocess.Popen')
-    def test_run_solver_failure(self, mock_popen):
-        """Test solver execution failure"""
-        manager = SolverManager()
+class TestSolverWorker:
+    def test_emits_output_lines_and_finished(self, qtbot):
+        """Worker streams stdout and emits finished(0, '') for a trivial cmd."""
+        from managers.solver_worker import SolverWorker
 
-        # Create a temp input file
-        with tempfile.NamedTemporaryFile(suffix='.xlsx', delete=False) as tmp:
-            tmp_path = tmp.name
+        cmd = [sys.executable, "-c",
+               "print('hello'); print('world')"]
+        worker = SolverWorker(cmd)
 
-        # Mock the process
-        mock_process = MagicMock()
-        mock_process.poll.return_value = 1  # Failure
-        mock_process.stdout.readline.return_value = ''
-        mock_process.returncode = 1
-        mock_popen.return_value = mock_process
+        lines = []
+        exit_codes = []
+        result_files = []
 
-        result = manager.run_solver(tmp_path, 'glpk')
-        assert result is True  # Started successfully, even if solver failed
+        worker.output_line.connect(lines.append)
+        worker.finished.connect(lambda code, path: (
+            exit_codes.append(code), result_files.append(path)
+        ))
 
-        os.unlink(tmp_path)
+        with qtbot.waitSignal(worker.finished, timeout=10_000):
+            worker.start()
 
-    def test_stop_solver_not_running(self):
-        """Test stopping solver when not running"""
-        manager = SolverManager()
+        assert "hello" in lines
+        assert "world" in lines
+        assert exit_codes == [0]
+        assert result_files == [""]
 
-        result = manager.stop_solver()
-        assert result is False
+    def test_propagates_nonzero_exit_code(self, qtbot):
+        """A failing subprocess must emit finished with exit_code != 0."""
+        from managers.solver_worker import SolverWorker
 
-    def test_stop_solver_running(self):
-        """Test stopping a running solver"""
-        manager = SolverManager()
-        manager.is_running = True
-        manager.current_process = MagicMock()
+        cmd = [sys.executable, "-c", "import sys; sys.exit(42)"]
+        worker = SolverWorker(cmd)
 
-        result = manager.stop_solver()
-        assert result is True
-        assert not manager.is_running
+        exit_codes = []
+        worker.finished.connect(lambda code, _: exit_codes.append(code))
 
-        # Verify terminate was called
-        manager.current_process.terminate.assert_called_once()
+        with qtbot.waitSignal(worker.finished, timeout=10_000):
+            worker.start()
 
-    def test_stop_solver_force_kill(self):
-        """Test force killing solver if terminate doesn't work"""
-        manager = SolverManager()
-        manager.is_running = True
-        mock_process = MagicMock()
-        mock_process.terminate.side_effect = Exception("Terminate failed")
-        manager.current_process = mock_process
+        assert exit_codes == [42]
 
-        result = manager.stop_solver()
-        assert result is False  # Should return False on exception
+    def test_captures_result_file_prefix_not_forwarded_to_console(self, qtbot):
+        """[RESULT_FILE] lines must be captured and not emitted as output_line."""
+        from managers.solver_worker import SolverWorker
 
-    def test_is_solver_running(self):
-        """Test checking if solver is running"""
-        manager = SolverManager()
+        result_path = "/tmp/some_results.xlsx"
+        script = (
+            f"print('before'); "
+            f"print('[RESULT_FILE] {result_path}'); "
+            f"print('after')"
+        )
+        cmd = [sys.executable, "-c", script]
+        worker = SolverWorker(cmd)
 
-        assert not manager.is_solver_running()
+        lines = []
+        result_files = []
+        worker.output_line.connect(lines.append)
+        worker.finished.connect(lambda _, path: result_files.append(path))
 
-        manager.is_running = True
-        assert manager.is_solver_running()
+        with qtbot.waitSignal(worker.finished, timeout=10_000):
+            worker.start()
 
-    def test_log_output_with_callback(self):
-        """Test logging output with callback"""
-        manager = SolverManager()
+        assert result_files == [result_path]
+        assert not any("[RESULT_FILE]" in ln for ln in lines)
+        assert "before" in lines
+        assert "after" in lines
 
-        output_calls = []
-        def output_callback(msg):
-            output_calls.append(msg)
+    def test_stop_terminates_running_process(self, qtbot):
+        """stop() must terminate a long-running subprocess without blocking."""
+        from managers.solver_worker import SolverWorker
 
-        manager.set_output_callback(output_callback)
-        manager._log_output("Test message")
+        # Subprocess prints 'started' so we know it is running, then sleeps.
+        cmd = [sys.executable, "-c",
+               "import time, sys; "
+               "print('started', flush=True); "
+               "time.sleep(60)"]
+        worker = SolverWorker(cmd)
 
-        assert len(output_calls) == 1
-        assert output_calls[0] == "Test message"
+        exit_codes = []
+        worker.finished.connect(lambda code, _: exit_codes.append(code))
 
-    def test_log_output_without_callback(self):
-        """Test logging output without callback"""
-        manager = SolverManager()
+        # Wait for first output line to guarantee subprocess is alive
+        with qtbot.waitSignal(worker.output_line, timeout=5_000):
+            worker.start()
 
-        # Should not raise exception
-        manager._log_output("Test message")
+        # stop() is non-blocking; finished arrives once the thread exits
+        with qtbot.waitSignal(worker.finished, timeout=10_000):
+            worker.stop()
 
-    def test_update_status_with_callback(self):
-        """Test updating status with callback"""
-        manager = SolverManager()
-
-        status_calls = []
-        def status_callback(status):
-            status_calls.append(status)
-
-        manager.set_status_callback(status_callback)
-        manager._update_status("Running")
-
-        assert len(status_calls) == 1
-        assert status_calls[0] == "Running"
-
-    def test_update_status_without_callback(self):
-        """Test updating status without callback"""
-        manager = SolverManager()
-
-        # Should not raise exception
-        manager._update_status("Running")
-
-    @patch('threading.Thread')
-    @patch('subprocess.Popen')
-    def test_execution_thread_creation(self, mock_popen, mock_thread):
-        """Test that execution thread is created properly"""
-        manager = SolverManager()
-
-        with tempfile.NamedTemporaryFile(suffix='.xlsx', delete=False) as tmp:
-            tmp_path = tmp.name
-
-        # Mock process and thread
-        mock_process = MagicMock()
-        mock_process.poll.return_value = 0
-        mock_popen.return_value = mock_process
-
-        mock_thread_instance = MagicMock()
-        mock_thread.return_value = mock_thread_instance
-
-        manager.run_solver(tmp_path, 'glpk')
-
-        # Verify thread was created and started
-        mock_thread.assert_called_once()
-        mock_thread_instance.start.assert_called_once()
-
-        os.unlink(tmp_path)
-
-    def test_solver_execution_with_output_reading(self):
-        """Test that solver output is read correctly"""
-        manager = SolverManager()
-
-        output_messages = []
-        def output_callback(msg):
-            output_messages.append(msg.strip())
-
-        manager.set_output_callback(output_callback)
-
-        with tempfile.NamedTemporaryFile(suffix='.xlsx', delete=False) as tmp:
-            tmp_path = tmp.name
-
-        with patch('subprocess.Popen') as mock_popen, \
-             patch('time.sleep'):
-
-            mock_process = MagicMock()
-            mock_process.poll.side_effect = [None, None, 0]  # Running, running, finished
-            mock_process.stdout.readline.side_effect = ['Line 1\n', 'Line 2\n', '']
-            mock_process.returncode = 0
-            mock_popen.return_value = mock_process
-
-            manager.run_solver(tmp_path, 'glpk')
-
-            # Give some time for the thread to execute
-            time.sleep(0.1)
-
-            # Check that output was captured
-            assert 'Line 1' in output_messages
-            assert 'Line 2' in output_messages
-
-        os.unlink(tmp_path)
+        # Terminated process exits with non-zero code
+        assert exit_codes and exit_codes[0] != 0

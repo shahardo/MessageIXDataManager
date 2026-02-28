@@ -1,349 +1,272 @@
 """
-Solver Manager - handles MESSAGEix solver execution
+Solver Manager — environment detection and command construction for
+MESSAGEix solver execution.
 
-Provides functionality to execute MESSAGEix optimization solvers with support for
-multiple solver types, real-time output monitoring, and graceful process management.
+Subprocess execution and real-time output streaming are intentionally
+*not* handled here; that responsibility belongs to SolverWorker (QThread)
+so that Qt signal-slot connections can be made in the UI layer before the
+worker thread starts.
+
+Typical call sequence in main_window.py::
+
+    worker = self.solver_manager.create_worker(
+        self.solver_manager.build_solver_command(input_file, solver, model, scen)
+    )
+    worker.output_line.connect(self._append_to_console)
+    worker.status_changed.connect(self._update_status_from_solver)
+    worker.finished.connect(self._on_solver_finished)
+    worker.start()
 """
 
 import os
-import sys
+import shutil
 import subprocess
-import threading
-import time
-from typing import Optional, Callable, Dict, Any, List
+import sys
+from typing import Any, Dict, List, Optional
 
 from .logging_manager import logging_manager
+from .solver_worker import SolverWorker
 
 
 class SolverManager:
     """
-    SolverManager class for managing MESSAGEix solver execution.
+    Handles MESSAGEix environment detection, solver discovery, and command
+    construction.
 
-    Handles the execution of MESSAGEix optimization solvers, providing support for
-    different solver types (CPLEX, Gurobi, GLPK), real-time output monitoring,
-    and proper process management with logging capabilities.
-
-    Attributes:
-        current_process: Currently running solver process, if any
-        is_running: Boolean indicating if a solver is currently executing
-        execution_thread: Background thread for solver execution
-        output_callback: Callback function for console output
-        status_callback: Callback function for status updates
+    Does not own any subprocess state.  SolverWorker instances are created
+    here and owned by the caller (main_window.py).
     """
 
-    def __init__(self) -> None:
+    # Default LP-solver options forwarded to run_messageix.py for each
+    # solver type.  These are the standard MESSAGEix/GAMS CPLEX defaults.
+    SOLVER_OPTIONS: Dict[str, Dict[str, Any]] = {
+        "glpk":   {},
+        "cplex":  {"advind": 0, "epopt": 1e-6, "lpmethod": 4, "threads": 4},
+        "gurobi": {"method": 2},
+    }
+
+    # ------------------------------------------------------------------
+    # Environment detection
+    # ------------------------------------------------------------------
+
+    def detect_messageix(self) -> bool:
         """
-        Initialize the SolverManager.
+        Return True if both ixmp and message_ix are importable.
 
-        Sets up the manager with no active processes and initializes callback handlers.
+        The check is intentionally run in a *subprocess* so that a hard
+        crash inside ixmp (e.g. JPype/JVM segfault when Java is missing or
+        a DLL cannot be loaded on Windows) does not kill the main process.
         """
-        self.current_process: Optional[subprocess.Popen[str]] = None
-        self.is_running: bool = False
-        self.execution_thread: Optional[threading.Thread] = None
-        self.output_callback: Optional[Callable[[str], None]] = None
-        self.status_callback: Optional[Callable[[str], None]] = None
-
-    def set_output_callback(self, callback: Callable[[str], None]) -> None:
-        """
-        Set callback for console output.
-
-        Configures a callback function that will be called with solver output messages
-        for real-time display in the UI.
-
-        Args:
-            callback: Function that accepts a string message parameter
-        """
-        self.output_callback = callback
-
-    def set_status_callback(self, callback: Callable[[str], None]) -> None:
-        """
-        Set callback for status updates.
-
-        Configures a callback function that will be called with status update messages
-        to inform the UI about solver execution progress.
-
-        Args:
-            callback: Function that accepts a string status parameter
-        """
-        self.status_callback = callback
+        print("DEBUG detect_messageix: probing via subprocess...", flush=True)
+        try:
+            result = subprocess.run(
+                [sys.executable, "-c",
+                 "import ixmp; import message_ix; print('OK')"],
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            stdout = result.stdout.strip()
+            stderr = result.stderr.strip()
+            rc = result.returncode
+            print(f"DEBUG detect_messageix: rc={rc} stdout={stdout!r} stderr={stderr[:200]!r}",
+                  flush=True)
+            return rc == 0 and stdout == "OK"
+        except Exception as exc:
+            print(f"DEBUG detect_messageix: probe subprocess error — {exc!r}", flush=True)
+            return False
 
     def detect_messageix_environment(self) -> bool:
+        """Alias of detect_messageix() kept for backward compatibility."""
+        return self.detect_messageix()
+
+    def detect_gams(self) -> bool:
         """
-        Detect if MESSAGEix environment is available.
+        Return True if a GAMS executable can be found.
 
-        Checks for the presence of required MESSAGEix modules ('ixmp' and 'message_ix')
-        to determine if the MESSAGEix framework is properly installed.
-
-        Returns:
-            True if MESSAGEix environment is available, False otherwise
-
-        Example:
-            >>> manager = SolverManager()
-            >>> available = manager.detect_messageix_environment()
-            >>> if available:
-            ...     print("MESSAGEix is available")
-            ... else:
-            ...     print("MESSAGEix is not available")
+        Checks (in order):
+        1. ``gams`` on the system PATH (``shutil.which``).
+        2. ``GAMSDIR`` environment variable.
+        3. Common Windows installation paths (C:\\GAMS, C:\\bin\\GAMS).
         """
-        try:
-            import ixmp  # noqa: F401
-            import message_ix  # noqa: F401
-            return True
-        except ImportError:
+        return self._locate_gams_dir() is not None
+
+    def _locate_gams_dir(self) -> Optional[str]:
+        """Return the GAMS system directory (containing gams.exe), or None."""
+        # 1. On PATH
+        on_path = shutil.which("gams")
+        print(f"DEBUG _locate_gams_dir: shutil.which('gams')={on_path!r}", flush=True)
+        if on_path:
+            return os.path.dirname(os.path.abspath(on_path))
+
+        # 2. GAMSDIR env var
+        gams_dir = os.environ.get("GAMSDIR", "")
+        print(f"DEBUG _locate_gams_dir: GAMSDIR env={gams_dir!r}", flush=True)
+        if gams_dir:
+            for exe_name in ("gams.exe", "gams"):
+                if os.path.isfile(os.path.join(gams_dir, exe_name)):
+                    return gams_dir
+
+        # 3. Common Windows installation paths
+        for base in (r"C:\GAMS", r"C:\bin\GAMS"):
+            if os.path.isdir(base):
+                for entry in sorted(os.listdir(base), reverse=True):
+                    candidate = os.path.join(base, entry)
+                    if os.path.isfile(os.path.join(candidate, "gams.exe")):
+                        print(f"DEBUG _locate_gams_dir: found at {candidate!r}", flush=True)
+                        return candidate
+
+        print("DEBUG _locate_gams_dir: GAMS not found", flush=True)
+        return None
+
+    def _locate_gams(self) -> Optional[str]:
+        """Return the full path to the GAMS executable, or None."""
+        gams_dir = self._locate_gams_dir()
+        if gams_dir:
+            for exe in ("gams.exe", "gams"):
+                exe_path = os.path.join(gams_dir, exe)
+                if os.path.isfile(exe_path):
+                    return exe_path
+        return None
+
+    def _glpk_available_via_gams(self) -> bool:
+        """
+        Return True if the GAMS installation includes the GLPK solver.
+
+        GLPK is bundled with every GAMS distribution, so if GAMS is present
+        we can assume GLPK is available.  If the GAMS interrogation itself
+        fails for any reason (e.g. licence issues at startup) we fall back to
+        True so the user can at least attempt the solve.
+        """
+        gams_exe = self._locate_gams()
+        print(f"DEBUG _glpk_available_via_gams: gams_exe={gams_exe!r}", flush=True)
+        if not gams_exe:
             return False
+
+        try:
+            result = subprocess.run(
+                [gams_exe, "?"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            combined = result.stdout + result.stderr
+            print(f"DEBUG _glpk_available_via_gams: gams '?' output (first 300 chars): "
+                  f"{combined[:300]!r}", flush=True)
+            found = "GLPK" in combined or "glpk" in combined.lower()
+            print(f"DEBUG _glpk_available_via_gams: GLPK found={found}", flush=True)
+            return found
+        except Exception as exc:
+            # Cannot query GAMS — assume GLPK ships with it (safe default)
+            print(f"DEBUG _glpk_available_via_gams: subprocess error {exc!r} — defaulting to True",
+                  flush=True)
+            return True
+
+    # ------------------------------------------------------------------
+    # Solver discovery
+    # ------------------------------------------------------------------
 
     def get_available_solvers(self) -> List[str]:
         """
-        Get list of available solvers.
+        Return the list of LP solvers available through the installed GAMS.
 
-        Detects which optimization solvers are installed and available for use.
-        Checks for common solvers like CPLEX, Gurobi, and GLPK.
+        Returns an empty list when GAMS is not found on the system.
 
-        Returns:
-            List of available solver names (strings)
+        Detection logic:
+        - **GLPK**: bundled with *all* GAMS distributions unconditionally.
+          ``gams ?`` does not reliably list solvers across GAMS versions, so
+          we simply include GLPK whenever GAMS itself is found.
+        - **CPLEX**: included when the ``cplex`` Python package is importable
+          (used as a proxy for a valid CPLEX licence).
+        - **Gurobi**: included when the ``gurobipy`` Python package is
+          importable.
         """
-        # This is a simplified check - in reality would detect installed solvers
-        solvers: List[str] = []
+        if not self.detect_gams():
+            print("DEBUG get_available_solvers: GAMS not found — returning []", flush=True)
+            return []
 
-        # Check for common solvers (simplified)
+        # GLPK ships with every GAMS installation — no further probe needed
+        solvers: List[str] = ["glpk"]
+        print(f"DEBUG get_available_solvers: GAMS found — GLPK included by default", flush=True)
+
         try:
             import cplex  # type: ignore # noqa: F401
             solvers.append("cplex")
+            print("DEBUG get_available_solvers: cplex package found", flush=True)
         except ImportError:
             pass
 
         try:
             import gurobipy  # type: ignore # noqa: F401
             solvers.append("gurobi")
+            print("DEBUG get_available_solvers: gurobipy package found", flush=True)
         except ImportError:
             pass
 
-        # GLPK is usually available through pyomo or other interfaces
-        solvers.append("glpk")  # Assume available
+        print(f"DEBUG get_available_solvers: returning {solvers}", flush=True)
+        return solvers
 
-        return solvers if solvers else ["glpk"]  # Default fallback
+    # ------------------------------------------------------------------
+    # Command construction
+    # ------------------------------------------------------------------
 
-    def run_solver(
-        self,
-        input_file_path: str,
-        solver_name: str = "glpk",
-        config: Optional[Dict[str, Any]] = None
-    ) -> bool:
-        """
-        Execute MESSAGEix solver.
-
-        Starts the specified optimization solver on the given input file in a
-        background thread, providing real-time output monitoring and status updates.
-
-        Args:
-            input_file_path: Path to the MESSAGEix input Excel file
-            solver_name: Name of the solver to use (e.g., "glpk", "cplex", "gurobi")
-            config: Optional dictionary of additional solver configuration parameters
-
-        Returns:
-            True if solver execution was started successfully, False otherwise
-
-        Example:
-            >>> manager = SolverManager()
-            >>> success = manager.run_solver("model.xlsx", "glpk")
-            >>> if success:
-            ...     print("Solver started successfully")
-        """
-        if self.is_running:
-            self._log_output("Solver is already running")
-            return False
-
-        if not os.path.exists(input_file_path):
-            self._log_output(f"Input file not found: {input_file_path}")
-            return False
-
-        # Basic command construction (simplified)
-        # In reality, this would construct proper message_ix commands
-        cmd = self._build_solver_command(input_file_path, solver_name, config)
-
-        self._log_output(f"Starting solver with command: {' '.join(cmd)}")
-        self._update_status("Running solver...")
-
-        # Log solver start
-        logging_manager.log_solver_execution(' '.join(cmd), 'started')
-
-        # Start execution in background thread
-        self.execution_thread = threading.Thread(
-            target=self._execute_solver,
-            args=(cmd,),
-            daemon=True
-        )
-        self.execution_thread.start()
-
-        return True
-
-    def _build_solver_command(
+    def build_solver_command(
         self,
         input_file: str,
         solver: str,
-        config: Optional[Dict[str, Any]] = None
+        model_name: str,
+        scenario_name: str,
+        output_dir: Optional[str] = None,
     ) -> List[str]:
         """
-        Build the solver command (simplified placeholder).
+        Build the command list that will be passed to SolverWorker.
 
-        Constructs the command line arguments needed to execute the solver.
-        This is a placeholder implementation - real implementation would construct
-        proper MESSAGEix command based on the framework's API.
+        The command invokes run_messageix.py as a subprocess using the same
+        Python interpreter that is running the application.
 
         Args:
-            input_file: Path to the input file
-            solver: Name of the solver to use
-            config: Optional solver configuration
+            input_file:     Path to the MESSAGEix input Excel file.
+            solver:         LP solver name ('glpk', 'cplex', 'gurobi').
+            model_name:     MESSAGEix model name.
+            scenario_name:  MESSAGEix scenario name.
+            output_dir:     Directory in which to write the results Excel file.
+                            Defaults to the directory containing input_file.
 
         Returns:
-            List of command line arguments
+            List of strings suitable for subprocess.Popen.
         """
-        # This is a placeholder - real implementation would construct
-        # proper message_ix command based on the framework's API
+        if output_dir is None:
+            output_dir = os.path.dirname(os.path.abspath(input_file))
 
-        # For now, simulate with a simple Python script that mimics solver output
-        script_path = os.path.join(os.path.dirname(__file__), "mock_solver.py")
+        script_path = os.path.join(os.path.dirname(__file__), "run_messageix.py")
 
-        return [sys.executable, script_path, input_file, solver]
+        cmd = [
+            sys.executable, script_path,
+            "--input",    input_file,
+            "--solver",   solver,
+            "--model",    model_name,
+            "--scenario", scenario_name,
+            "--output-dir", output_dir,
+        ]
 
-    def _execute_solver(self, cmd: List[str]) -> None:
+        logging_manager.log_solver_execution(" ".join(cmd), "prepared")
+        return cmd
+
+    # ------------------------------------------------------------------
+    # Worker lifecycle helpers
+    # ------------------------------------------------------------------
+
+    def create_worker(self, cmd: List[str]) -> SolverWorker:
         """
-        Execute solver in subprocess with real-time output.
+        Create a SolverWorker for the given command.
 
-        Runs the solver command in a subprocess, monitoring output in real-time
-        and providing status updates through callbacks.
+        The caller must connect the worker's signals before calling
+        ``worker.start()``.
 
         Args:
-            cmd: List of command line arguments to execute
-        """
-        self.is_running = True
-
-        try:
-            # Start subprocess
-            self.current_process = subprocess.Popen(
-                cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-                bufsize=1,
-                universal_newlines=True
-            )
-
-            # Read output in real-time
-            while self.current_process.poll() is None:
-                if self.current_process.stdout:
-                    line = self.current_process.stdout.readline()
-                    if line:
-                        self._log_output(line.strip())
-
-                time.sleep(0.1)  # Small delay to prevent busy waiting
-
-            # Read any remaining output
-            if self.current_process.stdout:
-                remaining = self.current_process.stdout.read()
-                if remaining:
-                    for line in remaining.splitlines():
-                        self._log_output(line.strip())
-
-            # Check exit code
-            exit_code = self.current_process.returncode
-            if exit_code == 0:
-                self._log_output("Solver completed successfully")
-                self._update_status("Solver completed")
-                logging_manager.log_solver_execution(' '.join(cmd), 'completed')
-            else:
-                self._log_output(f"Solver failed with exit code: {exit_code}")
-                self._update_status("Solver failed")
-                logging_manager.log_solver_execution(' '.join(cmd), 'failed')
-
-        except Exception as e:
-            self._log_output(f"Solver execution error: {str(e)}")
-            self._update_status("Solver error")
-
-        finally:
-            self.is_running = False
-            self.current_process = None
-
-    def stop_solver(self) -> bool:
-        """
-        Stop the currently running solver.
-
-        Attempts to gracefully terminate the running solver process. If graceful
-        termination fails within 5 seconds, forces termination.
+            cmd: Command list as returned by build_solver_command().
 
         Returns:
-            True if solver was successfully stopped, False otherwise
-
-        Example:
-            >>> manager = SolverManager()
-            >>> # ... start solver ...
-            >>> stopped = manager.stop_solver()
-            >>> print(f"Solver stopped: {stopped}")
+            A SolverWorker instance that has not yet been started.
         """
-        if not self.is_running or not self.current_process:
-            return False
-
-        try:
-            self._log_output("Stopping solver...")
-            self._update_status("Stopping solver...")
-
-            # Try graceful termination first
-            self.current_process.terminate()
-
-            # Wait a bit for graceful shutdown
-            try:
-                self.current_process.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                # Force kill if graceful termination failed
-                self.current_process.kill()
-                self.current_process.wait()
-
-            self._log_output("Solver stopped")
-            self._update_status("Solver stopped")
-            self.is_running = False
-            return True
-
-        except Exception as e:
-            self._log_output(f"Error stopping solver: {str(e)}")
-            return False
-
-    def is_solver_running(self) -> bool:
-        """
-        Check if solver is currently running.
-
-        Returns:
-            True if a solver process is currently executing, False otherwise
-
-        Example:
-            >>> manager = SolverManager()
-            >>> is_running = manager.is_solver_running()
-            >>> print(f"Solver running: {is_running}")
-        """
-        return self.is_running
-
-    def _log_output(self, message: str) -> None:
-        """
-        Log output message.
-
-        Sends the message to the configured output callback, or prints to console
-        if no callback is configured.
-
-        Args:
-            message: The message to log
-        """
-        if self.output_callback:
-            self.output_callback(message)
-        else:
-            print(message)  # Fallback to console
-
-    def _update_status(self, status: str) -> None:
-        """
-        Update status.
-
-        Sends the status message to the configured status callback if available.
-
-        Args:
-            status: The status message to send
-        """
-        if self.status_callback:
-            self.status_callback(status)
+        return SolverWorker(cmd)

@@ -7,9 +7,9 @@ MESSAGEix input files and results.
 """
 
 from PyQt5.QtWidgets import (
-    QMainWindow, QSplitter, QFileDialog, QMessageBox, QApplication
+    QMainWindow, QSplitter, QFileDialog, QMessageBox, QApplication, QInputDialog
 )
-from PyQt5.QtCore import QSettings, QPoint
+from PyQt5.QtCore import QSettings, QPoint, Qt
 from PyQt5 import uic
 import os
 import re
@@ -30,6 +30,7 @@ from .controllers.edit_handler import EditHandler
 from managers.file_handlers import InputFileHandler, ResultsFileHandler, AutoLoadHandler
 from managers.input_manager import InputManager
 from managers.solver_manager import SolverManager
+from managers.solver_worker import SolverWorker
 from managers.results_analyzer import ResultsAnalyzer
 from managers.data_export_manager import DataExportManager
 from managers.data_file_manager import DataFileManager
@@ -167,6 +168,9 @@ class MainWindow(QMainWindow):
         self.selected_input_file: Optional[str] = None
         self.selected_results_file: Optional[str] = None
         self.selected_scenario: Optional[Scenario] = None
+
+        # Active solver worker (QThread); None when no solve is in progress
+        self._solver_worker: Optional[SolverWorker] = None
 
         # Remember last selected parameters for each file type
         self.last_selected_input_parameter: Optional[str] = None
@@ -353,9 +357,8 @@ class MainWindow(QMainWindow):
         self.actionSave.triggered.connect(self._save_file)
         self.actionSave_As.triggered.connect(self._save_file_as)
 
-        # Solver manager signals
-        self.solver_manager.set_output_callback(self._append_to_console)
-        self.solver_manager.set_status_callback(self._update_status_from_solver)
+        # Solver signals are connected to SolverWorker instances at runtime
+        # in _run_solver() — no static wiring needed here.
 
 
 
@@ -1022,7 +1025,7 @@ class MainWindow(QMainWindow):
                 if chart_df is not None:
                     self.chart_widget.update_chart(chart_df, parameter.name, self.current_displayed_is_results)
 
-        except Exception as e:
+        except Exception:
             import traceback
             traceback.print_exc()
 
@@ -1377,55 +1380,172 @@ class MainWindow(QMainWindow):
         return scenario
 
     def _run_solver(self):
-        """Handle running the solver"""
-        if self.solver_manager.is_solver_running():
+        """Handle running the solver."""
+        print("DEBUG _run_solver: entered", flush=True)
+
+        # Guard: only one solve at a time
+        if self._solver_worker is not None and self._solver_worker.isRunning():
             self._append_to_console("Solver is already running")
+            print("DEBUG _run_solver: already running — abort", flush=True)
             return
 
-        # Check if we have an input file loaded
-        if not self.input_manager.get_current_scenario():
-            QMessageBox.warning(self, "No Input File",
-                              "Please load an input Excel file first.")
+        # Show status immediately so the user knows something is happening.
+        self.statusbar.showMessage("Checking solver environment...")
+        QApplication.processEvents()
+
+        # Use the currently selected scenario's input file
+        scenario = self.selected_scenario
+        print(f"DEBUG _run_solver: selected_scenario={scenario!r}", flush=True)
+        if scenario is None or not scenario.input_file:
+            self.statusbar.clearMessage()
+            QMessageBox.warning(
+                self, "No Scenario Selected",
+                "Please select a scenario with a loaded input file first."
+            )
+            print("DEBUG _run_solver: no scenario/input_file — abort", flush=True)
             return
 
-        input_paths = self.input_manager.get_loaded_file_paths()
-        if not input_paths:
-            QMessageBox.warning(self, "No Input File",
-                              "Please load an input Excel file first.")
+        input_path = scenario.input_file
+        print(f"DEBUG _run_solver: input_path={input_path!r}", flush=True)
+        if not os.path.isfile(input_path):
+            self.statusbar.clearMessage()
+            QMessageBox.warning(
+                self, "Input File Missing",
+                f"Input file not found:\n{input_path}"
+            )
+            print("DEBUG _run_solver: input file missing — abort", flush=True)
             return
 
-        # Use the last loaded input file for solver
-        input_path = input_paths[-1]
+        # Check ixmp / message_ix availability
+        print("DEBUG _run_solver: checking detect_messageix...", flush=True)
+        try:
+            has_messageix = self.solver_manager.detect_messageix()
+        except Exception as exc:
+            print(f"DEBUG _run_solver: detect_messageix raised {exc!r}", flush=True)
+            has_messageix = False
+        print(f"DEBUG _run_solver: has_messageix={has_messageix}", flush=True)
+        if not has_messageix:
+            self.statusbar.clearMessage()
+            QMessageBox.critical(
+                self, "MESSAGEix Not Found",
+                "The 'ixmp' and 'message_ix' Python packages are required "
+                "to run the solver.\n\nInstall with:\n  pip install message-ix"
+            )
+            return
 
-        # Get available solvers
-        solvers = self.solver_manager.get_available_solvers()
+        # Check GAMS availability
+        print("DEBUG _run_solver: checking detect_gams...", flush=True)
+        try:
+            has_gams = self.solver_manager.detect_gams()
+        except Exception as exc:
+            print(f"DEBUG _run_solver: detect_gams raised {exc!r}", flush=True)
+            has_gams = False
+        print(f"DEBUG _run_solver: has_gams={has_gams}", flush=True)
+        if not has_gams:
+            self.statusbar.clearMessage()
+            QMessageBox.critical(
+                self, "GAMS Not Found",
+                "GAMS executable not found on the system PATH.\n\n"
+                "Install GAMS and make sure it is accessible, or set the "
+                "GAMSDIR environment variable."
+            )
+            return
+
+        # Solver selection dialog
+        print("DEBUG _run_solver: calling get_available_solvers...", flush=True)
+        try:
+            solvers = self.solver_manager.get_available_solvers()
+        except Exception as exc:
+            print(f"DEBUG _run_solver: get_available_solvers raised {exc!r}", flush=True)
+            solvers = []
+        print(f"DEBUG _run_solver: solvers={solvers}", flush=True)
         if not solvers:
-            QMessageBox.warning(self, "No Solvers Available",
-                              "No compatible solvers found in the environment.")
+            self.statusbar.clearMessage()
+            QMessageBox.warning(
+                self, "No Solvers Available",
+                "No compatible solvers were found in the GAMS installation.\n"
+                "Ensure GLPK (bundled with GAMS) or a licensed solver is available."
+            )
             return
 
-        # Use first available solver (could add solver selection dialog later)
-        solver_name = solvers[0]
+        self.statusbar.showMessage("Select a solver to begin...")
+        solver_name, ok = QInputDialog.getItem(
+            self, "Select Solver", "LP Solver:", solvers, 0, False
+        )
+        print(f"DEBUG _run_solver: solver dialog result ok={ok} solver_name={solver_name!r}", flush=True)
+        if not ok:
+            self.statusbar.clearMessage()
+            return
 
-        self._append_to_console(f"Starting solver with input: {input_path}")
-        self._append_to_console(f"Using solver: {solver_name}")
+        # User confirmed — show wait cursor and update status immediately.
+        QApplication.setOverrideCursor(Qt.WaitCursor)  # type: ignore[attr-defined]
+        self.statusbar.showMessage("Solver running...")
+        self._append_to_console("=" * 60)
+        self._append_to_console(f"Starting MESSAGEix solver")
+        self._append_to_console(f"  Scenario : {scenario.name}")
+        self._append_to_console(f"  Input    : {input_path}")
+        self._append_to_console(f"  Solver   : {solver_name}")
+        self._append_to_console("=" * 60)
+        QApplication.processEvents()  # flush UI updates before the thread starts
 
-        success = self.solver_manager.run_solver(input_path, solver_name)
-        if not success:
-            QMessageBox.critical(self, "Solver Error",
-                               "Failed to start solver. Check console for details.")
+        print("DEBUG _run_solver: building solver command...", flush=True)
+        try:
+            cmd = self.solver_manager.build_solver_command(
+                input_file=input_path,
+                solver=solver_name,
+                model_name=scenario.name,
+                scenario_name="base",
+            )
+        except Exception as exc:
+            print(f"DEBUG _run_solver: build_solver_command raised {exc!r}", flush=True)
+            self._append_to_console(f"ERROR building solver command: {exc}")
+            QApplication.restoreOverrideCursor()
+            self.statusbar.showMessage("Solver setup failed.")
+            return
+        print(f"DEBUG _run_solver: cmd={cmd}", flush=True)
+        self._append_to_console(f"  Command  : {' '.join(cmd)}")
+
+        print("DEBUG _run_solver: creating worker and connecting signals...", flush=True)
+        try:
+            self._solver_worker = self.solver_manager.create_worker(cmd)
+            self._solver_worker.output_line.connect(self._append_to_console)
+            self._solver_worker.status_changed.connect(self._update_status_from_solver)
+            self._solver_worker.finished.connect(self._on_solver_finished)
+        except Exception as exc:
+            print(f"DEBUG _run_solver: worker setup raised {exc!r}", flush=True)
+            self._append_to_console(f"ERROR setting up solver worker: {exc}")
+            QApplication.restoreOverrideCursor()
+            self.statusbar.showMessage("Solver setup failed.")
+            return
+        print("DEBUG _run_solver: calling worker.start()", flush=True)
+        self._solver_worker.start()
+        print("DEBUG _run_solver: worker.start() returned, isRunning=" +
+              str(self._solver_worker.isRunning()), flush=True)
 
     def _stop_solver(self):
-        """Handle stopping the solver"""
-        if self.solver_manager.is_solver_running():
-            success = self.solver_manager.stop_solver()
-            if success:
-                self._append_to_console("Solver stop requested")
-            else:
-                QMessageBox.warning(self, "Stop Failed",
-                                  "Failed to stop solver gracefully.")
+        """Handle stopping the solver."""
+        if self._solver_worker is not None and self._solver_worker.isRunning():
+            self._solver_worker.stop()
+            self._append_to_console("Solver stop requested")
         else:
             self._append_to_console("No solver is currently running")
+        QApplication.restoreOverrideCursor()
+
+    def _on_solver_finished(self, exit_code: int, result_file: str):
+        """Handle solver completion; auto-load results file when available."""
+        QApplication.restoreOverrideCursor()
+        print(f"DEBUG _on_solver_finished: exit_code={exit_code} result_file={result_file!r}", flush=True)
+        self._append_to_console("=" * 60)
+        if exit_code == 0:
+            self._append_to_console("Solver finished successfully.")
+            if result_file:
+                self._append_to_console(f"Loading results: {result_file}")
+                self.results_file_handler.load_files(
+                    [result_file], self.update_progress, self._append_to_console
+                )
+        else:
+            self._append_to_console(f"Solver failed (exit code {exit_code}).")
+        self._append_to_console("=" * 60)
 
     def _restore_normal_display(self):
         """Restore the normal data display (table and chart)"""
@@ -1608,8 +1728,11 @@ class MainWindow(QMainWindow):
 
     # Console methods
     def _append_to_console(self, message: str):
-        """Append message to console"""
+        """Append message to console and scroll to the latest line."""
         self.console.append(message)
+        self.console.verticalScrollBar().setValue(
+            self.console.verticalScrollBar().maximum()
+        )
 
     def _update_status_from_solver(self, status: str):
         """Update status bar from solver manager"""
