@@ -108,6 +108,61 @@ def generate_legend_tooltip_script() -> str:
     </script>
     """
 
+# ---------------------------------------------------------------------------
+# Canonical item-type registry extracted from message_ix.MESSAGE.items
+# (ixmp.ItemType.SET / .PAR).  Used by the Excel parser to correctly route
+# sheets to SetParsingStrategy vs ParameterParsingStrategy without importing
+# message_ix at parse time (which can crash due to JVM / JPype init).
+# ---------------------------------------------------------------------------
+
+MESSAGE_IX_SET_NAMES: frozenset = frozenset({
+    'addon', 'balance_equality', 'cat_addon', 'cat_emission', 'cat_node',
+    'cat_relation', 'cat_tec', 'cat_year', 'commodity', 'emission', 'grade',
+    'is_capacity_factor', 'land_scenario', 'land_type', 'level',
+    'level_renewable', 'level_resource', 'level_stocks', 'level_storage',
+    'lvl_spatial', 'lvl_temporal', 'map_node', 'map_shares_commodity_share',
+    'map_shares_commodity_total', 'map_spatial_hierarchy', 'map_tec_addon',
+    'map_tec_storage', 'map_temporal_hierarchy', 'map_time', 'mode', 'node',
+    'rating', 'relation', 'shares', 'storage_tec', 'technology', 'time',
+    'time_relative', 'type_addon', 'type_emission', 'type_node',
+    'type_relation', 'type_tec', 'type_tec_land', 'type_year', 'year',
+})
+
+MESSAGE_IX_PAR_NAMES: frozenset = frozenset({
+    'abs_cost_activity_soft_lo', 'abs_cost_activity_soft_up',
+    'abs_cost_new_capacity_soft_lo', 'abs_cost_new_capacity_soft_up',
+    'addon_conversion', 'addon_lo', 'addon_up', 'bound_activity_lo',
+    'bound_activity_up', 'bound_emission', 'bound_extraction_up',
+    'bound_new_capacity_lo', 'bound_new_capacity_up', 'bound_total_capacity_lo',
+    'bound_total_capacity_up', 'capacity_factor', 'commodity_stock',
+    'construction_time', 'demand', 'duration_period', 'duration_time',
+    'dynamic_land_lo', 'dynamic_land_up', 'emission_factor', 'emission_scaling',
+    'fix_cost', 'fixed_activity', 'fixed_capacity', 'fixed_extraction',
+    'fixed_land', 'fixed_new_capacity', 'fixed_stock', 'flexibility_factor',
+    'growth_activity_lo', 'growth_activity_up', 'growth_land_lo',
+    'growth_land_scen_lo', 'growth_land_scen_up', 'growth_land_up',
+    'growth_new_capacity_lo', 'growth_new_capacity_up', 'historical_activity',
+    'historical_emission', 'historical_extraction', 'historical_gdp',
+    'historical_land', 'historical_new_capacity', 'initial_activity_lo',
+    'initial_activity_up', 'initial_land_lo', 'initial_land_scen_lo',
+    'initial_land_scen_up', 'initial_land_up', 'initial_new_capacity_lo',
+    'initial_new_capacity_up', 'input', 'interestrate', 'inv_cost',
+    'land_cost', 'land_emission', 'land_input', 'land_output', 'land_use',
+    'level_cost_activity_soft_lo', 'level_cost_activity_soft_up',
+    'level_cost_new_capacity_soft_lo', 'level_cost_new_capacity_soft_up',
+    'min_utilization_factor', 'operation_factor', 'output', 'peak_load_factor',
+    'rating_bin', 'ref_activity', 'ref_extraction', 'ref_new_capacity',
+    'ref_relation', 'relation_activity', 'relation_cost', 'relation_lower',
+    'relation_new_capacity', 'relation_total_capacity', 'relation_upper',
+    'reliability_factor', 'renewable_capacity_factor', 'renewable_potential',
+    'resource_cost', 'resource_remaining', 'resource_volume', 'share_commodity_lo',
+    'share_commodity_up', 'share_mode_lo', 'share_mode_up', 'soft_activity_lo',
+    'soft_activity_up', 'soft_new_capacity_lo', 'soft_new_capacity_up',
+    'storage_initial', 'storage_self_discharge', 'subsidy', 'tax',
+    'tax_emission', 'technical_lifetime', 'time_order', 'var_cost',
+})
+
+
 MESSAGE_IX_PARAMETERS = {
     # 1. Core Technology Input–Output Parameters
     "input": {

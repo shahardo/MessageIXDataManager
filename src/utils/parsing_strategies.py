@@ -9,6 +9,7 @@ import logging
 import os
 
 from core.data_models import ScenarioData
+from core.message_ix_schema import MESSAGE_IX_SET_NAMES, MESSAGE_IX_PAR_NAMES
 from utils.parameter_factory import parameter_factory_registry
 from utils.error_handler import ErrorHandler, SafeOperation
 
@@ -32,6 +33,15 @@ class ParsingStrategy(ABC):
         pass
 
 
+def _get_ix_type_names() -> tuple[frozenset, frozenset]:
+    """Return (set_names, par_names) from the static MESSAGEix schema.
+
+    Uses the canonical names extracted from message_ix.MESSAGE.items and
+    stored in message_ix_schema.py — no runtime import of message_ix needed.
+    """
+    return MESSAGE_IX_SET_NAMES, MESSAGE_IX_PAR_NAMES
+
+
 class SetParsingStrategy(ParsingStrategy):
     """Strategy for parsing set sheets"""
 
@@ -41,22 +51,34 @@ class SetParsingStrategy(ParsingStrategy):
         with SafeOperation(f"parsing set sheet: {sheet_name}", self.error_handler, self.logger):
             if sheet_name.lower() in ['sets', 'set']:
                 self._parse_combined_sets_sheet(sheet, scenario)
+            elif self._is_mapping_set_sheet(sheet):
+                self._parse_mapping_set_sheet(sheet, sheet_name, scenario)
             else:
                 self._parse_individual_set_sheet(sheet, sheet_name, scenario)
 
     def can_parse_sheet(self, sheet: Any, sheet_name: str) -> bool:
         """Check if this is a set sheet.
 
-        Recognises:
-          - Combined set sheets named "Sets" / "Set"
-          - Individual set sheets: any single-column sheet whose data rows
-            contain only string (non-numeric) values.  This handles all
-            MESSAGEix set names without a hardcoded list.
+        Priority order:
+          1. Combined set sheets named "Sets" / "Set"
+          2. Name is in message_ix.MESSAGE.items as a SET (canonical check)
+          3. Single-column all-string sheet heuristic
+          4. Multi-column all-string sheet heuristic (mapping sets when
+             message_ix is unavailable)
         """
         if sheet_name.lower() in ['sets', 'set']:
             return True
 
-        return self._is_individual_set_sheet(sheet)
+        # Canonical check via message_ix item registry (preferred)
+        ix_sets, _ = _get_ix_type_names()
+        if ix_sets and sheet_name in ix_sets:
+            return True
+
+        if self._is_individual_set_sheet(sheet):
+            return True
+
+        # Heuristic fallback for mapping sets when message_ix is not installed
+        return self._is_mapping_set_sheet(sheet)
 
     def _is_individual_set_sheet(self, sheet: Any) -> bool:
         """Return True when the sheet looks like a single-column string set.
@@ -84,6 +106,72 @@ class SetParsingStrategy(ParsingStrategy):
             )
         except Exception:
             return False
+
+    def _is_mapping_set_sheet(self, sheet: Any) -> bool:
+        """Return True for multi-column all-string sheets (MESSAGEix mapping sets).
+
+        These are relational sets like balance_equality(commodity, level),
+        cat_emission(type_emission, emission), etc.  They always have:
+          - ≥2 string header columns
+          - ≥1 data row with ≥2 non-empty cells
+          - NO numeric values in any data cell
+        Parameter sheets always contain at least one numeric value column,
+        so they will not match this check.
+        """
+        try:
+            rows = list(sheet.iter_rows(min_row=1, max_row=10, values_only=True))
+            if len(rows) < 2:
+                return False
+
+            # Header row must have ≥2 non-empty string cells
+            header = rows[0]
+            header_strings = [h for h in header if isinstance(h, str) and h.strip()]
+            if len(header_strings) < 2:
+                return False
+
+            # Data rows must have content and NO numeric values
+            has_data = False
+            for row in rows[1:]:
+                non_empty = [v for v in row if v is not None and str(v).strip() != '']
+                if len(non_empty) < 2:
+                    continue
+                # Any numeric value → this is a parameter sheet, not a set
+                if any(isinstance(v, (int, float)) for v in non_empty):
+                    return False
+                has_data = True
+
+            return has_data
+        except Exception:
+            return False
+
+    def _parse_mapping_set_sheet(self, sheet: Any, set_name: str, scenario: ScenarioData) -> None:
+        """Parse a multi-column mapping set sheet into a DataFrame.
+
+        The resulting DataFrame has one column per header, with string values.
+        It is stored in scenario.sets[set_name] so that ScenarioLoader can
+        pass it directly to scenario.add_set(name, df).
+        """
+        # Read header row
+        headers = []
+        for cell in sheet[1]:
+            if cell.value is not None and str(cell.value).strip():
+                headers.append(str(cell.value).strip())
+            else:
+                break  # stop at first empty header
+
+        if not headers:
+            return
+
+        # Read data rows
+        rows = []
+        for row in sheet.iter_rows(min_row=2, values_only=True):
+            values = [row[i] if i < len(row) else None for i in range(len(headers))]
+            if any(v is not None and str(v).strip() for v in values):
+                rows.append([str(v).strip() if v is not None else None for v in values])
+
+        if rows:
+            df = pd.DataFrame(rows, columns=headers).dropna()
+            scenario.sets[set_name] = df
 
     def _parse_combined_sets_sheet(self, sheet: Any, scenario: ScenarioData) -> None:
         """Parse a combined sets sheet"""
@@ -143,10 +231,24 @@ class ParameterParsingStrategy(ParsingStrategy):
                 self._parse_individual_parameter_sheet(sheet, sheet_name, scenario)
 
     def can_parse_sheet(self, sheet: Any, sheet_name: str) -> bool:
-        """Check if this is a parameter sheet"""
-        # Common parameter sheet names
+        """Check if this is a parameter sheet.
+
+        Rejects any sheet whose name is registered as a SET in the
+        message_ix.MESSAGE item registry (canonical check).  Falls back to
+        a content heuristic when message_ix is unavailable.
+        """
+        # Reject sheets that message_ix knows are sets, not parameters
+        ix_sets, ix_pars = _get_ix_type_names()
+        if ix_sets and sheet_name in ix_sets:
+            return False
+
+        # Common parameter sheet names (combined sheets)
         param_sheet_names = ['parameters', 'parameter', 'Parameters', 'Parameter', 'data']
         if sheet_name in param_sheet_names:
+            return True
+
+        # Canonical parameter name check (when message_ix available)
+        if ix_pars and sheet_name in ix_pars:
             return True
 
         # For individual parameter sheets, check if it contains parameter-like data
@@ -155,14 +257,10 @@ class ParameterParsingStrategy(ParsingStrategy):
     def _is_parameter_sheet(self, sheet: Any) -> bool:
         """Check if sheet contains parameter-like data.
 
-        Accepts two layouts:
-          1. Mixed string+number rows — classic MESSAGEix parameters
-             (dimension columns + numeric value column).
-          2. Multi-column all-string rows — categorical mapping sheets such as
-             cat_emission, cat_tec, map_node that have no numeric value column.
-
-        Single-column string sheets are handled by SetParsingStrategy and
-        therefore excluded here (they never reach this check first).
+        Accepts multi-column sheets where at least one data row has ≥2
+        non-empty cells and at least one is a string.  Multi-column all-string
+        sheets (mapping sets) are intercepted earlier by SetParsingStrategy,
+        so by the time this is called they should already be handled.
         """
         try:
             rows = list(sheet.iter_rows(min_row=1, max_row=10, values_only=True))

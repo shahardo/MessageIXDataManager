@@ -19,7 +19,9 @@ from typing import Any, Callable, Optional
 import pandas as pd
 
 from core.data_models import ScenarioData
+from core.message_ix_schema import MESSAGE_IX_SET_NAMES, MESSAGE_IX_PAR_NAMES
 from managers.input_manager import InputManager
+from managers.warning_analyzer import KNOWN_UNIT_MAP
 
 logger = logging.getLogger(__name__)
 
@@ -94,12 +96,38 @@ class ScenarioLoader:
         # 3. Add sets
         # ------------------------------------------------------------------
         _log("  Adding sets...")
-        for set_name, set_series in scenario_data.sets.items():
+        for set_name, set_data in scenario_data.sets.items():
+            # Sanity-check: if the name is a known MESSAGEix parameter, the
+            # Excel parser mis-routed it — reclassify and add as parameter.
+            if set_name in MESSAGE_IX_PAR_NAMES:
+                _log(f"  Note: '{set_name}' is a parameter, not a set — "
+                     "re-adding as parameter.")
+                try:
+                    df_par = (
+                        set_data if isinstance(set_data, pd.DataFrame)
+                        else set_data.to_frame(name="value")
+                    )
+                    df_par = ScenarioLoader._prepare_parameter_df(df_par, {})
+                    if not df_par.empty:
+                        scenario.add_par(set_name, df_par)
+                except Exception as exc:
+                    _log(f"  Warning: could not re-add '{set_name}' as parameter: {exc}")
+                continue
+
             try:
-                values = set_series.dropna().tolist()
-                if not values:
-                    continue
-                scenario.add_set(set_name, values)
+                if isinstance(set_data, pd.DataFrame):
+                    # Multi-dimensional mapping set (e.g. balance_equality,
+                    # cat_emission) — pass the DataFrame directly to ixmp.
+                    df_clean = set_data.dropna()
+                    if df_clean.empty:
+                        continue
+                    scenario.add_set(set_name, df_clean)
+                else:
+                    # 1-D set stored as a Series
+                    values = set_data.dropna().tolist()
+                    if not values:
+                        continue
+                    scenario.add_set(set_name, values)
             except Exception as exc:
                 _log(f"  Warning: could not add set '{set_name}': {exc}")
 
@@ -108,6 +136,24 @@ class ScenarioLoader:
         # ------------------------------------------------------------------
         _log("  Adding parameters...")
         for par_name, param in scenario_data.parameters.items():
+            # Sanity-check: if the name is a known MESSAGEix set, the Excel
+            # parser mis-routed it — reclassify and add as a set instead.
+            if par_name in MESSAGE_IX_SET_NAMES:
+                _log(f"  Note: '{par_name}' is a set, not a parameter — "
+                     "re-adding as set.")
+                try:
+                    df_set = param.df.drop(
+                        columns=[c for c in ("value", "unit") if c in param.df.columns]
+                    ).dropna()
+                    if not df_set.empty:
+                        if len(df_set.columns) == 1:
+                            scenario.add_set(par_name, df_set.iloc[:, 0].tolist())
+                        else:
+                            scenario.add_set(par_name, df_set)
+                except Exception as exc:
+                    _log(f"  Warning: could not re-add '{par_name}' as set: {exc}")
+                continue
+
             try:
                 df = ScenarioLoader._prepare_parameter_df(param.df, param.metadata)
                 if df.empty:
@@ -155,5 +201,17 @@ class ScenarioLoader:
         # Drop rows where value is NaN
         if "value" in result.columns:
             result = result.dropna(subset=["value"])
+
+        # Remap units that are known to be invalid in ixmp to their
+        # correct equivalents so that the solver doesn't reject them.
+        if "unit" in result.columns:
+            for bad, good in KNOWN_UNIT_MAP.items():
+                mask = result["unit"] == bad
+                if mask.any():
+                    logger.info(
+                        "Auto-correcting unit '%s' → '%s' in parameter DataFrame",
+                        bad, good,
+                    )
+                    result.loc[mask, "unit"] = good
 
         return result

@@ -3,7 +3,7 @@ Core data models for message_ix data
 """
 
 import pandas as pd
-from typing import Dict, List, Optional, Any, Set
+from typing import Dict, List, Optional, Any, Set, Union
 import os
 from datetime import datetime
 
@@ -93,7 +93,8 @@ class ScenarioData:
     """Container for all data in a message_ix scenario"""
 
     def __init__(self):
-        self.sets: Dict[str, pd.Series] = {}        # set_name → values
+        # set_name → values (Series for 1-D sets; DataFrame for mapping sets)
+        self.sets: Dict[str, Union[pd.Series, pd.DataFrame]] = {}
         self.parameters: Dict[str, Parameter] = {}  # par_name → Parameter
         self.mappings: Dict[str, pd.DataFrame] = {} # optional mappings
         self.modified: Set[str] = set()             # tracked changed parameters

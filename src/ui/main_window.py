@@ -31,6 +31,8 @@ from managers.file_handlers import InputFileHandler, ResultsFileHandler, AutoLoa
 from managers.input_manager import InputManager
 from managers.solver_manager import SolverManager
 from managers.solver_worker import SolverWorker
+from managers.warning_analyzer import SolverWarning, WarningAnalyzer
+from .components.warning_summary_dialog import WarningSummaryDialog
 from managers.results_analyzer import ResultsAnalyzer
 from managers.data_export_manager import DataExportManager
 from managers.data_file_manager import DataFileManager
@@ -171,6 +173,10 @@ class MainWindow(QMainWindow):
 
         # Active solver worker (QThread); None when no solve is in progress
         self._solver_worker: Optional[SolverWorker] = None
+        # Warnings collected from the most recent solver run
+        self._solver_warnings: List[SolverWarning] = []
+        # Non-modal warning summary window (kept alive between runs)
+        self._warning_dialog: Optional[WarningSummaryDialog] = None
 
         # Remember last selected parameters for each file type
         self.last_selected_input_parameter: Optional[str] = None
@@ -1477,7 +1483,8 @@ class MainWindow(QMainWindow):
             self.statusbar.clearMessage()
             return
 
-        # User confirmed — show wait cursor and update status immediately.
+        # User confirmed — reset warning accumulator and show wait cursor.
+        self._solver_warnings = []
         QApplication.setOverrideCursor(Qt.WaitCursor)  # type: ignore[attr-defined]
         self.statusbar.showMessage("Solver running...")
         self._append_to_console("=" * 60)
@@ -1546,6 +1553,90 @@ class MainWindow(QMainWindow):
         else:
             self._append_to_console(f"Solver failed (exit code {exit_code}).")
         self._append_to_console("=" * 60)
+
+        # Show warning summary window if any warnings were collected.
+        # Non-modal: stored on self so it is not garbage-collected, and the
+        # user can freely switch between it and the main window.
+        if self._solver_warnings:
+            self._append_to_console(
+                f"  {len(self._solver_warnings)} warning(s) detected — "
+                "see the summary window for details and fix suggestions."
+            )
+            # Re-use an existing warning window if still open
+            if hasattr(self, '_warning_dialog') and self._warning_dialog is not None:
+                self._warning_dialog.close()
+            self._warning_dialog = WarningSummaryDialog(self._solver_warnings, parent=self)
+            self._warning_dialog.navigate_requested.connect(self._navigate_to_parameter)
+            self._warning_dialog.autofix_requested.connect(self._autofix_parameter_unit)
+            self._warning_dialog.show()
+
+    def _navigate_to_parameter(self, parameter_name: str):
+        """
+        Select the given parameter in the parameter tree, which will
+        load it in the data display widget.
+        """
+        from PyQt5.QtCore import Qt as _Qt
+        # Search for a tree item whose text matches parameter_name (recursively)
+        items = self.param_tree.findItems(
+            parameter_name,
+            _Qt.MatchExactly | _Qt.MatchRecursive,
+            column=0,
+        )
+        if not items:
+            self.statusbar.showMessage(
+                f"Parameter '{parameter_name}' not found in current tree."
+            )
+            return
+        # Select the first matching item; this triggers parameter_selected signal
+        self.param_tree.setCurrentItem(items[0])
+        self.statusbar.showMessage(f"Navigated to parameter: {parameter_name}")
+
+    def _autofix_parameter_unit(self, parameter_name: str, bad_unit: str, good_unit: str):
+        """
+        Replace *bad_unit* with *good_unit* in the 'unit' column of the
+        named parameter in the currently selected scenario's ScenarioData.
+
+        The scenario is marked modified so the user is prompted to save.
+        """
+        scenario = self.selected_scenario
+        if scenario is None or scenario.scenario_data is None:
+            self.statusbar.showMessage("No active scenario — cannot apply fix.")
+            return
+
+        param = scenario.scenario_data.parameters.get(parameter_name)
+        if param is None:
+            self.statusbar.showMessage(
+                f"Parameter '{parameter_name}' not found in scenario data."
+            )
+            return
+
+        df = param.df
+        if "unit" not in df.columns:
+            self.statusbar.showMessage(
+                f"Parameter '{parameter_name}' has no 'unit' column."
+            )
+            return
+
+        # Apply the unit substitution
+        mask = df["unit"] == bad_unit
+        changed = int(mask.sum())
+        if changed == 0:
+            self.statusbar.showMessage(
+                f"Unit '{bad_unit}' not found in '{parameter_name}' — no change made."
+            )
+            return
+
+        df.loc[mask, "unit"] = good_unit
+        scenario.mark_modified(parameter_name)
+
+        self._append_to_console(
+            f"  Auto-fix applied: '{parameter_name}' unit changed from "
+            f"'{bad_unit}' → '{good_unit}' ({changed} row(s))."
+        )
+        self.statusbar.showMessage(
+            f"Fixed unit in '{parameter_name}': '{bad_unit}' → '{good_unit}'. "
+            "Save the input file to persist."
+        )
 
     def _restore_normal_display(self):
         """Restore the normal data display (table and chart)"""
@@ -1728,8 +1819,43 @@ class MainWindow(QMainWindow):
 
     # Console methods
     def _append_to_console(self, message: str):
-        """Append message to console and scroll to the latest line."""
-        self.console.append(message)
+        """
+        Append message to console with optional colour-coding, then
+        scroll to the latest line.
+
+        Colour scheme:
+          - Warning lines  → orange  (#FFA500)
+          - [ERROR] lines  → red     (#FF5555)
+          - Success lines  → green   (#44BB44)
+          - Everything else → default (no colour tag)
+
+        Warnings are also parsed and accumulated in self._solver_warnings
+        so they can be displayed in the post-run summary dialog.
+        """
+        import html as _html
+
+        # Try to parse as a structured solver warning first
+        warning = WarningAnalyzer.parse_line(message)
+        if warning is not None:
+            self._solver_warnings.append(warning)
+
+        # Choose colour
+        msg_lower = message.lstrip().lower()
+        if warning is not None or "warning:" in msg_lower:
+            color = "#FFA500"
+        elif message.startswith("[ERROR]") or "error:" in msg_lower:
+            color = "#FF5555"
+        elif any(kw in msg_lower for kw in ("solved successfully", "solver finished successfully", "scenario ready")):
+            color = "#44BB44"
+        else:
+            color = ""
+
+        if color:
+            safe = _html.escape(message)
+            self.console.append(f'<span style="color:{color};">{safe}</span>')
+        else:
+            self.console.append(message)
+
         self.console.verticalScrollBar().setValue(
             self.console.verticalScrollBar().maximum()
         )
