@@ -2195,63 +2195,41 @@ class MainWindow(QMainWindow):
         self.find_widget.closed.connect(self._hide_find_widget)
 
     def _show_find_widget(self):
-        """Show the find widget based on current context"""
-        # Determine search context based on current focus
-        focus_widget = QApplication.focusWidget()
+        """Show the find widget above the data table (Ctrl+F always searches the table).
+        The parameter-tree has its own inline search (Ctrl+Shift+F).
+        """
+        self.current_search_mode = "table"
 
-        # Check if the current focus is on the parameter tree
-        if focus_widget and (focus_widget is self.param_tree or self.param_tree.isAncestorOf(focus_widget)):
-            search_mode = "parameter"
-        # Check if the current focus is on the data table or related widgets
-        elif focus_widget and (focus_widget is self.param_table or self.param_table.isAncestorOf(focus_widget) or
-                               focus_widget is self.tableContainer or self.tableContainer.isAncestorOf(focus_widget)):
-            search_mode = "table"
-        else:
-            # Default to parameter search if focus is unclear
-            search_mode = "parameter"
+        # Let Qt compute the widget's natural size before we position it.
+        self.find_widget.adjustSize()
+        widget_width = self.find_widget.width()
+        widget_height = self.find_widget.height()
 
-        # Store the search mode for consistent behavior during the search session
-        self.current_search_mode = search_mode
+        # Flush to the right edge of the table container.
+        # mapTo(self, …) converts table-container-local coords to main-window coords,
+        # which is the coordinate space that find_widget.move() uses (child of self).
+        tc_origin = self.tableContainer.mapTo(self, QPoint(0, 0))
+        widget_pos = QPoint(
+            tc_origin.x() + self.tableContainer.width() - widget_width - 2,
+            tc_origin.y() + 4,
+        )
 
-        # Calculate position based on search mode - ensure within main window bounds
+        # Clamp within the main-window bounds
         main_rect = self.rect()
-        widget_width = 400  # Approximate width of find widget
-        widget_height = 40  # Approximate height of find widget
-
-        if search_mode == "parameter":
-            # Position in top-left area above parameter tree
-            widget_pos = QPoint(20, 30)  # Fixed position near top-left
-        else:
-            # Position above the data table area
-            table_container_rect = self.tableContainer.geometry()
-            # Position at the top-right of the table container
-            widget_pos = QPoint(
-                table_container_rect.right() - widget_width,
-                table_container_rect.top() - widget_height - 5  # 5px above the table
-            )
-
-        # Ensure position is within bounds
         widget_pos.setX(max(10, min(widget_pos.x(), main_rect.width() - widget_width - 10)))
         widget_pos.setY(max(10, min(widget_pos.y(), main_rect.height() - widget_height - 10)))
 
-        self.find_widget.show_at_position(widget_pos, search_mode)
+        self.find_widget.show_at_position(widget_pos, "table")
 
-        # Restore last search text for this mode
-        if search_mode == "parameter":
-            self.find_widget.set_search_text(self.last_parameter_search)
-        elif search_mode == "table":
-            self.find_widget.set_search_text(self.last_table_search)
+        # Initialize table matches first, then restore last search text so the
+        # restored text is searched against the freshly scanned match list.
+        self._initialize_table_search()
+        self.find_widget.set_search_text(self.last_table_search)
 
-        # Ensure the widget gets proper focus
+        # Give focus back to the search input
         QApplication.setActiveWindow(self.find_widget)
         self.find_widget.search_input.setFocus()
         self.find_widget.search_input.selectAll()
-
-        # Initialize search if there's existing data
-        if search_mode == "parameter":
-            self._initialize_parameter_search()
-        else:
-            self._initialize_table_search()
 
     def _hide_find_widget(self):
         """Hide the find widget"""

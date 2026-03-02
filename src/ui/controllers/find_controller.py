@@ -173,90 +173,91 @@ class FindController:
 
         return 0, 0
 
+    def _matching_cells(self, search_lower: str) -> List[Tuple[int, int, int]]:
+        """Return [(all_cells_index, row, col), …] for cells that contain search_lower."""
+        return [
+            (i, row, col)
+            for i, (row, col, cell_text) in enumerate(self.table_matches)
+            if search_lower in cell_text
+        ]
+
     def find_first_table_cell(self, search_text: str) -> Tuple[int, int]:
         """
         Find first table cell match.
 
-        Args:
-            search_text: Text to search for
-
         Returns:
-            Tuple of (current_match_index, total_matches)
+            Tuple of (current_rank_1based, total_matches)
         """
         search_lower = search_text.lower().strip()
         if not search_lower:
             return 0, 0
 
-        # Find first match
-        for i, (row, col, cell_text) in enumerate(self.table_matches):
-            if search_lower in cell_text:
-                self.current_table_match_index = i
-                self._select_table_match(i)
-                total_matches = len([c for _, _, c in self.table_matches if search_lower in c])
-                return i + 1, total_matches
+        matches = self._matching_cells(search_lower)
+        if not matches:
+            self.current_table_match_index = -1
+            return 0, 0
 
-        # No matches found
-        return 0, 0
+        all_idx, row, col = matches[0]
+        self.current_table_match_index = all_idx
+        self._select_table_match(all_idx)
+        return 1, len(matches)
 
     def find_next_table_cell(self, search_text: str) -> Tuple[int, int]:
         """
-        Find next table cell match.
-
-        Args:
-            search_text: Text to search for
+        Find next table cell match (wraps around).
 
         Returns:
-            Tuple of (current_match_index, total_matches)
+            Tuple of (current_rank_1based, total_matches)
         """
         search_lower = search_text.lower().strip()
         if not search_lower:
             return 0, 0
 
-        total_matches = len([c for _, _, c in self.table_matches if search_lower in c])
-        if total_matches == 0:
+        matches = self._matching_cells(search_lower)
+        if not matches:
+            self.current_table_match_index = -1
             return 0, 0
 
-        # Find next match
-        start_index = (self.current_table_match_index + 1) % len(self.table_matches)
-        for i in range(len(self.table_matches)):
-            check_index = (start_index + i) % len(self.table_matches)
-            row, col, cell_text = self.table_matches[check_index]
-            if search_lower in cell_text:
-                self.current_table_match_index = check_index
-                self._select_table_match(check_index)
-                return check_index + 1, total_matches
+        # Determine current rank within the filtered list
+        all_indices = [m[0] for m in matches]
+        try:
+            cur_rank = all_indices.index(self.current_table_match_index)
+        except ValueError:
+            cur_rank = -1  # not found → next will wrap to 0
 
-        return 0, 0
+        next_rank = (cur_rank + 1) % len(matches)
+        all_idx, row, col = matches[next_rank]
+        self.current_table_match_index = all_idx
+        self._select_table_match(all_idx)
+        return next_rank + 1, len(matches)
 
     def find_previous_table_cell(self, search_text: str) -> Tuple[int, int]:
         """
-        Find previous table cell match.
-
-        Args:
-            search_text: Text to search for
+        Find previous table cell match (wraps around).
 
         Returns:
-            Tuple of (current_match_index, total_matches)
+            Tuple of (current_rank_1based, total_matches)
         """
         search_lower = search_text.lower().strip()
         if not search_lower:
             return 0, 0
 
-        total_matches = len([c for _, _, c in self.table_matches if search_lower in c])
-        if total_matches == 0:
+        matches = self._matching_cells(search_lower)
+        if not matches:
+            self.current_table_match_index = -1
             return 0, 0
 
-        # Find previous match
-        start_index = (self.current_table_match_index - 1) % len(self.table_matches)
-        for i in range(len(self.table_matches)):
-            check_index = (start_index - i) % len(self.table_matches)
-            row, col, cell_text = self.table_matches[check_index]
-            if search_lower in cell_text:
-                self.current_table_match_index = check_index
-                self._select_table_match(check_index)
-                return check_index + 1, total_matches
+        all_indices = [m[0] for m in matches]
+        try:
+            cur_rank = all_indices.index(self.current_table_match_index)
+        except ValueError:
+            cur_rank = 0
 
-        return 0, 0
+        prev_rank = (cur_rank - 1) % len(matches)
+        all_idx, row, col = matches[prev_rank]
+        self.current_table_match_index = all_idx
+        self._select_table_match(all_idx)
+        return prev_rank + 1, len(matches)
 
     def _select_parameter_match(self, match_index: int):
         """Select the parameter match in the tree"""
