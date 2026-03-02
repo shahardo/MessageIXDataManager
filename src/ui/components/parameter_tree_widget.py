@@ -307,6 +307,25 @@ class ParameterTreeWidget(QTreeWidget):
 
             section_item.setExpanded(True)
 
+        # Add sets section if the scenario has any sets
+        if scenario.sets:
+            sets_section = QTreeWidgetItem(self)
+            sets_section.setText(0, f"Sets ({len(scenario.sets)})")
+            sets_section.setToolTip(0, "MESSAGEix sets (codelists and mapping sets)")
+            sets_section.setBackground(0, QColor(240, 240, 240))
+            font = sets_section.font(0)
+            font.setBold(True)
+            sets_section.setFont(0, font)
+
+            for set_name, set_values in sorted(scenario.sets.items()):
+                set_item = QTreeWidgetItem(sets_section)
+                set_item.setText(0, f"{set_name} ({len(set_values)} rows)")
+                set_item.setToolTip(0, f"Set: {set_name}\nRows: {len(set_values)}")
+                # Store raw name so selection handler can look it up without the row-count suffix
+                set_item.setData(0, Qt.UserRole, set_name)
+
+            sets_section.setExpanded(True)
+
     def update_parameters(self, scenario: ScenarioData, is_results: bool = False):
         """Update the tree with parameters from a scenario"""
         # For now, maintain backward compatibility by showing parameters in a single section
@@ -369,10 +388,12 @@ class ParameterTreeWidget(QTreeWidget):
 
             for set_name, set_values in sorted(scenario.sets.items()):
                 set_item = QTreeWidgetItem(sets_item)
-                set_item.setText(0, f"{set_name} ({len(set_values)} elements)")
-                set_item.setToolTip(0, f"Set: {set_name}\nElements: {len(set_values)}")
+                set_item.setText(0, f"{set_name} ({len(set_values)} rows)")
+                set_item.setToolTip(0, f"Set: {set_name}\nRows: {len(set_values)}")
+                # Store the raw name so selection handler can look it up
+                set_item.setData(0, Qt.UserRole, set_name)
 
-            sets_item.setExpanded(False)
+            sets_item.setExpanded(True)
 
     def update_results(self, scenario: ScenarioData):
         """Update the tree with results from a scenario"""
@@ -643,6 +664,10 @@ class ParameterTreeWidget(QTreeWidget):
             return
 
         # Get parameter/result name and determine data source
+        # Prefer the raw name stored in UserRole (set items store name without row-count suffix)
+        raw_name = selected_item.data(0, Qt.UserRole)
+        emit_name = raw_name if raw_name else item_name
+
         # For multi-section view, determine source from section hierarchy
         is_results = self.current_view == "results"
         if self.current_view == "multi":
@@ -655,8 +680,8 @@ class ParameterTreeWidget(QTreeWidget):
                         is_results = True
                     break
                 parent = parent.parent()
-        
-        self.parameter_selected.emit(item_name, is_results)
+
+        self.parameter_selected.emit(emit_name, is_results)
 
     def set_view_mode(self, is_results: bool):
         """Set whether this tree shows parameters or results"""

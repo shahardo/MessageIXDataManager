@@ -40,7 +40,7 @@ from managers.logging_manager import logging_manager
 from managers.commands import EditCellCommand, EditPivotCommand, PasteColumnCommand
 from managers.parameter_manager import ParameterManager
 from managers.session_manager import SessionManager
-from core.data_models import ScenarioData, Scenario
+from core.data_models import ScenarioData, Scenario, Parameter
 from core.user_preferences import UserPreferences
 from utils.error_handler import ErrorHandler, SafeOperation
 from utils.data_transformer import DataTransformer
@@ -798,6 +798,21 @@ class MainWindow(QMainWindow):
             scenario = self._get_current_scenario(is_results)
             if scenario:
                 parameter = scenario.get_parameter(parameter_name)
+
+                # Fall back to sets if this name isn't a parameter
+                if parameter is None and parameter_name in scenario.sets:
+                    set_data = scenario.sets[parameter_name]
+                    if isinstance(set_data, pd.DataFrame):
+                        df = set_data.copy().reset_index(drop=True)
+                    else:
+                        # 1-D Series — turn into a single-column DataFrame
+                        col = set_data.name or parameter_name
+                        df = set_data.to_frame(name=col).reset_index(drop=True)
+                    parameter = Parameter(
+                        parameter_name, df,
+                        {'dims': list(df.columns), 'description': f'Set: {parameter_name}'}
+                    )
+
                 if parameter:
                     # Detect var_* variable and configure analysis controls
                     is_var = (

@@ -93,7 +93,7 @@ class ScenarioData:
     """Container for all data in a message_ix scenario"""
 
     def __init__(self):
-        # set_name → values (Series for 1-D sets; DataFrame for mapping sets)
+         # set_name → values (Series for 1-D sets; DataFrame for mapping sets)
         self.sets: Dict[str, Union[pd.Series, pd.DataFrame]] = {}
         self.parameters: Dict[str, Parameter] = {}  # par_name → Parameter
         self.mappings: Dict[str, pd.DataFrame] = {} # optional mappings
