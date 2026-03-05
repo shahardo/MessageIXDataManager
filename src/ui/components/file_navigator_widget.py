@@ -5,7 +5,7 @@ Extracted from MainWindow to provide focused file navigation functionality.
 Implements the scenario-based architecture as defined in refactoring guide.
 """
 
-from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QFrame, QLineEdit
+from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QFrame, QLineEdit, QApplication, QStyle
 from PyQt5.QtCore import pyqtSignal, Qt, QSize, QEvent
 from PyQt5.QtGui import QIcon, QPixmap
 from core.data_models import Scenario
@@ -278,18 +278,21 @@ class FileNavigatorWidget(QWidget):
         scenario_title_button._scenario_ref = scenario  # Store for event filter
         scenario_title_button.installEventFilter(self)
         
-        # Trashcan delete button
-        delete_btn = QPushButton()
-        delete_btn.setIcon(QIcon.fromTheme("user-trash"))
+        # Trashcan delete button — show '×' text (theme icons unavailable on Windows)
+        delete_btn = QPushButton("×")
         delete_btn.setStyleSheet("""
             QPushButton {
                 background-color: transparent;
                 border: none;
                 border-radius: 3px;
-                padding: 4px;
+                padding: 0px;
+                color: #6c757d;
+                font-size: 16px;
+                font-weight: bold;
             }
             QPushButton:hover {
                 background-color: #dc3545;
+                color: white;
             }
         """)
         delete_btn.setFixedSize(24, 24)
@@ -639,7 +642,7 @@ class FileNavigatorWidget(QWidget):
             layout.addWidget(file_label, 1)
             
             # Close button
-            close_btn = QPushButton("✕")
+            close_btn = QPushButton("×")
             close_btn.setStyleSheet("""
                 QPushButton {
                     background-color: #6c757d;
@@ -647,8 +650,11 @@ class FileNavigatorWidget(QWidget):
                     border: none;
                     border-radius: 2px;
                     font-weight: bold;
-                    font-size: 8px;
-                    padding: 0px 3px;
+                    font-size: 11px;
+                    padding: 0px;
+                }
+                QPushButton:hover {
+                    background-color: #dc3545;
                 }
             """)
             close_btn.setFixedSize(16, 16)
@@ -659,23 +665,25 @@ class FileNavigatorWidget(QWidget):
             # Store reference to close button for hover handling
             widget.close_button = close_btn
         else:
-            # Show open file icon button
+            # Show open file button with standard system icon (works on all platforms)
             open_btn = QPushButton()
-            open_btn.setIcon(QIcon.fromTheme("document-open"))
-            open_btn.setIconSize(QSize(12, 12))
-            open_btn.setFixedSize(18, 18)
+            open_icon = QApplication.style().standardIcon(QStyle.SP_DirOpenIcon)
+            open_btn.setIcon(open_icon)
+            open_btn.setIconSize(QSize(14, 14))
+            open_btn.setFixedSize(22, 18)
             open_btn.setStyleSheet("""
                 QPushButton {
-                    background-color: #007bff;
-                    border: 1px solid #0056b3;
-                    border-radius: 2px;
+                    background-color: transparent;
+                    border: 1px solid #ced4da;
+                    border-radius: 3px;
                     padding: 1px;
                 }
                 QPushButton:hover {
-                    background-color: #0056b3;
+                    background-color: #e2e6ea;
+                    border-color: #adb5bd;
                 }
                 QPushButton:pressed {
-                    background-color: #003d82;
+                    background-color: #ced4da;
                 }
             """)
             open_btn.clicked.connect(open_callback)

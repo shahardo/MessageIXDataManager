@@ -763,10 +763,17 @@ class ElectricityAnalyzer(BaseAnalyzer):
 
         act_df = act_param.df[act_param.df['technology'].isin(elec_techs)].copy()
 
+        # Normalize column names: var_* uses 'node_loc'/'lvl'; input uses 'node'/'value'
+        if 'node_loc' in act_df.columns and 'node' not in act_df.columns:
+            act_df = act_df.rename(columns={'node_loc': 'node'})
         if 'node' not in act_df.columns:
             act_df['node'] = 'World'
+        if 'year_act' not in act_df.columns and 'year' in act_df.columns:
+            act_df = act_df.rename(columns={'year': 'year_act'})
 
-        gen_total = act_df.groupby(['node', 'year_act', 'technology'])['value'].sum().reset_index(name='total_gen_MWh')
+        val_col = 'lvl' if 'lvl' in act_df.columns else 'value'
+
+        gen_total = act_df.groupby(['node', 'year_act', 'technology'])[val_col].sum().reset_index(name='total_gen_MWh')
         gen_total = gen_total[gen_total['total_gen_MWh'] > 0.001].copy()
 
         active_techs = gen_total['technology'].unique()

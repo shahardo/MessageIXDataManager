@@ -956,8 +956,6 @@ class MainWindow(QMainWindow):
             if section_type == "parameters":
                 self._show_input_file_dashboard()
             elif section_type == "variables":
-                # For now, show results dashboard for variables
-                # This will be updated when we have separate variable dashboards
                 self._show_results_file_dashboard()
             elif section_type == "results":
                 self._show_results_file_dashboard()

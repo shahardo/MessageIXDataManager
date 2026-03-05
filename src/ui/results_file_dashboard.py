@@ -4,7 +4,9 @@ Results File Dashboard - displays specific metrics and charts for results files
 Shows a dashboard with metrics at the top and 4 charts in a 2x2 grid when a results file is selected.
 """
 
-from typing import Any
+from typing import Any, Optional
+
+import pandas as pd
 
 from .dashboard_chart_mixin import DashboardChartMixin
 from ui.components.base_dashboard import BaseDashboard
@@ -103,6 +105,74 @@ class ResultsFileDashboard(DashboardChartMixin, BaseDashboard):
             for label in self.metric_labels.values():
                 label.setText("Error")
 
+    def _get_electricity_param(self) -> Optional[object]:
+        """
+        Return the 'Electricity generation (TWh)' parameter, building it on-the-fly
+        from var_ACT when the postprocessed parameter is absent (e.g. raw data file).
+
+        Returns a Parameter-like object with a wide-format DataFrame (year × technology),
+        or None if no usable activity data is found.
+        """
+        from core.data_models import Parameter
+
+        # 1. Prefer already-postprocessed parameter
+        param = self.current_scenario.get_parameter('Electricity generation (TWh)')
+        if param is not None and not param.df.empty:
+            return param
+
+        # 2. Fall back to raw var_ACT (or var_act)
+        act_param = None
+        for name in ('ACT', 'var_ACT', 'var_act', 'activity'):
+            act_param = self.current_scenario.get_parameter(name)
+            if act_param is not None and not act_param.df.empty:
+                break
+        if act_param is None:
+            return None
+
+        act_df = act_param.df.copy()
+
+        # Normalise column names (var_* uses node_loc / lvl)
+        if 'node_loc' in act_df.columns and 'node' not in act_df.columns:
+            act_df = act_df.rename(columns={'node_loc': 'node'})
+        if 'year_act' not in act_df.columns and 'year' in act_df.columns:
+            act_df = act_df.rename(columns={'year': 'year_act'})
+        val_col = 'lvl' if 'lvl' in act_df.columns else 'value'
+
+        # Discover electricity-producing technologies via the output parameter
+        elec_techs = None
+        output_param = self.current_scenario.get_parameter('output')
+        if output_param is not None and not output_param.df.empty:
+            odf = output_param.df
+            commodity_col = next((c for c in ('commodity',) if c in odf.columns), None)
+            if commodity_col:
+                mask = odf[commodity_col].str.lower().isin(('electr', 'electricity', 'elec'))
+                elec_techs = odf.loc[mask, 'technology'].unique().tolist()
+
+        if elec_techs:
+            act_df = act_df[act_df['technology'].isin(elec_techs)]
+
+        if act_df.empty or 'year_act' not in act_df.columns:
+            return None
+
+        # Aggregate and pivot to wide format (year × technology)
+        grouped = (
+            act_df.groupby(['year_act', 'technology'])[val_col]
+            .sum()
+            .reset_index()
+        )
+        wide = grouped.pivot(index='year_act', columns='technology', values=val_col).fillna(0)
+        wide.index.name = 'year'
+        wide = wide.reset_index()
+
+        # Drop all-zero technology columns
+        tech_cols = [c for c in wide.columns if c != 'year']
+        wide = wide[[c for c in wide.columns if c == 'year' or wide[c].abs().max() > 0.001]]
+
+        if wide.shape[1] <= 1:  # only the year column remains
+            return None
+
+        return Parameter('Electricity generation (TWh)', wide, {'units': 'GWa (raw var_ACT)'})
+
     def _render_charts(self):
         """Render all 4 charts: primary energy demand, electricity generation, and pie charts"""
         try:
@@ -127,9 +197,9 @@ class ResultsFileDashboard(DashboardChartMixin, BaseDashboard):
                     "No primary energy supply data available"
                 )
 
-            # Electricity chart: get data from 'Electricity generation (TWh)' parameter
-            electricity_param = self.current_scenario.get_parameter('Electricity generation (TWh)')
-            if electricity_param and not electricity_param.df.empty and 'electricity_generation' in self.chart_views:
+            # Electricity chart
+            electricity_param = self._get_electricity_param()
+            if electricity_param and 'electricity_generation' in self.chart_views:
                 self.render_energy_chart(
                     electricity_param,
                     self.chart_views['electricity_generation'],
@@ -157,9 +227,8 @@ class ResultsFileDashboard(DashboardChartMixin, BaseDashboard):
                     "No primary energy supply data available"
                 )
 
-            # Electricity pie chart: get data from 'Electricity generation (TWh)' parameter, year 2050
-            electricity_param = self.current_scenario.get_parameter('Electricity generation (TWh)')
-            if electricity_param and not electricity_param.df.empty and 'electricity_pie' in self.chart_views:
+            # Electricity pie chart (reuse already-resolved param)
+            if electricity_param and 'electricity_pie' in self.chart_views:
                 self.render_energy_pie_chart(
                     electricity_param,
                     self.chart_views['electricity_pie'],
@@ -192,8 +261,8 @@ class ResultsFileDashboard(DashboardChartMixin, BaseDashboard):
                 return
 
             # Electricity generation chart (same as overview but different title)
-            electricity_param = self.current_scenario.get_parameter('Electricity generation (TWh)')
-            if electricity_param and not electricity_param.df.empty and 'electricity_generation_by_fuel' in self.electricity_chart_views:
+            electricity_param = self._get_electricity_param()
+            if electricity_param and 'electricity_generation_by_fuel' in self.electricity_chart_views:
                 self.render_energy_chart(
                     electricity_param,
                     self.electricity_chart_views['electricity_generation_by_fuel'],

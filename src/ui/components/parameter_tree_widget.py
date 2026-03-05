@@ -16,6 +16,52 @@ from typing import Optional, List, Dict
 
 from core.data_models import ScenarioData
 
+# Emoji icons for the top-level sections shown in the sidebar
+_SECTION_ICONS: Dict[str, str] = {
+    'parameters':     '📋',
+    'variables':      '📊',
+    'postprocessing': '⚡',
+    'results':        '📈',
+    'sets':           '🗂',
+}
+
+_SECTION_TOOLTIPS: Dict[str, str] = {
+    'parameters':     'Input Parameters',
+    'variables':      'Result Variables',
+    'postprocessing': 'Postprocessed Results',
+    'results':        'Results',
+    'sets':           'MESSAGEix Sets',
+}
+
+# Emoji icons for parameter/variable/result categories shown in the tree
+_CATEGORY_ICONS: Dict[str, str] = {
+    # Parameter categories
+    'Environmental':       '🌿',
+    'Bounds & Constraints': '🔒',
+    'Operational':         '⚙',
+    'Economic':            '💰',
+    'Capacity & Investment': '🏭',
+    'Demand & Consumption': '📈',
+    'Technical':           '🔧',
+    'Temporal':            '⏱',
+    # Variable / Result categories
+    'Activity':            '⚡',
+    'Capacity':            '🏭',
+    'Flow':                '🔄',
+    'Storage':             '🗃',
+    'Emissions':           '💨',
+    'Objective':           '🎯',
+    # Postprocessing categories
+    'Prices':              '💲',
+    'Electricity':         '⚡',
+    'Energy Balances':     '⚖',
+    'Trade':               '🔄',
+    'Sectoral Use':        '🏘',
+    'Fuels':               '🔥',
+    # Fallback
+    'Other':               '•',
+}
+
 
 class SearchHighlightDelegate(QStyledItemDelegate):
     """
@@ -98,7 +144,8 @@ class SectionTreeItem(QTreeWidgetItem):
         self.section_name = section_name
         self.section_type = section_type  # "parameters", "variables", "results"
         self.item_count = item_count
-        self.setText(0, f"{section_name} ({item_count})")
+        icon = _SECTION_ICONS.get(section_type, '•')
+        self.setText(0, f"{icon}  {section_name} ({item_count})")
         self.setToolTip(0, f"Click to show {section_name.lower()} dashboard")
 
         # Set visual styling for section headers
@@ -116,18 +163,22 @@ class ParameterTreeWidget(QTreeWidget):
     section_selected = pyqtSignal(str)  # section_type: "parameters", "variables", "results"
     options_changed = pyqtSignal()  # emitted when scenario options are modified
 
+    _SIDEBAR_WIDTH = 28  # pixels reserved on the left for section-jump icons
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.current_view = "input"  # "input" or "results"
         self.current_scenario = None
         self.parameter_manager = None
         self.sections = {}  # section_type -> SectionTreeItem
+        self._sets_item = None  # QTreeWidgetItem for the Sets section
 
         # Delegate that draws search-match highlights
         self._highlight_delegate = SearchHighlightDelegate(self)
         self.setItemDelegate(self._highlight_delegate)
 
         self.setup_ui()
+        self._setup_section_sidebar()
         self.setContextMenuPolicy(Qt.CustomContextMenu)
         self.customContextMenuRequested.connect(self._show_context_menu)
 
@@ -224,6 +275,99 @@ class ParameterTreeWidget(QTreeWidget):
 
         self._position_buttons()
 
+    # ------------------------------------------------------------------
+    # Section icon sidebar
+    # ------------------------------------------------------------------
+
+    def _setup_section_sidebar(self):
+        """
+        Create the narrow sidebar that shows one icon-button per top-level section.
+        It lives as a child widget overlaid on the left margin of the viewport area.
+        setViewportMargins() shifts the tree content to the right so the sidebar
+        never overlaps the items.
+        """
+        self._sidebar = QWidget(self)
+        self._sidebar.setObjectName("sectionSidebar")
+        self._sidebar.setStyleSheet("""
+            QWidget#sectionSidebar {
+                background: #f0f0f0;
+                border-right: 1px solid #d0d0d0;
+            }
+        """)
+        self._sidebar_layout = QVBoxLayout(self._sidebar)
+        self._sidebar_layout.setContentsMargins(2, 4, 2, 4)
+        self._sidebar_layout.setSpacing(3)
+        self._sidebar_layout.addStretch()
+        self._sidebar.hide()  # hidden until sections are populated
+
+    def _rebuild_section_sidebar(self):
+        """Recreate the icon buttons in the sidebar to match current sections."""
+        # Remove all previous buttons (keep the trailing stretch)
+        while self._sidebar_layout.count() > 1:
+            item = self._sidebar_layout.takeAt(0)
+            if item and item.widget():
+                item.widget().deleteLater()
+
+        visible_sections = list(self.sections.keys())
+        if self._sets_item is not None:
+            visible_sections.append('sets')
+
+        if not visible_sections:
+            self._sidebar.hide()
+            self.setViewportMargins(0, 0, 0, 0)
+            return
+
+        # Build one button per section, inserted before the stretch
+        btn_style = """
+            QPushButton {
+                font-size: 13px;
+                padding: 0px;
+                border: none;
+                border-radius: 3px;
+                background: transparent;
+            }
+            QPushButton:hover {
+                background: rgba(0, 0, 0, 0.10);
+            }
+            QPushButton:pressed {
+                background: rgba(0, 0, 0, 0.18);
+            }
+        """
+        insert_pos = 0
+        for section_type in visible_sections:
+            icon_char = _SECTION_ICONS.get(section_type, '•')
+            tooltip = _SECTION_TOOLTIPS.get(section_type, section_type.title())
+            btn = QPushButton(icon_char, self._sidebar)
+            btn.setFixedSize(self._SIDEBAR_WIDTH - 4, self._SIDEBAR_WIDTH - 4)
+            btn.setToolTip(tooltip)
+            btn.setStyleSheet(btn_style)
+            # Capture section_type by value in the closure
+            btn.clicked.connect(lambda checked=False, st=section_type: self._jump_to_section(st))
+            self._sidebar_layout.insertWidget(insert_pos, btn)
+            insert_pos += 1
+
+        self.setViewportMargins(self._SIDEBAR_WIDTH, 0, 0, 0)
+        self._sidebar.show()
+        self._position_section_sidebar()
+
+    def _position_section_sidebar(self):
+        """Reposition the sidebar below the header, aligned to the left edge."""
+        if not hasattr(self, '_sidebar'):
+            return
+        hh = self.header().height()
+        self._sidebar.setGeometry(0, hh, self._SIDEBAR_WIDTH, max(self.height() - hh, 0))
+        self._sidebar.raise_()
+
+    def _jump_to_section(self, section_type: str):
+        """Scroll the tree to the requested section and select its header item."""
+        if section_type == 'sets' and self._sets_item is not None:
+            self.setCurrentItem(self._sets_item)
+            self.scrollToItem(self._sets_item, QTreeWidget.PositionAtTop)
+        elif section_type in self.sections:
+            item = self.sections[section_type]
+            self.setCurrentItem(item)
+            self.scrollToItem(item, QTreeWidget.PositionAtTop)
+
     def update_tree_with_sections(self, scenario: ScenarioData, sections_data: Dict[str, List]):
         """
         Update the tree with multiple sections containing categorized data
@@ -236,8 +380,10 @@ class ParameterTreeWidget(QTreeWidget):
         self.clear()
         self.current_scenario = scenario
         self.sections = {}
+        self._sets_item = None
 
         if not scenario:
+            self._rebuild_section_sidebar()
             return
 
         # Create sections
@@ -248,7 +394,7 @@ class ParameterTreeWidget(QTreeWidget):
             # Count total items for section header
             total_items = len(items)
 
-            # Create section header
+            # Create section header (icon is embedded in SectionTreeItem text)
             section_name = section_type.title()  # "Parameters", "Variables", "Results"
             section_item = SectionTreeItem(section_name, section_type, total_items)
             self.addTopLevelItem(section_item)
@@ -278,7 +424,8 @@ class ParameterTreeWidget(QTreeWidget):
             for category in sorted(categories.keys()):
                 category_items = categories[category]
                 category_item = QTreeWidgetItem(section_item)
-                category_item.setText(0, f"{category} ({len(category_items)})")
+                cat_icon = _CATEGORY_ICONS.get(category, '•')
+                category_item.setText(0, f"{cat_icon}  {category} ({len(category_items)})")
 
                 # Sort items within category
                 category_items.sort(key=lambda x: x[0])
@@ -311,13 +458,15 @@ class ParameterTreeWidget(QTreeWidget):
 
         # Add sets section if the scenario has any sets
         if scenario.sets:
+            sets_icon = _SECTION_ICONS.get('sets', '🗂')
             sets_section = QTreeWidgetItem(self)
-            sets_section.setText(0, f"Sets ({len(scenario.sets)})")
+            sets_section.setText(0, f"{sets_icon}  Sets ({len(scenario.sets)})")
             sets_section.setToolTip(0, "MESSAGEix sets (codelists and mapping sets)")
             sets_section.setBackground(0, QColor(240, 240, 240))
             font = sets_section.font(0)
             font.setBold(True)
             sets_section.setFont(0, font)
+            self._sets_item = sets_section  # store for sidebar jump
 
             for set_name, set_values in sorted(scenario.sets.items()):
                 set_item = QTreeWidgetItem(sets_section)
@@ -328,6 +477,9 @@ class ParameterTreeWidget(QTreeWidget):
 
             sets_section.setExpanded(True)
 
+        # Rebuild sidebar to reflect the new section layout
+        self._rebuild_section_sidebar()
+
     def update_parameters(self, scenario: ScenarioData, is_results: bool = False):
         """Update the tree with parameters from a scenario"""
         # For now, maintain backward compatibility by showing parameters in a single section
@@ -335,6 +487,10 @@ class ParameterTreeWidget(QTreeWidget):
         self._reset_search()
         self.clear()
         self.current_scenario = scenario
+        self.sections = {}
+        self._sets_item = None
+        # No sidebar in single-section input/results view
+        self._rebuild_section_sidebar()
 
         if not scenario:
             return
@@ -366,7 +522,8 @@ class ParameterTreeWidget(QTreeWidget):
         for category in sorted_categories:
             params = categories[category]
             category_item = QTreeWidgetItem(self)
-            category_item.setText(0, f"{category} ({len(params)} parameters)")
+            cat_icon = _CATEGORY_ICONS.get(category, '•')
+            category_item.setText(0, f"{cat_icon}  {category} ({len(params)} parameters)")
 
             # Sort parameters within category
             params.sort(key=lambda x: x[0])
@@ -702,6 +859,7 @@ class ParameterTreeWidget(QTreeWidget):
         """Handle resize to reposition the header widgets"""
         super().resizeEvent(e)
         self._position_buttons()
+        self._position_section_sidebar()
 
     def _position_buttons(self):
         """
