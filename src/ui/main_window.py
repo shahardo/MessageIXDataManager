@@ -1658,10 +1658,22 @@ class MainWindow(QMainWindow):
         if exit_code == 0:
             self._append_to_console("Solver finished successfully.")
             if result_file:
-                self._append_to_console(f"Loading results: {result_file}")
-                self.results_file_handler.load_files(
-                    [result_file], self.update_progress, self._append_to_console
-                )
+                # The solver produces an Excel workbook with var_*/equ_* sheets.
+                # Load it through DataFileManager (same path as ZIP/CSV data files)
+                # so the variables appear in the parameter tree for browsing.
+                self._load_data_file(result_file)
+                self.file_navigator.add_recent_file(result_file, "data")
+                # Link this results file to the current scenario so it is
+                # remembered across sessions and auto-loaded on next open.
+                if self.selected_scenario:
+                    self.selected_scenario.message_scenario_file = result_file
+                    self.session_manager.add_scenario(self.selected_scenario)
+                    self.file_navigator.update_scenarios(
+                        self.session_manager.get_scenarios()
+                    )
+                # Refresh the parameter tree to show the newly loaded variables.
+                if self.selected_scenario:
+                    self._switch_to_multi_section_view(self.selected_scenario)
         else:
             self._append_to_console(f"Solver failed (exit code {exit_code}).")
         self._append_to_console("=" * 60)

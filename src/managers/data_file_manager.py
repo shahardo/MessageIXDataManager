@@ -79,7 +79,11 @@ class DataFileManager:
         existing_scenario: Optional[ScenarioData] = None
     ) -> Tuple[Optional[ScenarioData], List[Tuple[str, str]]]:
         """
-        Load a data file (ZIP with CSVs).
+        Load a data file.
+
+        Supported formats:
+        - ``.zip``  — archive of CSV files named set_*/par_*/var_*/equ_*.csv
+        - ``.xlsx`` — workbook with sheets named set_*/par_*/var_*/equ_*
 
         Args:
             file_path: Path to the data file
@@ -88,11 +92,86 @@ class DataFileManager:
         Returns:
             Tuple of (ScenarioData or None, list of (item_type, item_name) tuples for replaced items)
         """
-        if not file_path.endswith('.zip'):
+        lower = file_path.lower()
+        if lower.endswith('.zip'):
+            return self._load_zipped_csv_data(file_path, existing_scenario)
+        elif lower.endswith(('.xlsx', '.xls')):
+            return self._load_excel_data(file_path, existing_scenario)
+        else:
             self._console(f"Unsupported file format: {file_path}")
             return None, []
 
-        return self._load_zipped_csv_data(file_path, existing_scenario)
+    def _load_excel_data(
+        self,
+        excel_path: str,
+        existing_scenario: Optional[ScenarioData] = None
+    ) -> Tuple[Optional[ScenarioData], List[Tuple[str, str]]]:
+        """
+        Load var_/equ_/par_/set_ sheets from an Excel workbook.
+
+        Used to import solver results written by ResultsExporter (sheets named
+        var_ACT, equ_COMMODITY_BALANCE_GT, etc.) into the same ScenarioData
+        structure that the ZIP/CSV loader produces.
+        """
+        scenario_data = ScenarioData()
+        replaced_items: List[Tuple[str, str]] = []
+
+        try:
+            xf = pd.ExcelFile(excel_path)
+        except Exception as exc:
+            self._console(f"Error opening Excel file: {exc}")
+            return None, []
+
+        sheet_names = xf.sheet_names
+
+        # First pass: collect electricity technologies from par_output if present
+        electricity_technologies: Set[str] = set()
+        for sheet in sheet_names:
+            if sheet.lower() == 'par_output':
+                try:
+                    df = pd.read_excel(xf, sheet_name=sheet)
+                    if 'commodity' in df.columns and 'value' in df.columns:
+                        tec_col = self._find_technology_column(df)
+                        if tec_col:
+                            mask = (df['commodity'] == 'electr') & (df['value'] > 0)
+                            electricity_technologies = set(df.loc[mask, tec_col].unique())
+                except Exception:
+                    pass
+                break
+
+        # Second pass: process all prefixed sheets
+        for sheet in sheet_names:
+            try:
+                df = pd.read_excel(xf, sheet_name=sheet)
+                if df is None or df.empty:
+                    continue
+
+                name_lower = sheet.lower()
+                if name_lower.startswith(self.SET_PREFIX):
+                    result = self._process_set_file(sheet, df)
+                elif name_lower.startswith(self.PAR_PREFIX):
+                    result = self._process_parameter_file(sheet, df)
+                elif name_lower.startswith(self.VAR_PREFIX):
+                    result = self._process_variable_file(sheet, df, electricity_technologies)
+                elif name_lower.startswith(self.EQU_PREFIX):
+                    result = self._process_equation_file(sheet, df, electricity_technologies)
+                else:
+                    continue  # ignore unrecognised sheets
+
+                if result:
+                    item_type, name, data = result
+                    if item_type == 'set':
+                        if existing_scenario and name in existing_scenario.sets:
+                            replaced_items.append(('set', name))
+                        scenario_data.sets[name] = data
+                    elif item_type in ('parameter', 'variable', 'equation'):
+                        if existing_scenario and existing_scenario.get_parameter(name):
+                            replaced_items.append((item_type, name))
+                        scenario_data.add_parameter(data, mark_modified=False, add_to_history=False)
+            except Exception as exc:
+                self._console(f"Error loading sheet '{sheet}': {exc}")
+
+        return scenario_data, replaced_items
 
     def _load_zipped_csv_data(
         self,

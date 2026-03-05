@@ -12,6 +12,17 @@ from typing import Dict, List, Optional, Any, Tuple
 from core.data_models import ScenarioData
 
 
+_YEAR_COLS: frozenset = frozenset({"year_act", "year_vtg", "year_rel", "year"})
+
+
+def _normalize_year_cols(df: pd.DataFrame) -> pd.DataFrame:
+    """Cast any year dimension columns stored as strings to int64."""
+    for col in _YEAR_COLS:
+        if col in df.columns and df[col].dtype == object:
+            df[col] = pd.to_numeric(df[col], errors="coerce").astype("int64")
+    return df
+
+
 class ScenarioDataWrapper:
     """
     Wraps ScenarioData to provide msg.par(), msg.var(), msg.set() interface
@@ -51,7 +62,7 @@ class ScenarioDataWrapper:
         if param is None:
             return pd.DataFrame()
 
-        df = param.df.copy()
+        df = _normalize_year_cols(param.df.copy())
 
         if filters:
             for col, values in filters.items():
