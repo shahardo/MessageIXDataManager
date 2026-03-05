@@ -6,10 +6,14 @@
             "type": "debugpy",
             "request": "launch",
             "program": "src/main.py",
-            "console": "internalConsole",
+            "console": "integratedTerminal",
             "justMyCode": true,
-            "pythonPath": "${workspaceFolder}/env/Scripts/python.exe",
-            "cwd": "${workspaceFolder}/"
+            "python": "${workspaceFolder}/env/Scripts/python.exe",
+            "cwd": "${workspaceFolder}/",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}/src",
+                "VIRTUAL_ENV": "${workspaceFolder}/env"
+            }
         },
         {
             "name": "Python: Debug All Tests",
@@ -24,7 +28,7 @@
             ],
             "console": "integratedTerminal",
             "justMyCode": false,
-            "pythonPath": "${workspaceFolder}/env/Scripts/python.exe",
+            "python": "${workspaceFolder}/env/Scripts/python.exe",
             "cwd": "${workspaceFolder}/",
             "env": {
                 "PYTHONPATH": "${workspaceFolder}/src"
@@ -43,7 +47,7 @@
             ],
             "console": "integratedTerminal",
             "justMyCode": false,
-            "pythonPath": "${workspaceFolder}/env/Scripts/python.exe",
+            "python": "${workspaceFolder}/env/Scripts/python.exe",
             "cwd": "${workspaceFolder}/",
             "env": {
                 "PYTHONPATH": "${workspaceFolder}/src"
@@ -64,7 +68,7 @@
             ],
             "console": "integratedTerminal",
             "justMyCode": false,
-            "pythonPath": "${workspaceFolder}/env/Scripts/python.exe",
+            "python": "${workspaceFolder}/env/Scripts/python.exe",
             "cwd": "${workspaceFolder}/",
             "env": {
                 "PYTHONPATH": "${workspaceFolder}/src"
@@ -84,7 +88,7 @@
             ],
             "console": "integratedTerminal",
             "justMyCode": false,
-            "pythonPath": "${workspaceFolder}/env/Scripts/python.exe",
+            "python": "${workspaceFolder}/env/Scripts/python.exe",
             "cwd": "${workspaceFolder}/",
             "env": {
                 "PYTHONPATH": "${workspaceFolder}/src"

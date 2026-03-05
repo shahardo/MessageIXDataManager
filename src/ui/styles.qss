@@ -318,6 +318,26 @@ QMessageBox {
     background-color: #f5f5f5;
 }
 
+/* Ensure dialog button boxes render their background correctly so buttons
+   are not partially obscured by the parent dialog's background region. */
+QDialogButtonBox {
+    background-color: transparent;
+}
+
+QInputDialog QDialogButtonBox,
+QMessageBox QDialogButtonBox {
+    background-color: transparent;
+    padding: 4px;
+}
+
+/* Give dialog buttons a guaranteed minimum height to prevent clipping. */
+QDialog QPushButton,
+QMessageBox QPushButton,
+QInputDialog QPushButton {
+    min-height: 22px;
+    min-width: 64px;
+}
+
 /* Additional custom classes can be added here */
 
 /* Placeholder styling for empty states */

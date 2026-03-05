@@ -25,6 +25,14 @@ from managers.warning_analyzer import KNOWN_UNIT_MAP
 
 logger = logging.getLogger(__name__)
 
+# Sets that ixmp manages internally and must NOT be written by user code.
+# ix_type_mapping: maps every registered item name → its ix_type ('set', 'par',
+#   'var', 'equ'); ixmp auto-populates this whenever add_set/add_par is called.
+#   Its 'item' column is not a registered ixmp set, so init_set would fail.
+_IXMP_INTERNAL_SETS: frozenset = frozenset({
+    "ix_type_mapping",
+})
+
 
 class ScenarioLoader:
     """
@@ -94,19 +102,36 @@ class ScenarioLoader:
 
         # ------------------------------------------------------------------
         # 3. Add sets
+        #
+        # 1-D sets must be added before mapping sets so that ixmp can
+        # validate membership.  We also build a case-insensitive lookup
+        # map so that mapping set values can be normalised to the exact
+        # capitalisation used in the 1-D sets (e.g. 'ethanol' → 'Ethanol').
         # ------------------------------------------------------------------
         _log("  Adding sets...")
-        for set_name, set_data in scenario_data.sets.items():
-            # Sanity-check: if the name is a known MESSAGEix parameter, the
-            # Excel parser mis-routed it — reclassify and add as parameter.
+
+        # Separate into 1-D (Series) and mapping (DataFrame) sets, preserving
+        # the original insertion order within each group.
+        one_d_sets = {
+            k: v for k, v in scenario_data.sets.items()
+            if not isinstance(v, pd.DataFrame)
+        }
+        mapping_sets = {
+            k: v for k, v in scenario_data.sets.items()
+            if isinstance(v, pd.DataFrame)
+        }
+
+        # --- Pass 1: 1-D sets -----------------------------------------------
+        # Build a case-insensitive lookup {set_name: {lower_value: canonical}}
+        # as sets are successfully added.
+        set_lookup: dict = {}  # set_name → {lowercase → canonical}
+
+        for set_name, set_data in one_d_sets.items():
             if set_name in MESSAGE_IX_PAR_NAMES:
                 _log(f"  Note: '{set_name}' is a parameter, not a set — "
                      "re-adding as parameter.")
                 try:
-                    df_par = (
-                        set_data if isinstance(set_data, pd.DataFrame)
-                        else set_data.to_frame(name="value")
-                    )
+                    df_par = set_data.to_frame(name="value")
                     df_par = ScenarioLoader._prepare_parameter_df(df_par, {})
                     if not df_par.empty:
                         scenario.add_par(set_name, df_par)
@@ -114,22 +139,69 @@ class ScenarioLoader:
                     _log(f"  Warning: could not re-add '{set_name}' as parameter: {exc}")
                 continue
 
+            values = set_data.dropna().tolist()
+            if not values:
+                continue
             try:
-                if isinstance(set_data, pd.DataFrame):
-                    # Multi-dimensional mapping set (e.g. balance_equality,
-                    # cat_emission) — pass the DataFrame directly to ixmp.
-                    df_clean = set_data.dropna()
-                    if df_clean.empty:
-                        continue
-                    scenario.add_set(set_name, df_clean)
-                else:
-                    # 1-D set stored as a Series
-                    values = set_data.dropna().tolist()
-                    if not values:
-                        continue
+                scenario.add_set(set_name, values)
+            except Exception:
+                # Set not yet declared in the schema — initialise it first,
+                # then retry.  This handles custom/extension sets like 'sector'
+                # that are not part of the standard MESSAGEix schema.
+                try:
+                    scenario.init_set(set_name)
                     scenario.add_set(set_name, values)
-            except Exception as exc:
-                _log(f"  Warning: could not add set '{set_name}': {exc}")
+                except Exception as exc2:
+                    _log(f"  Warning: could not add set '{set_name}': {exc2}")
+                    continue
+            # Record canonical casing for use when normalising mapping sets
+            set_lookup[set_name] = {str(v).lower(): str(v) for v in values}
+
+        # --- Pass 2: mapping sets -------------------------------------------
+        for set_name, set_data in mapping_sets.items():
+            if set_name in _IXMP_INTERNAL_SETS:
+                # ixmp auto-manages these tables; writing them manually would
+                # corrupt the platform's internal state.
+                _log(f"  Skipping internal ixmp set '{set_name}'")
+                continue
+
+            if set_name in MESSAGE_IX_PAR_NAMES:
+                _log(f"  Note: '{set_name}' is a parameter, not a set — "
+                     "re-adding as parameter.")
+                try:
+                    df_par = ScenarioLoader._prepare_parameter_df(set_data, {})
+                    if not df_par.empty:
+                        scenario.add_par(set_name, df_par)
+                except Exception as exc:
+                    _log(f"  Warning: could not re-add '{set_name}' as parameter: {exc}")
+                continue
+
+            df_clean = set_data.dropna()
+            if df_clean.empty:
+                continue
+
+            # Normalise each column's values to match the canonical casing of
+            # the corresponding 1-D set (handles e.g. 'ethanol' vs 'Ethanol').
+            df_clean = df_clean.copy()
+            for col in df_clean.columns:
+                if col in set_lookup:
+                    lut = set_lookup[col]
+                    df_clean[col] = df_clean[col].apply(
+                        lambda v, lut=lut: lut.get(str(v).lower(), v)
+                        if pd.notna(v) else v
+                    )
+
+            try:
+                scenario.add_set(set_name, df_clean)
+            except Exception:
+                # Set not declared — initialise with its columns as index sets,
+                # then retry.
+                try:
+                    cols = list(df_clean.columns)
+                    scenario.init_set(set_name, cols, cols)
+                    scenario.add_set(set_name, df_clean)
+                except Exception as exc2:
+                    _log(f"  Warning: could not add set '{set_name}': {exc2}")
 
         # ------------------------------------------------------------------
         # 4. Add parameters
@@ -160,7 +232,25 @@ class ScenarioLoader:
                     continue
                 scenario.add_par(par_name, df)
             except Exception as exc:
-                _log(f"  Warning: could not add parameter '{par_name}': {exc}")
+                exc_str = str(exc)
+                # If ixmp rejected the unit(s), retry with the dimensionless
+                # placeholder "-" so at least the data gets loaded.
+                if "does not exist in the database" in exc_str and "unit" in exc_str.lower():
+                    try:
+                        bad_units = (
+                            df["unit"].unique().tolist() if "unit" in df.columns else []
+                        )
+                        df = df.copy()
+                        df["unit"] = "-"
+                        scenario.add_par(par_name, df)
+                        _log(
+                            f"  Note: replaced unrecognized unit(s) {bad_units} "
+                            f"in '{par_name}' with '-'"
+                        )
+                    except Exception as exc2:
+                        _log(f"  Warning: could not add parameter '{par_name}': {exc2}")
+                else:
+                    _log(f"  Warning: could not add parameter '{par_name}': {exc}")
 
         # ------------------------------------------------------------------
         # 5. Commit

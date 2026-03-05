@@ -7,9 +7,12 @@ MESSAGEix input files and results.
 """
 
 from PyQt5.QtWidgets import (
-    QMainWindow, QSplitter, QFileDialog, QMessageBox, QApplication, QInputDialog
+    QMainWindow, QSplitter, QSplitterHandle, QFileDialog, QMessageBox,
+    QApplication, QDialog, QListWidget, QListWidgetItem, QLabel,
+    QVBoxLayout, QDialogButtonBox,
 )
-from PyQt5.QtCore import QSettings, QPoint, Qt
+from PyQt5.QtCore import QSettings, QPoint, Qt, QObject, QEvent
+from PyQt5.QtGui import QCursor
 from PyQt5 import uic
 import os
 import re
@@ -81,6 +84,83 @@ class WaitCursorContext:
         if self.should_show:
             QApplication.restoreOverrideCursor()
         return False  # Don't suppress exceptions
+
+
+class _SplitterCursorFilter(QObject):
+    """
+    Event filter installed on QSplitterHandle widgets so that the resize
+    cursor is visible even when QApplication has an override wait cursor set.
+
+    When the mouse enters a splitter handle during a wait-cursor period,
+    the override cursor is temporarily changed to the appropriate resize
+    cursor (horizontal or vertical).  When the mouse leaves, the wait
+    cursor is restored.
+    """
+
+    def eventFilter(self, obj: QObject, event: QEvent) -> bool:
+        if isinstance(obj, QSplitterHandle):
+            override = QApplication.overrideCursor()
+            if event.type() == QEvent.Enter and override is not None:
+                splitter = obj.splitter()
+                if splitter is not None:
+                    resize_cursor = (
+                        Qt.SplitHCursor
+                        if splitter.orientation() == Qt.Horizontal
+                        else Qt.SplitVCursor
+                    )
+                    QApplication.changeOverrideCursor(QCursor(resize_cursor))
+            elif event.type() == QEvent.Leave and override is not None:
+                QApplication.changeOverrideCursor(QCursor(Qt.WaitCursor))
+        return False  # never consume the event
+
+
+# Short descriptions shown in the solver selection dialog.
+_SOLVER_DESCRIPTIONS: dict = {
+    "glpk":   "GNU Linear Programming Kit — free, open-source, moderate speed.",
+    "cplex":  "IBM CPLEX Optimizer — commercial, high-performance LP solver.",
+    "gurobi": "Gurobi Optimizer — commercial, state-of-the-art performance.",
+}
+
+
+class _SolverSelectionDialog(QDialog):
+    """
+    Modal dialog that lets the user pick an LP solver.
+
+    Displays each solver name together with a one-line description so the
+    user can make an informed choice.  Double-clicking a row accepts the
+    dialog immediately.
+    """
+
+    def __init__(self, solvers: list, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Select Solver")
+        self.setMinimumWidth(380)
+        self._selected: str = solvers[0] if solvers else ""
+
+        layout = QVBoxLayout(self)
+
+        layout.addWidget(QLabel("Choose the LP solver to use:"))
+
+        self._list = QListWidget()
+        for solver in solvers:
+            display = solver.upper()
+            desc = _SOLVER_DESCRIPTIONS.get(solver, "")
+            item = QListWidgetItem(f"{display}  —  {desc}" if desc else display)
+            item.setData(Qt.UserRole, solver)  # store lowercase key
+            self._list.addItem(item)
+        self._list.setCurrentRow(0)
+        self._list.itemDoubleClicked.connect(self.accept)
+        layout.addWidget(self._list)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+    def selected_solver(self) -> str:
+        """Return the lowercase solver key for the selected item."""
+        item = self._list.currentItem()
+        return item.data(Qt.UserRole) if item else self._selected
 
 
 class MainWindow(QMainWindow):
@@ -278,6 +358,13 @@ class MainWindow(QMainWindow):
         self.dataSplitter.setSizes([600, 400])
         self.dataSplitter.setStretchFactor(0, 0)  # table container fixed
         self.dataSplitter.setStretchFactor(1, 1)  # graph container stretches
+
+        # Install cursor filter on every splitter handle so the resize cursor
+        # remains visible even when the application wait cursor is active.
+        self._splitter_cursor_filter = _SplitterCursorFilter(self)
+        for splitter in self.findChildren(QSplitter):
+            for i in range(1, splitter.count()):
+                splitter.handle(i).installEventFilter(self._splitter_cursor_filter)
 
     def _initialize_components_with_ui_widgets(self):
         """Initialize components to reuse existing UI widgets instead of creating new ones"""
@@ -1410,7 +1497,9 @@ class MainWindow(QMainWindow):
             print("DEBUG _run_solver: already running — abort", flush=True)
             return
 
-        # Show status immediately so the user knows something is happening.
+        # Show wait cursor immediately so the user knows something is happening
+        # while we probe the environment (detect_messageix, detect_gams, etc.)
+        QApplication.setOverrideCursor(Qt.WaitCursor)
         self.statusbar.showMessage("Checking solver environment...")
         QApplication.processEvents()
 
@@ -1418,6 +1507,7 @@ class MainWindow(QMainWindow):
         scenario = self.selected_scenario
         print(f"DEBUG _run_solver: selected_scenario={scenario!r}", flush=True)
         if scenario is None or not scenario.input_file:
+            QApplication.restoreOverrideCursor()
             self.statusbar.clearMessage()
             QMessageBox.warning(
                 self, "No Scenario Selected",
@@ -1429,6 +1519,7 @@ class MainWindow(QMainWindow):
         input_path = scenario.input_file
         print(f"DEBUG _run_solver: input_path={input_path!r}", flush=True)
         if not os.path.isfile(input_path):
+            QApplication.restoreOverrideCursor()
             self.statusbar.clearMessage()
             QMessageBox.warning(
                 self, "Input File Missing",
@@ -1446,6 +1537,7 @@ class MainWindow(QMainWindow):
             has_messageix = False
         print(f"DEBUG _run_solver: has_messageix={has_messageix}", flush=True)
         if not has_messageix:
+            QApplication.restoreOverrideCursor()
             self.statusbar.clearMessage()
             QMessageBox.critical(
                 self, "MESSAGEix Not Found",
@@ -1463,6 +1555,7 @@ class MainWindow(QMainWindow):
             has_gams = False
         print(f"DEBUG _run_solver: has_gams={has_gams}", flush=True)
         if not has_gams:
+            QApplication.restoreOverrideCursor()
             self.statusbar.clearMessage()
             QMessageBox.critical(
                 self, "GAMS Not Found",
@@ -1481,6 +1574,7 @@ class MainWindow(QMainWindow):
             solvers = []
         print(f"DEBUG _run_solver: solvers={solvers}", flush=True)
         if not solvers:
+            QApplication.restoreOverrideCursor()
             self.statusbar.clearMessage()
             QMessageBox.warning(
                 self, "No Solvers Available",
@@ -1489,18 +1583,21 @@ class MainWindow(QMainWindow):
             )
             return
 
+        QApplication.restoreOverrideCursor()  # hide wait cursor during dialog
         self.statusbar.showMessage("Select a solver to begin...")
-        solver_name, ok = QInputDialog.getItem(
-            self, "Select Solver", "LP Solver:", solvers, 0, False
-        )
-        print(f"DEBUG _run_solver: solver dialog result ok={ok} solver_name={solver_name!r}", flush=True)
+        dlg = _SolverSelectionDialog(solvers, parent=self)
+        ok = dlg.exec_() == QDialog.Accepted
+        QApplication.setOverrideCursor(Qt.WaitCursor)  # re-enable after dialog
+        print(f"DEBUG _run_solver: solver dialog result ok={ok}", flush=True)
         if not ok:
+            QApplication.restoreOverrideCursor()
             self.statusbar.clearMessage()
             return
 
-        # User confirmed — reset warning accumulator and show wait cursor.
+        solver_name = dlg.selected_solver()
+
+        # User confirmed — reset warning accumulator.
         self._solver_warnings = []
-        QApplication.setOverrideCursor(Qt.WaitCursor)  # type: ignore[attr-defined]
         self.statusbar.showMessage("Solver running...")
         self._append_to_console("=" * 60)
         self._append_to_console(f"Starting MESSAGEix solver")

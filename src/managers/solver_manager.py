@@ -129,6 +129,37 @@ class SolverManager:
                     return exe_path
         return None
 
+    def _query_gams_solvers(self) -> str:
+        """
+        Run ``gams ?`` and return the combined stdout+stderr output.
+
+        Returns an empty string if GAMS is not found or the subprocess fails.
+        The result is cached on this instance after the first call.
+        """
+        if hasattr(self, "_gams_solver_output"):
+            return self._gams_solver_output  # type: ignore[attr-defined]
+
+        gams_exe = self._locate_gams()
+        if not gams_exe:
+            self._gams_solver_output = ""
+            return ""
+
+        try:
+            result = subprocess.run(
+                [gams_exe, "?"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            self._gams_solver_output = result.stdout + result.stderr
+        except Exception as exc:
+            print(f"DEBUG _query_gams_solvers: subprocess error {exc!r}", flush=True)
+            self._gams_solver_output = ""
+
+        print(f"DEBUG _query_gams_solvers: output (first 300 chars): "
+              f"{self._gams_solver_output[:300]!r}", flush=True)
+        return self._gams_solver_output
+
     def _glpk_available_via_gams(self) -> bool:
         """
         Return True if the GAMS installation includes the GLPK solver.
@@ -143,24 +174,62 @@ class SolverManager:
         if not gams_exe:
             return False
 
-        try:
-            result = subprocess.run(
-                [gams_exe, "?"],
-                capture_output=True,
-                text=True,
-                timeout=10,
-            )
-            combined = result.stdout + result.stderr
-            print(f"DEBUG _glpk_available_via_gams: gams '?' output (first 300 chars): "
-                  f"{combined[:300]!r}", flush=True)
-            found = "GLPK" in combined or "glpk" in combined.lower()
-            print(f"DEBUG _glpk_available_via_gams: GLPK found={found}", flush=True)
-            return found
-        except Exception as exc:
+        combined = self._query_gams_solvers()
+        if not combined:
             # Cannot query GAMS — assume GLPK ships with it (safe default)
-            print(f"DEBUG _glpk_available_via_gams: subprocess error {exc!r} — defaulting to True",
-                  flush=True)
+            print("DEBUG _glpk_available_via_gams: no output — defaulting to True", flush=True)
             return True
+
+        found = "GLPK" in combined or "glpk" in combined.lower()
+        print(f"DEBUG _glpk_available_via_gams: GLPK found={found}", flush=True)
+        return found
+
+    def _cplex_available_via_gams(self) -> bool:
+        """
+        Return True if the GAMS installation includes a licensed CPLEX solver.
+
+        Detection checks (in order):
+        1. CPLEX solver DLL present in the GAMS system directory
+           (``gcplex*.dll`` / ``cplex*.dll`` on Windows) — most reliable.
+        2. ``gams ?`` output contains "CPLEX" — text-based fallback.
+        3. Python ``cplex`` package is importable — last-resort fallback.
+        """
+        import glob as _glob
+
+        gams_dir = self._locate_gams_dir()
+        print(f"DEBUG _cplex_available_via_gams: gams_dir={gams_dir!r}", flush=True)
+
+        if gams_dir:
+            # Check for the GAMS/CPLEX link DLL (e.g. gcplex130.dll, cplex*.dll)
+            patterns = [
+                os.path.join(gams_dir, "gcplex*.dll"),
+                os.path.join(gams_dir, "cplex*.dll"),
+                os.path.join(gams_dir, "gcplex*"),   # non-Windows / no extension
+            ]
+            dll_hits = [p for pat in patterns for p in _glob.glob(pat)]
+            print(f"DEBUG _cplex_available_via_gams: DLL search hits={dll_hits}", flush=True)
+            if dll_hits:
+                return True
+
+            # Fall back to gams ? text output
+            combined = self._query_gams_solvers()
+            if combined:
+                found = "CPLEX" in combined or "cplex" in combined.lower()
+                print(f"DEBUG _cplex_available_via_gams: gams ? text check found={found}",
+                      flush=True)
+                if found:
+                    return True
+
+        # Last resort: Python cplex package
+        try:
+            import cplex  # type: ignore # noqa: F401
+            print("DEBUG _cplex_available_via_gams: Python cplex package found", flush=True)
+            return True
+        except ImportError:
+            pass
+
+        print("DEBUG _cplex_available_via_gams: CPLEX not found", flush=True)
+        return False
 
     # ------------------------------------------------------------------
     # Solver discovery
@@ -189,12 +258,9 @@ class SolverManager:
         solvers: List[str] = ["glpk"]
         print(f"DEBUG get_available_solvers: GAMS found — GLPK included by default", flush=True)
 
-        try:
-            import cplex  # type: ignore # noqa: F401
+        if self._cplex_available_via_gams():
             solvers.append("cplex")
-            print("DEBUG get_available_solvers: cplex package found", flush=True)
-        except ImportError:
-            pass
+            print("DEBUG get_available_solvers: CPLEX available", flush=True)
 
         try:
             import gurobipy  # type: ignore # noqa: F401

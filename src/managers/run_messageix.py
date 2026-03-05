@@ -295,5 +295,31 @@ def main() -> int:
     return 0
 
 
+def _install_jpype_teardown_filter() -> None:
+    """
+    Override sys.unraisablehook to swallow the AttributeError that ixmp's
+    JDBCBackend.__del__ raises during Python shutdown when the JPype JVM has
+    already been torn down ('NoneType' has no attribute 'IxException').
+
+    All other unraisable exceptions are forwarded to the default handler so
+    real errors are not silently discarded.
+    """
+    default_hook = getattr(sys, "__unraisablehook__", None)
+
+    def _hook(args):  # args: sys.UnraisableHookArgs
+        if (
+            args.exc_type is AttributeError
+            and "IxException" in str(args.exc_value)
+        ):
+            return  # suppress known JPype/JVM teardown noise
+        if default_hook is not None:
+            default_hook(args)
+        else:
+            sys.__unraisablehook__(args)  # type: ignore[attr-defined]
+
+    sys.unraisablehook = _hook  # type: ignore[attr-defined]
+
+
 if __name__ == "__main__":
+    _install_jpype_teardown_filter()
     sys.exit(main())

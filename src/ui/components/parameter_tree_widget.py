@@ -285,7 +285,9 @@ class ParameterTreeWidget(QTreeWidget):
 
                 for item_name, item in category_items:
                     param_item = QTreeWidgetItem(category_item)
-                    param_item.setText(0, item_name)
+                    row_count = len(item.df) if item.df is not None else 0
+                    param_item.setText(0, f"{item_name} ({row_count} rows)")
+                    param_item.setData(0, Qt.UserRole, item_name)
 
                     # Add metadata to tooltip based on section type
                     if section_type in ["parameters", "variables"]:
@@ -371,7 +373,9 @@ class ParameterTreeWidget(QTreeWidget):
 
             for param_name, parameter in params:
                 param_item = QTreeWidgetItem(category_item)
-                param_item.setText(0, param_name)
+                row_count = len(parameter.df) if parameter.df is not None else 0
+                param_item.setText(0, f"{param_name} ({row_count} rows)")
+                param_item.setData(0, Qt.UserRole, param_name)
 
                 # Add metadata to tooltip
                 dims_info = f"Dimensions: {', '.join(parameter.metadata.get('dims', []))}" if parameter.metadata.get('dims') else "No dimensions"

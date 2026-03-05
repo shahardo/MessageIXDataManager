@@ -37,7 +37,8 @@ _PRIMARY_VARIABLES: List[str] = [
     "STOCK",
     "LAND",
     "STORAGE_CHARGE",
-    "STORAGE_CONTENT",
+    # STORAGE_CONTENT is only present in models with storage; omit from the
+    # primary list to avoid a noisy warning on every standard run.
 ]
 
 _PRIMARY_EQUATIONS: List[str] = [
@@ -123,17 +124,25 @@ class ResultsExporter:
         Primary names come first (in the given order), then any additional
         names discovered on the scenario, deduplicating throughout.
         """
-        seen = set(primary)
-        ordered = list(primary)
-
         try:
-            available = getattr(scenario, list_attr)()
-            for name in available:
-                if name not in seen:
-                    seen.add(name)
-                    ordered.append(name)
+            available = list(getattr(scenario, list_attr)())
         except Exception as exc:
             log_fn(f"  Warning: could not query {list_attr}: {exc}")
+            available = []
+
+        available_set = set(available)
+
+        # Primary names first (only those that actually exist), then any extras.
+        seen: set = set()
+        ordered: list = []
+        for name in primary:
+            if name in available_set and name not in seen:
+                seen.add(name)
+                ordered.append(name)
+        for name in available:
+            if name not in seen:
+                seen.add(name)
+                ordered.append(name)
 
         return ordered
 
@@ -156,12 +165,20 @@ class ResultsExporter:
             return 0
 
         try:
-            df: pd.DataFrame = fetch_fn(name)
+            df = fetch_fn(name)
         except Exception as exc:
             log_fn(f"  Warning: could not fetch {sheet_name}: {exc}")
             return 0
 
-        if df is None or df.empty:
+        if df is None:
+            return 0
+
+        # ixmp returns a plain dict {lvl: value, mrg: value} for scalar
+        # variables / equations; wrap it so the rest of the code sees a DataFrame.
+        if isinstance(df, dict):
+            df = pd.DataFrame([df])
+
+        if not isinstance(df, pd.DataFrame) or df.empty:
             return 0
 
         # Excel sheet names are limited to 31 characters

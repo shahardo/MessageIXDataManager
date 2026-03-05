@@ -18,20 +18,43 @@ from typing import Optional
 # Known unit mappings: bad unit → suggested valid ixmp unit
 # ---------------------------------------------------------------------------
 KNOWN_UNIT_MAP: dict[str, str] = {
-    "million":       "1e6",
-    "Million":       "1e6",
-    "billion":       "1e9",
-    "Billion":       "1e9",
-    "GW":            "GW",     # already valid — listed for completeness
-    "Mt":            "Mt CO2", # often means megatonne CO2
-    "ktoe":          "ktoe",
-    "Mtoe":          "Mtoe",
+    # Scaling words / scientific notation — ixmp does not accept these as units
+    "million":       "-",
+    "Million":       "-",
+    "billion":       "-",
+    "Billion":       "-",
+    "1e3":           "-",
+    "1e6":           "-",
+    "1e9":           "-",
+    "1E3":           "-",
+    "1E6":           "-",
+    "1E9":           "-",
+    # Common energy / power units — already valid in ixmp, listed for completeness
+    "GW":            "GW",
+    "MW":            "MW",
+    "kW":            "kW",
+    "GWa":           "GWa",
+    "MWa":           "MWa",
+    "kWa":           "kWa",
+    "GWh":           "GWh",
+    "MWh":           "MWh",
+    "kWh":           "kWh",
     "EJ":            "EJ",
     "PJ":            "PJ",
     "TJ":            "TJ",
+    "GJ":            "GJ",
+    "MJ":            "MJ",
+    "ktoe":          "ktoe",
+    "Mtoe":          "Mtoe",
+    # Currency
     "USD":           "USD",
     "kUSD":          "kUSD",
     "MUSD":          "MUSD",
+    # Mass / emissions
+    "Mt":            "Mt CO2", # often means megatonne CO2
+    "tCO2":          "tCO2",
+    "MtCO2":         "MtCO2",
+    # Dimensionless variants
     "%":             "%",
     "percent":       "%",
     "fraction":      "-",
@@ -41,8 +64,10 @@ KNOWN_UNIT_MAP: dict[str, str] = {
     "None":          "-",
     "NA":            "-",
     "N/A":           "-",
+    # Time
     "year":          "year",
     "years":         "year",
+    "yr":            "year",
 }
 
 # ---------------------------------------------------------------------------
