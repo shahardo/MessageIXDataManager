@@ -1489,3 +1489,126 @@ class TestElectricityCostBySource:
             assert df.loc[yr, coal_col] > df.loc[yr, solar_col], \
                 f"Year {yr}: coal ({df.loc[yr, coal_col]:.4f}) should " \
                 f"exceed solar ({df.loc[yr, solar_col]:.4f})"
+
+
+# ===========================================================================
+# Year column normalization (_normalize_year_cols / ScenarioDataWrapper.par)
+# ===========================================================================
+
+class TestYearColumnNormalization:
+    """
+    ScenarioDataWrapper.par() must normalize year columns stored as strings
+    (object dtype) to int64 so that merges between input params and result
+    variables don't raise ValueError about mismatched dtypes.
+    """
+
+    def test_normalize_year_cols_converts_object_to_int(self):
+        """_normalize_year_cols() converts string year values to int64."""
+        from analysis.base_analyzer import _normalize_year_cols
+        df = pd.DataFrame({
+            "technology": ["coal", "solar"],
+            "year_act": ["2020", "2025"],   # stored as strings
+            "value": [1.0, 2.0],
+        })
+        result = _normalize_year_cols(df)
+        assert result["year_act"].dtype == "int64"
+        assert list(result["year_act"]) == [2020, 2025]
+
+    def test_normalize_year_cols_leaves_int_unchanged(self):
+        """_normalize_year_cols() is a no-op when columns are already int."""
+        from analysis.base_analyzer import _normalize_year_cols
+        df = pd.DataFrame({"year_act": [2020, 2025], "value": [1.0, 2.0]})
+        result = _normalize_year_cols(df)
+        assert result["year_act"].dtype == "int64"
+
+    def test_normalize_year_cols_handles_multiple_year_columns(self):
+        """All year dimension columns are normalized."""
+        from analysis.base_analyzer import _normalize_year_cols
+        df = pd.DataFrame({
+            "year_act": ["2020"],
+            "year_vtg": ["2015"],
+            "value": [1.0],
+        })
+        result = _normalize_year_cols(df)
+        assert result["year_act"].dtype == "int64"
+        assert result["year_vtg"].dtype == "int64"
+
+    def test_normalize_year_cols_ignores_non_year_columns(self):
+        """Non-year string columns must not be touched."""
+        from analysis.base_analyzer import _normalize_year_cols
+        df = pd.DataFrame({
+            "technology": ["coal"],
+            "year_act": ["2020"],
+            "value": [1.0],
+        })
+        result = _normalize_year_cols(df)
+        # technology stays as object
+        assert result["technology"].dtype == object
+        assert result["year_act"].dtype == "int64"
+
+    def test_par_normalizes_string_years_on_access(self):
+        """
+        ScenarioDataWrapper.par() returns int64 year columns even when the
+        underlying DataFrame has them stored as strings.
+        """
+        scenario = ScenarioData()
+        df = pd.DataFrame({
+            "technology": ["coal"],
+            "year_act": ["2020"],   # string — as loaded from some Excel parsers
+            "value": [1.0],
+        })
+        param = Parameter("var_cost", df, {})
+        scenario.add_parameter(param)
+
+        wrapper = ScenarioDataWrapper(scenario)
+        result = wrapper.par("var_cost")
+        assert result["year_act"].dtype == "int64"
+        assert result["year_act"].iloc[0] == 2020
+
+    def test_par_normalizes_does_not_modify_original_df(self):
+        """
+        Year normalization works on a copy; the original Parameter.df must
+        remain unchanged (dtype stays object).
+        """
+        scenario = ScenarioData()
+        df = pd.DataFrame({"year_act": ["2020"], "value": [1.0]})
+        param = Parameter("inv_cost", df, {})
+        scenario.add_parameter(param)
+
+        wrapper = ScenarioDataWrapper(scenario)
+        wrapper.par("inv_cost")
+
+        # Original DataFrame is unchanged
+        assert param.df["year_act"].dtype == object
+
+    def test_merge_after_normalization_succeeds(self):
+        """
+        The key fix: merging a result variable (int64 year_act) with an input
+        parameter (object year_act) must not raise ValueError after normalization.
+        """
+        scenario = ScenarioData()
+
+        # Simulate ACT result variable loaded from Excel: year_act is int64
+        df_act = pd.DataFrame({
+            "technology": ["coal"], "year_act": [2020], "lvl": [100.0],
+        })
+        scenario.add_parameter(Parameter("ACT", df_act, {"result_type": "variable"}))
+
+        # Simulate var_cost input parameter loaded with string years (object dtype)
+        df_vc = pd.DataFrame({
+            "technology": ["coal"], "year_act": ["2020"], "value": [5.0],
+        })
+        scenario.add_parameter(Parameter("var_cost", df_vc, {}))
+
+        wrapper = ScenarioDataWrapper(scenario)
+        act = wrapper.var("ACT")
+        vc = wrapper.par("var_cost")
+
+        # Both year_act columns must be int64 after normalization
+        assert act["year_act"].dtype == "int64"
+        assert vc["year_act"].dtype == "int64"
+
+        # Merge must not raise
+        merged = act.merge(vc, on=["year_act", "technology"], how="left")
+        assert len(merged) == 1
+        assert merged["value"].iloc[0] == pytest.approx(5.0)
