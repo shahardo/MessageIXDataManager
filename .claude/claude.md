@@ -27,7 +27,7 @@ src/
 │   ├── message_ix_schema.py # MESSAGEix parameter definitions, codelists, tooltips
 │   ├── user_preferences.py  # Shared user preferences (UserPreferences QObject)
 │   └── view_state.py        # ViewState and ViewStateManager classes
-├── analysis/               # Domain-specific result analyzers (created in refactoring guide 5)
+├── analysis/               # Domain-specific result analyzers
 │   ├── __init__.py               # Package init re-exporting all analyzers
 │   ├── base_analyzer.py          # ScenarioDataWrapper + BaseAnalyzer with shared helpers
 │   ├── electricity_analyzer.py   # Generation, capacity, LCOE, cost breakdown, dashboard metrics
@@ -41,12 +41,17 @@ src/
 │   ├── input_manager.py          # Load/parse input Excel files
 │   ├── results_analyzer.py       # Load/parse results Excel files (pure data loader, < 300 lines)
 │   ├── results_postprocessor.py  # Facade/orchestrator delegating to src/analysis/ domain analyzers
-│   ├── solver_manager.py         # MESSAGEix solver execution
+│   ├── results_exporter.py       # Export solved ixmp Scenario variables/equations to Excel
+│   ├── solver_manager.py         # MESSAGEix solver detection and command building
+│   ├── solver_worker.py          # QThread-based subprocess runner for solver execution
+│   ├── run_messageix.py          # Standalone solver script (invoked as subprocess)
+│   ├── scenario_loader.py        # Load input Excel into ixmp Platform as message_ix.Scenario
+│   ├── warning_analyzer.py       # Parse solver warnings; suggest unit fixes (KNOWN_UNIT_MAP)
 │   ├── session_manager.py        # Application state persistence
 │   ├── parameter_manager.py      # Parameter validation/creation
 │   ├── commands.py               # Command pattern for undo/redo
 │   ├── file_handlers.py          # High-level file operations
-│   ├── data_file_manager.py      # ZIP/CSV data loading
+│   ├── data_file_manager.py      # ZIP/CSV and Excel data loading (var_/equ_/par_/set_ prefixes)
 │   ├── data_export_manager.py    # Data export functionality
 │   ├── table_undo_manager.py     # TableUndoManager (UndoManager alias)
 │   └── logging_manager.py        # Logging configuration
@@ -64,12 +69,13 @@ src/
 │   │   ├── parameter_tree_widget.py   # Parameter tree navigation
 │   │   ├── data_display_widget.py     # Data table with editing, pivoting, deciphering
 │   │   ├── chart_widget.py            # Plotly chart visualization with legend tooltips
-│   │   ├── file_navigator_widget.py   # File browser
+│   │   ├── file_navigator_widget.py   # File browser / scenario panel
 │   │   ├── add_parameter_dialog.py    # Add parameter dialog
 │   │   ├── column_header_view.py      # ColumnHeaderView with signals
 │   │   ├── table_formatter.py         # CellStyle, TableFormatter, DIMENSION_DISPLAY_NAMES
 │   │   ├── base_dashboard.py          # BaseDashboard with web view setup
-│   │   └── find_widget.py             # Find/search widget
+│   │   ├── find_widget.py             # Find/search widget
+│   │   └── warning_summary_dialog.py  # Solver warning summary with fix suggestions
 │   ├── controllers/              # Event handlers
 │   │   ├── edit_handler.py       # Cell editing logic
 │   │   ├── file_dialog_controller.py # File dialog controller
@@ -99,9 +105,16 @@ src/
 
 ### Data Flow
 
-Two file types are supported:
+Three file types are supported:
 
-**Data file** (`.zip` archive of CSVs) — loaded by `DataFileManager`:
+**Input file** (`.xlsx` workbook) — loaded by `InputManager`:
+```
+input.xlsx (sheets: sets, parameters, mappings)
+  → InputManager → ParsingStrategy → Parameter objects
+                 → Scenario object → ScenarioData container
+```
+
+**Data file** (`.zip` archive of CSVs or `.xlsx` with prefixed sheets) — loaded by `DataFileManager`:
 ```
 data.zip (contains set_*.csv, par_*.csv, var_*.csv, equ_*.csv)
   → DataFileManager._load_zipped_csv_data()
@@ -109,6 +122,11 @@ data.zip (contains set_*.csv, par_*.csv, var_*.csv, equ_*.csv)
     → par_*.csv  → Parameter objects with long-format DataFrames (input)
     → var_*.csv  → Parameter objects marked as variables (results)
     → equ_*.csv  → Parameter objects marked as equations (results)
+
+solver_results.xlsx (sheets: var_ACT, var_CAP, equ_COMMODITY_BALANCE_GT, ...)
+  → DataFileManager._load_excel_data()
+    → var_* sheets → Parameter objects marked as variables
+    → equ_* sheets → Parameter objects marked as equations
 ```
 
 **Results file** (`.xlsx` workbook with wide tables) — loaded by `ResultsAnalyzer`:
@@ -119,11 +137,20 @@ results.xlsx (sheets with pre-pivoted wide-format tables)
     → ResultsPostprocessor → Derived metrics (LCOE, generation, emissions)
 ```
 
-**Input file** (`.xlsx` workbook) — loaded by `InputManager`:
+**Solver execution flow**:
 ```
-input.xlsx (sheets: sets, parameters, mappings)
-  → InputManager → ParsingStrategy → Parameter objects
-                 → Scenario object → ScenarioData container
+MainWindow._run_solver()
+  → SolverManager.build_solver_command()
+  → SolverManager.create_worker(cmd) → SolverWorker (QThread)
+  → SolverWorker.run()
+      → subprocess: run_messageix.py
+          → ScenarioLoader.load_from_excel() → ixmp Platform → message_ix.Scenario
+          → scenario.solve()
+          → ResultsExporter.export_to_excel() → solver_results.xlsx
+          → prints [RESULT_FILE] path
+      → SolverWorker.finished signal → MainWindow._on_solver_finished()
+          → DataFileManager._load_excel_data(result_file)
+          → file_navigator.update_scenarios() (shows file in Data File slot)
 ```
 
 **Display pipeline for var_* variables**:
@@ -137,17 +164,23 @@ var_* Parameter → TechnologyClassifier.filter_by_energy_level()
 ### Key Classes
 
 - **Parameter**: Wraps DataFrame with metadata (units, description, dimensions)
-- **Scenario**: Represents a MESSAGEix scenario with input/results files
+- **Scenario**: Represents a MESSAGEix scenario; holds `input_file`, `message_scenario_file` (data/results), `results_file`
 - **ScenarioData**: Container for sets, parameters, mappings
 - **UndoManager**: Manages undo/redo stack with Command objects
 - **UserPreferences**: Shared QObject holding `min_year`, `max_year`, `limit_enabled` with a `changed` signal
 - **DashboardChartMixin**: Shared chart rendering methods (stacked bar, pie, placeholder) used by `ResultsFileDashboard` and `PostprocessingDashboard`
 - **ResultsPostprocessor**: Thin facade/orchestrator — delegates to domain analyzers in `src/analysis/`, then converts shared `results` dict to `Parameter` objects
 - **BaseAnalyzer**: Base class for all domain analyzers; holds shared state (`msg`, `scenario`, `plotyrs`, `results`) and provides helpers (`_group`, `_model_output`, `_add_history`, `_multiply_df`, etc.)
+- **ScenarioDataWrapper**: Wraps ScenarioData to expose `msg.par()`/`msg.var()`/`msg.set()` interface; normalizes year columns to `int64`
 - **ElectricityAnalyzer**: Electricity generation, capacity, LCOE, cost breakdown, dashboard metrics (static methods `calculate_dashboard_metrics`, `calculate_electricity_cost_breakdown`)
 - **TechnologyClassifier**: Maps technologies to energy levels, provides grouping (coal, gas, emissions, etc.), and filters var_* data by energy level with dynamic emission detection
 - **InputFileDashboard**: Inherits `BaseDashboard`; shows commodities, technologies, years, regions, and parameter coverage matrices
 - **ResultsFileDashboard**: Inherits `DashboardChartMixin, BaseDashboard`; shows result metrics and charts
+- **SolverWorker**: `QThread` subprocess runner; streams solver stdout via `output_line` signal; detects `[RESULT_FILE]` prefix to capture output path
+- **ScenarioLoader**: Static helper — parses input Excel via `InputManager`, writes sets/parameters into an `ixmp.Platform` (HSQLDB), commits a `message_ix.Scenario` ready for `solve()`
+- **ResultsExporter**: Static helper — queries all `var_list()`/`equ_list()` from a solved scenario and writes them to an Excel workbook with `var_`/`equ_` prefixed sheet names
+- **WarningAnalyzer**: Collects solver console warnings, classifies them (unit errors, missing sets, etc.), and suggests fixes; `KNOWN_UNIT_MAP` maps bad unit strings to ixmp-valid equivalents
+- **WarningSummaryDialog**: Non-modal dialog shown after a solver run if warnings were collected; allows navigation to the affected parameter and one-click unit auto-fix
 
 ### Results Variable Display (var_*)
 
@@ -166,6 +199,13 @@ When displaying result variables (var_ACT, var_CAP, var_EMISS, etc.):
 - `get_code_display_names()` in `message_ix_schema.py` returns combined dict of code→name mappings from `MESSAGE_IX_COMMODITIES` and `MESSAGE_IX_TECHNOLOGIES`
 - `generate_legend_tooltip_script()` injects JavaScript into Plotly charts for hover tooltips on legend items
 - "Decipher Names" checkbox in advanced display controls applies to both table headers/cells and chart legends
+
+### Unit Handling (Solver Integration)
+
+- `KNOWN_UNIT_MAP` in `warning_analyzer.py` maps invalid ixmp unit strings (e.g. `"1e6"`, `"million"`, `"GWyr/yr"`) to valid equivalents or `"-"` (dimensionless)
+- Applied in `ScenarioLoader._prepare_parameter_df()` before `scenario.add_par()`
+- Dynamic fallback: if `add_par()` still fails with a unit error, all units in that parameter are replaced with `"-"` and the call is retried
+- `WarningAnalyzer` provides the `autofix_requested` signal wired to `MainWindow._autofix_parameter_unit()` for one-click fixes from the warning dialog
 
 ## Coding Conventions
 
@@ -279,7 +319,7 @@ pytest -v tests/
 
 ### Known Test Issues
 - `test_data_models.py::test_mark_modified` - Pre-existing failure (test expects modified set empty after clear, but add_parameter marks it)
-- Full test suite exits with code 1 due to Qt/WebEngine teardown crash — this is not a test failure (589 passed, 4 skipped is the current baseline)
+- Full test suite exits with code 1 due to Qt/WebEngine teardown crash — this is not a test failure (591 tests collected; ~589 pass, 4 skip is the current baseline)
 
 ### Test Scope Policy
 - **Run only the tests related to the files changed**, not the full suite on every edit
@@ -297,11 +337,19 @@ pytest -v tests/
 | `src/core/message_ix_schema.py` | MESSAGEix schema, codelists (commodities, technologies), tooltip scripts |
 | `src/managers/commands.py` | Undo/redo command objects |
 | `src/managers/input_manager.py` | Input file parsing |
+| `src/managers/data_file_manager.py` | ZIP/CSV and Excel (var_/equ_) data loading |
 | `src/managers/results_postprocessor.py` | Thin facade — orchestrates `src/analysis/` domain analyzers |
+| `src/managers/solver_manager.py` | GAMS/solver detection, command building |
+| `src/managers/solver_worker.py` | QThread subprocess runner for solver |
+| `src/managers/run_messageix.py` | Standalone solver script (run as subprocess) |
+| `src/managers/scenario_loader.py` | Load input Excel into ixmp Platform for solving |
+| `src/managers/results_exporter.py` | Export solved scenario variables/equations to Excel |
+| `src/managers/warning_analyzer.py` | Parse solver warnings; KNOWN_UNIT_MAP for unit fixes |
 | `src/analysis/base_analyzer.py` | `ScenarioDataWrapper` + `BaseAnalyzer` with shared calculation helpers |
 | `src/analysis/electricity_analyzer.py` | Electricity generation, LCOE, cost breakdown, dashboard metrics |
 | `src/ui/components/data_display_widget.py` | Table display with editing, pivoting, name deciphering |
 | `src/ui/components/chart_widget.py` | Plotly chart visualization with legend tooltips |
+| `src/ui/components/warning_summary_dialog.py` | Solver warning summary dialog with auto-fix |
 | `src/ui/input_file_dashboard.py` | Input file overview dashboard |
 | `src/ui/dashboard_chart_mixin.py` | Shared chart rendering for dashboards |
 | `src/ui/postprocessing_dashboard.py` | Postprocessed results dashboard |
@@ -316,6 +364,13 @@ This application works with MESSAGEix energy modeling framework:
 - Results files: Excel workbooks with solver output variables
 - Parameters follow MESSAGEix schema (see `message_ix_schema.py`)
 - Commodities and technologies follow official codelists
+
+### Solver Integration Details
+- `SolverManager` detects GAMS installation (checks `C:\GAMS`, `GAMSDIR` env var, PATH)
+- `SolverManager` detects available solvers: GLPK (bundled with GAMS), CPLEX (checks for `gcplex*.dll`), Gurobi (checks `gurobipy` package)
+- `run_messageix.py` auto-detects `JAVA_HOME` (scans common JDK install paths) and `IXMP_GAMS_PATH`
+- Solver output Excel uses `var_XXX` / `equ_XXX` sheet naming for compatibility with `DataFileManager._load_excel_data()`
+- After a successful solve, the result file is set as the scenario's `message_scenario_file` and shown in the file navigator
 
 ### Parameter Categories
 - Technology Input/Output (input, output, capacity factors)
@@ -339,3 +394,5 @@ This application works with MESSAGEix energy modeling framework:
 - **plotly**: Interactive charts
 - **pytest**: Testing framework
 - **pytest-qt**: PyQt5 testing utilities
+- **ixmp / message_ix**: MESSAGEix solver integration (optional; required only for running the solver)
+- **jpype1**: Java bridge required by ixmp (Java 11+ must be installed)
