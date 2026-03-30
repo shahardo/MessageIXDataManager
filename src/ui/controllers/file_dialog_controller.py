@@ -29,7 +29,7 @@ class FileDialogController:
 
     # File type filters
     EXCEL_FILTER = "Excel Files (*.xlsx *.xls);;All Files (*)"
-    DATA_FILE_FILTER = "ZIP Files (*.zip);;CSV Files (*.csv);;All Files (*)"
+    DATA_FILE_FILTER = "Message Data Files (*.zip *.xlsx *.xls);;ZIP Files (*.zip);;Excel Files (*.xlsx *.xls);;All Files (*)"
     ALL_SUPPORTED_FILTER = "All Supported (*.xlsx *.xls *.zip *.csv);;Excel Files (*.xlsx *.xls);;ZIP Files (*.zip);;CSV Files (*.csv);;All Files (*)"
 
     def __init__(

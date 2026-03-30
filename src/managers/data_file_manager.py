@@ -76,7 +76,8 @@ class DataFileManager:
     def load_data_file(
         self,
         file_path: str,
-        existing_scenario: Optional[ScenarioData] = None
+        existing_scenario: Optional[ScenarioData] = None,
+        progress_callback: Optional[Callable[[int, int, str], None]] = None
     ) -> Tuple[Optional[ScenarioData], List[Tuple[str, str]]]:
         """
         Load a data file.
@@ -88,15 +89,16 @@ class DataFileManager:
         Args:
             file_path: Path to the data file
             existing_scenario: Optional existing scenario data for conflict detection
+            progress_callback: Optional callback(current, total, label) called as each item is read
 
         Returns:
             Tuple of (ScenarioData or None, list of (item_type, item_name) tuples for replaced items)
         """
         lower = file_path.lower()
         if lower.endswith('.zip'):
-            return self._load_zipped_csv_data(file_path, existing_scenario)
+            return self._load_zipped_csv_data(file_path, existing_scenario, progress_callback)
         elif lower.endswith(('.xlsx', '.xls')):
-            return self._load_excel_data(file_path, existing_scenario)
+            return self._load_excel_data(file_path, existing_scenario, progress_callback)
         else:
             self._console(f"Unsupported file format: {file_path}")
             return None, []
@@ -104,7 +106,8 @@ class DataFileManager:
     def _load_excel_data(
         self,
         excel_path: str,
-        existing_scenario: Optional[ScenarioData] = None
+        existing_scenario: Optional[ScenarioData] = None,
+        progress_callback: Optional[Callable[[int, int, str], None]] = None
     ) -> Tuple[Optional[ScenarioData], List[Tuple[str, str]]]:
         """
         Load var_/equ_/par_/set_ sheets from an Excel workbook.
@@ -124,6 +127,13 @@ class DataFileManager:
 
         sheet_names = xf.sheet_names
 
+        # Identify sheets we will actually process (prefixed sheets only)
+        prefixed_sheets = [
+            s for s in sheet_names
+            if s.lower().startswith((self.SET_PREFIX, self.PAR_PREFIX, self.VAR_PREFIX, self.EQU_PREFIX))
+        ]
+        total = len(prefixed_sheets)
+
         # First pass: collect electricity technologies from par_output if present
         electricity_technologies: Set[str] = set()
         for sheet in sheet_names:
@@ -139,8 +149,13 @@ class DataFileManager:
                     pass
                 break
 
-        # Second pass: process all prefixed sheets
-        for sheet in sheet_names:
+        # Second pass: process all prefixed sheets, reporting progress
+        for idx, sheet in enumerate(prefixed_sheets):
+            # Build a human-readable label, e.g. "Reading variable ACT"
+            label = self._sheet_label(sheet)
+            if progress_callback:
+                progress_callback(idx, total, label)
+
             try:
                 df = pd.read_excel(xf, sheet_name=sheet)
                 if df is None or df.empty:
@@ -171,12 +186,16 @@ class DataFileManager:
             except Exception as exc:
                 self._console(f"Error loading sheet '{sheet}': {exc}")
 
+        if progress_callback:
+            progress_callback(total, total, "Done")
+
         return scenario_data, replaced_items
 
     def _load_zipped_csv_data(
         self,
         zip_path: str,
-        existing_scenario: Optional[ScenarioData] = None
+        existing_scenario: Optional[ScenarioData] = None,
+        progress_callback: Optional[Callable[[int, int, str], None]] = None
     ) -> Tuple[Optional[ScenarioData], List[Tuple[str, str]]]:
         """
         Extract and parse CSV files from a ZIP archive.
@@ -184,6 +203,7 @@ class DataFileManager:
         Args:
             zip_path: Path to the zip file
             existing_scenario: Optional existing scenario for conflict detection
+            progress_callback: Optional callback(current, total, label) called per CSV file
 
         Returns:
             Tuple of (ScenarioData, list of replaced items)
@@ -196,12 +216,17 @@ class DataFileManager:
                 # Get list of CSV files in the archive
                 csv_files = [f for f in zf.namelist() if f.lower().endswith('.csv')]
                 print(f"DEBUG: Found {len(csv_files)} CSV files in zip archive")
+                total = len(csv_files)
 
                 # First pass: collect electricity-generating technologies from par_output
                 electricity_technologies = self._extract_electricity_technologies(zf, csv_files)
 
                 # Second pass: process all CSV files
-                for csv_name in csv_files:
+                for idx, csv_name in enumerate(csv_files):
+                    label = self._sheet_label(os.path.splitext(os.path.basename(csv_name))[0])
+                    if progress_callback:
+                        progress_callback(idx, total, label)
+
                     try:
                         result = self._process_csv_file(
                             zf, csv_name, electricity_technologies, existing_scenario
@@ -226,6 +251,9 @@ class DataFileManager:
                             'csv_name': csv_name,
                             'error': str(e)
                         })
+
+                if progress_callback:
+                    progress_callback(total, total, "Done")
 
         except zipfile.BadZipFile:
             print(f"ERROR: {zip_path} is not a valid zip file")
@@ -466,6 +494,28 @@ class DataFileManager:
             if rows_filtered > 0:
                 print(f"DEBUG: Filtered out {rows_filtered} internal solver rows from {name}")
         return df
+
+    def _sheet_label(self, name: str) -> str:
+        """Build a human-readable progress label from a prefixed sheet/file name.
+
+        Examples:
+            ``var_ACT``   → ``"Reading variable ACT"``
+            ``par_input`` → ``"Reading parameter input"``
+            ``set_node``  → ``"Reading set node"``
+            ``equ_COMMODITY_BALANCE_GT`` → ``"Reading equation COMMODITY_BALANCE_GT"``
+        """
+        name_lower = name.lower()
+        if name_lower.startswith(self.VAR_PREFIX):
+            kind, rest = "variable", name[len(self.VAR_PREFIX):]
+        elif name_lower.startswith(self.PAR_PREFIX):
+            kind, rest = "parameter", name[len(self.PAR_PREFIX):]
+        elif name_lower.startswith(self.SET_PREFIX):
+            kind, rest = "set", name[len(self.SET_PREFIX):]
+        elif name_lower.startswith(self.EQU_PREFIX):
+            kind, rest = "equation", name[len(self.EQU_PREFIX):]
+        else:
+            return f"Reading {name}"
+        return f"Reading {kind} {rest}"
 
     def get_load_summary(self, scenario_data: ScenarioData) -> str:
         """

@@ -705,7 +705,7 @@ class FileNavigatorWidget(QWidget):
             file_filter = "Excel Files (*.xlsx *.xls);;All Files (*)"
             title = "Open Input File"
         elif file_type == "data":
-            file_filter = "Message Data Files (*.zip);;All Files (*)"
+            file_filter = "Message Data Files (*.zip *.xlsx *.xls);;ZIP Files (*.zip);;Excel Files (*.xlsx *.xls);;All Files (*)"
             title = "Open Data File"
         elif file_type == "results":
             file_filter = "Excel Files (*.xlsx *.xls);;All Files (*)"

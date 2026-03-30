@@ -763,12 +763,11 @@ class MainWindow(QMainWindow):
 
     def _load_data_file(self, file_path):
         """
-        Load a message data file (zipped CSV files).
+        Load a message data file (ZIP of CSVs or Excel workbook with prefixed sheets).
 
-        Supports Zip files (.zip) - contains CSV tables:
-        - set_xxx.csv: message sets (input)
-        - par_xxx.csv: message parameters (input)
-        - var_xxx.csv: message variables (output)
+        Supports:
+        - ``.zip``  — contains CSV tables: set_*/par_*/var_*/equ_*.csv
+        - ``.xlsx`` — sheets named set_*/par_*/var_*/equ_*
 
         If sets/parameters already exist (loaded from input file), they are
         replaced and the conflict is logged.
@@ -780,6 +779,14 @@ class MainWindow(QMainWindow):
 
         print(f"DEBUG: Loading data file: {file_path}")
 
+        def _on_progress(current: int, total: int, label: str) -> None:
+            """Update progress bar and status bar as each item is read."""
+            if total > 0:
+                pct = int(current * 100 / total)
+                self.update_progress(pct)
+            self.statusbar.showMessage(label)
+            QApplication.processEvents()
+
         try:
             # Get existing scenario data for conflict detection
             existing_scenario = None
@@ -788,10 +795,13 @@ class MainWindow(QMainWindow):
                     self.selected_scenario.input_file
                 )
 
-            # Use DataFileManager to load the file
-            scenario_data, replaced_items = self.data_file_manager.load_data_file(
-                file_path, existing_scenario
-            )
+            self.show_progress_bar(100, f"Loading {os.path.basename(file_path)}…")
+            with WaitCursorContext(force=True):
+                # Use DataFileManager to load the file
+                scenario_data, replaced_items = self.data_file_manager.load_data_file(
+                    file_path, existing_scenario, progress_callback=_on_progress
+                )
+            self.hide_progress_bar()
 
             if scenario_data is None:
                 self._remove_failed_data_file(file_path)
@@ -817,6 +827,7 @@ class MainWindow(QMainWindow):
                     })
 
         except Exception as e:
+            self.hide_progress_bar()
             print(f"ERROR loading data file: {e}")
             self._append_to_console(f"Error loading data file: {e}")
             logging_manager.log('ERROR', 'DATA_LOAD', f"Error loading data file: {e}", {
