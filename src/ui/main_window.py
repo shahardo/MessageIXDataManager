@@ -232,6 +232,27 @@ class MainWindow(QMainWindow):
         # Initialize undo manager
         self.undo_manager = UndoManager()
 
+        # AI assistant components (imported lazily so the app works without 'anthropic')
+        self._ai_available = False
+        self.mcp_tools = None
+        self.llm_agent = None
+        self.chat_panel = None
+        self._active_llm_worker = None
+        self._ai_chat_scenario_key: Optional[str] = None  # key used for history save/load
+        try:
+            from ai.mcp_tools import MCPTools
+            from ai.llm_agent import LLMAgent
+            from ui.components.chat_panel_widget import ChatPanelWidget
+            self.mcp_tools = MCPTools(
+                scenario_accessor=self._get_current_scenario_data,
+                undo_manager_accessor=lambda: self.undo_manager,
+            )
+            self.llm_agent = LLMAgent(self.mcp_tools)
+            self.chat_panel = ChatPanelWidget()
+            self._ai_available = True
+        except Exception as _ai_init_err:
+            print(f"AI assistant unavailable: {_ai_init_err}")
+
         if not hasattr(self, 'dataContainer'):
             # probably test environment without UI loaded
             return
@@ -342,10 +363,11 @@ class MainWindow(QMainWindow):
         # Connect component signals
         self._connect_component_signals()
 
-        # Set splitter sizes (only if they exist)
-        self.splitter.setSizes([300, 900])
+        # Set splitter sizes — 3 panels: left | content | right (AI chat)
+        self.splitter.setSizes([300, 900, 300])
         self.splitter.setStretchFactor(0, 0)  # left panel fixed
         self.splitter.setStretchFactor(1, 1)  # content area stretches
+        self.splitter.setStretchFactor(2, 0)  # right panel fixed
 
         self.leftSplitter.setSizes([150, 450])
         self.leftSplitter.setStretchFactor(0, 1)  # navigator resizes
@@ -405,6 +427,10 @@ class MainWindow(QMainWindow):
         # Set parameter manager for the tree widget
         self.param_tree.set_parameter_manager(self.parameter_manager)
 
+        # Insert AI chat panel into the right panel from the .ui file
+        if self.chat_panel is not None and hasattr(self, 'rightPanel'):
+            self.rightPanel.layout().addWidget(self.chat_panel)
+
     def _connect_component_signals(self):
         """Connect component signals to main window handlers"""
         # Parameter tree signals
@@ -421,6 +447,14 @@ class MainWindow(QMainWindow):
 
         # Chart widget signals
         self.chart_widget.chart_type_changed.connect(self._on_chart_type_changed)
+
+        # AI chat panel signals
+        if self.chat_panel is not None:
+            self.chat_panel.task_submitted.connect(self._on_chat_task_submitted)
+            self.chat_panel.clear_requested.connect(self._on_chat_clear_requested)
+            self.chat_panel.provider_changed.connect(self._on_ai_provider_changed)
+        if self.mcp_tools is not None:
+            self.mcp_tools.parameter_changed.connect(self._on_parameter_changed_by_ai)
 
     def _connect_signals(self):
         """Connect all component signals"""
@@ -571,6 +605,10 @@ class MainWindow(QMainWindow):
             # Set selected files based on what's available
             self.selected_input_file = scenario.input_file
             self.selected_results_file = scenario.results_file
+
+            # Restore AI chat history for this scenario
+            if self._ai_available:
+                self._load_chat_history()
 
             # Remember the currently displayed parameter before rebuilding the tree
             prev_parameter = self.current_displayed_parameter
@@ -2307,6 +2345,9 @@ class MainWindow(QMainWindow):
 
         # Save current session state
         self._save_current_session_state()
+        # Note: AI chat history is saved after each LLM exchange (_on_llm_finished),
+        # NOT here — saving on close would overwrite good history with empty history
+        # if the user closed without chatting in this session.
         super().closeEvent(a0)
 
     def _connect_find_widget_signals(self):
@@ -2532,3 +2573,143 @@ class MainWindow(QMainWindow):
 
         except Exception as e:
             print(f"Error updating undo/redo UI: {e}")
+
+    # ------------------------------------------------------------------
+    # AI assistant handlers
+    # ------------------------------------------------------------------
+
+    def _get_current_scenario_data(self) -> Optional[ScenarioData]:
+        """Accessor passed to MCPTools — returns the active input ScenarioData."""
+        return self._get_current_scenario(is_results=False)
+
+    # ------------------------------------------------------------------
+    # Chat history helpers
+    # ------------------------------------------------------------------
+
+    def _ai_scenario_key(self) -> str:
+        """Return the key used to load/save chat history for the current scenario."""
+        return self.selected_input_file or '__no_scenario__'
+
+    def _save_chat_history(self) -> None:
+        """Persist the current LLM conversation history to disk."""
+        if self.llm_agent is None or self.chat_panel is None:
+            return
+        try:
+            from ai.chat_history import save_history
+            save_history(
+                scenario_key=self._ai_scenario_key(),
+                history=self.llm_agent.get_history(),
+                provider=self.chat_panel.get_current_provider(),
+            )
+        except Exception as exc:
+            print(f"Could not save chat history: {exc}")
+
+    def _load_chat_history(self) -> None:
+        """Restore conversation history from disk for the current scenario."""
+        if self.llm_agent is None or self.chat_panel is None:
+            return
+        try:
+            from ai.chat_history import load_history
+            data = load_history(self._ai_scenario_key())
+        except Exception as exc:
+            print(f"Could not load chat history: {exc}")
+            return
+
+        # Clear chat UI and LLM history, then show greeting as placeholder
+        self.llm_agent.clear_history()
+        self.chat_panel.show_greeting()
+
+        if data is None:
+            return
+
+        history = data.get('history', [])
+        if not history:
+            return  # nothing to restore — greeting stays
+
+        # Restore provider selection (silently, without emitting provider_changed)
+        provider = data.get('provider')
+        if provider:
+            self.chat_panel.set_provider(provider)
+            self.llm_agent.provider = provider
+
+        # Replace greeting with actual history in the UI
+        self.chat_panel.conversation_view.clear()
+        for entry in history:
+            role = entry.get('role')
+            content = entry.get('content', '')
+            if role == 'user' and isinstance(content, str):
+                self.chat_panel.append_user_message(content)
+            elif role == 'assistant':
+                # content may be a string or a list of content blocks
+                if isinstance(content, str):
+                    if content:
+                        self.chat_panel.append_assistant_message(content)
+                elif isinstance(content, list):
+                    text = '\n'.join(
+                        b.get('text', '') for b in content
+                        if isinstance(b, dict) and b.get('type') == 'text'
+                    )
+                    if text:
+                        self.chat_panel.append_assistant_message(text)
+            # tool / tool_result roles are silently skipped in the display
+
+        # Restore the LLM history so the conversation can continue
+        self.llm_agent.set_history(history)
+
+    # ------------------------------------------------------------------
+    # Chat task handlers
+    # ------------------------------------------------------------------
+
+    def _on_chat_task_submitted(self, text: str):
+        """Handle a user message from the chat panel: spawn an LLM worker thread."""
+        if self.llm_agent is None or self.chat_panel is None:
+            return
+        self.chat_panel.append_user_message(text)
+        self.chat_panel.set_thinking(True)
+        worker = self.llm_agent.send_message(text)
+        self._active_llm_worker = worker  # keep alive for duration of run
+        worker.tool_call_started.connect(self.chat_panel.append_tool_call)
+        worker.tool_call_result.connect(self.chat_panel.append_tool_result)
+        worker.finished.connect(self._on_llm_finished)
+        worker.error.connect(self._on_llm_error)
+        worker.start()
+
+    def _on_llm_finished(self, reply: str):
+        """Handle successful LLM reply."""
+        if self.chat_panel:
+            self.chat_panel.set_thinking(False)
+            self.chat_panel.append_assistant_message(reply)
+        self._active_llm_worker = None
+        self._save_chat_history()
+
+    def _on_llm_error(self, error: str):
+        """Handle LLM error."""
+        if self.chat_panel:
+            self.chat_panel.set_thinking(False)
+            self.chat_panel.append_error(error)
+        self._active_llm_worker = None
+
+    def _on_chat_clear_requested(self):
+        """Clear the LLM conversation history when the user clicks Clear."""
+        if self.llm_agent:
+            self.llm_agent.clear_history()
+        # Delete persisted history so it does not reload on next startup
+        try:
+            from ai.chat_history import delete_history
+            delete_history(self._ai_scenario_key())
+        except Exception:
+            pass
+
+    def _on_ai_provider_changed(self, provider: str):
+        """Switch the LLM provider; history is cleared automatically."""
+        if self.llm_agent:
+            self.llm_agent.provider = provider
+
+    def _on_parameter_changed_by_ai(self, param_name: str):
+        """Refresh the displayed table if the AI just changed the current parameter."""
+        if self.current_displayed_parameter == param_name:
+            scenario = self._get_current_scenario(is_results=False)
+            if scenario:
+                param = scenario.get_parameter(param_name)
+                if param:
+                    self.data_display.display_parameter_data(param, is_results=False)

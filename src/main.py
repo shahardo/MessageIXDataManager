@@ -8,6 +8,13 @@ import sys
 import os
 import platform
 
+# Load .env file (ANTHROPIC_API_KEY etc.) before any other imports
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
 # Disable GPU in QWebEngineView's Chromium engine to avoid GL context failures
 # on systems with incompatible GPU drivers.  Must be set before any Qt imports.
 os.environ['QTWEBENGINE_CHROMIUM_FLAGS'] = '--disable-gpu'
