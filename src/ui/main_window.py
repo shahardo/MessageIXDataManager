@@ -20,6 +20,8 @@ import pandas as pd
 from typing import Optional, List, Dict, Any
 
 from .dashboard import ResultsDashboard
+from .scenarios_comparison.scenario_selector_dialog import ScenarioSelectorDialog
+from .scenarios_comparison.scenario_comparison_window import ScenarioComparisonWindow
 from .results_file_dashboard import ResultsFileDashboard
 from .input_file_dashboard import InputFileDashboard
 from .postprocessing_dashboard import PostprocessingDashboard
@@ -304,6 +306,7 @@ class MainWindow(QMainWindow):
         self.auto_load_handler = AutoLoadHandler(self.input_manager, self.results_analyzer, self.session_manager)
         self.loaded_data_files = {}  # Cache for loaded data files
         self._level_tech_map: Dict[str, list] = {}  # Cached energy level → technology list
+        self._comparison_windows: list = []  # Keep comparison windows alive
 
         self._connect_find_widget_signals()
 
@@ -427,6 +430,14 @@ class MainWindow(QMainWindow):
         # Set parameter manager for the tree widget
         self.param_tree.set_parameter_manager(self.parameter_manager)
 
+        # Add a label to the right of the progress bar in the status bar.
+        # The label shows the descriptive message; the bar itself shows only "%p%".
+        from PyQt5.QtWidgets import QLabel as _QLabel
+        self._progress_label = _QLabel()
+        self._progress_label.setVisible(False)
+        self._progress_label.setStyleSheet("padding-left: 4px; color: #444;")
+        self.statusbar.addPermanentWidget(self._progress_label)
+
         # Insert AI chat panel into the right panel from the .ui file
         if self.chat_panel is not None and hasattr(self, 'rightPanel'):
             self.rightPanel.layout().addWidget(self.chat_panel)
@@ -483,6 +494,9 @@ class MainWindow(QMainWindow):
         # Connect save actions from UI
         self.actionSave.triggered.connect(self._save_file)
         self.actionSave_As.triggered.connect(self._save_file_as)
+
+        # Tools menu
+        self.actionCompare_Scenarios.triggered.connect(self._open_comparison_window)
 
         # Solver signals are connected to SolverWorker instances at runtime
         # in _run_solver() — no static wiring needed here.
@@ -577,24 +591,26 @@ class MainWindow(QMainWindow):
     def _on_scenario_selected(self, scenario: Scenario):
         """Handle scenario selection in navigator"""
         with WaitCursorContext(force=True):
-            print(f"DEBUG: Scenario selected: {scenario.name}")
             # Invalidate cached level map when switching scenarios
             self._level_tech_map = {}
-            print(f"DEBUG: Scenario input_file: {scenario.input_file}")
-            print(f"DEBUG: Scenario results_file: {scenario.results_file}")
 
-            # Ensure files are loaded
+            # Ensure files are loaded — each loader already drives the progress bar
             if scenario.input_file and not self.input_manager.get_scenario_by_file_path(scenario.input_file):
-                 print(f"DEBUG: Loading input file for scenario: {scenario.input_file}")
-                 self.input_file_handler.load_files([scenario.input_file], self.update_progress, self._append_to_console)
+                self.show_progress_bar(100, f"Loading input file…")
+                self.statusbar.showMessage(f"Loading {os.path.basename(scenario.input_file)}…")
+                QApplication.processEvents()
+                self.input_file_handler.load_files([scenario.input_file], self.update_progress, self._append_to_console)
+                self.hide_progress_bar()
 
             if scenario.results_file and not self.results_analyzer.get_results_by_file_path(scenario.results_file):
-                 print(f"DEBUG: Loading results file for scenario: {scenario.results_file}")
-                 self.results_file_handler.load_files([scenario.results_file], self.update_progress, self._append_to_console)
+                self.show_progress_bar(100, f"Loading results file…")
+                self.statusbar.showMessage(f"Loading {os.path.basename(scenario.results_file)}…")
+                QApplication.processEvents()
+                self.results_file_handler.load_files([scenario.results_file], self.update_progress, self._append_to_console)
+                self.hide_progress_bar()
 
             if scenario.message_scenario_file and scenario.message_scenario_file not in self.loaded_data_files:
-                 print(f"DEBUG: Loading data file for scenario: {scenario.message_scenario_file}")
-                 self._load_data_file(scenario.message_scenario_file)
+                self._load_data_file(scenario.message_scenario_file)  # already handles its own progress
 
             self.selected_scenario = scenario
 
@@ -634,6 +650,8 @@ class MainWindow(QMainWindow):
                 elif scenario.results_file:
                     self._auto_select_section("results")
 
+            self.statusbar.showMessage(f"Scenario '{scenario.name}' loaded", 3000)
+
         # Save current session state
         self._save_current_session_state()
 
@@ -666,6 +684,26 @@ class MainWindow(QMainWindow):
             if data_scenario:
                 total_items += len(data_scenario.get_parameter_names())
 
+        # Count steps for progress reporting
+        n_steps = (
+            bool(scenario.input_file) +
+            bool(scenario.results_file) +
+            bool(scenario.message_scenario_file) +
+            2  # postprocessing + build tree
+        )
+        step = 0
+        self.show_progress_bar(100)  # initialise once; steps update value + label
+
+        def _progress_step(label: str) -> None:
+            nonlocal step
+            step += 1
+            pct = int(step * 100 / n_steps)
+            self.progress_bar.setValue(pct)
+            if hasattr(self, '_progress_label'):
+                self._progress_label.setText(label)
+                self._progress_label.setVisible(True)
+            QApplication.processEvents()
+
         # Use wait cursor for large datasets
         with WaitCursorContext(total_items):
             # Load data from both input and results sources into combined data
@@ -673,6 +711,7 @@ class MainWindow(QMainWindow):
                 input_scenario = self.input_manager.get_scenario_by_file_path(scenario.input_file)
                 if input_scenario:
                     param_names = input_scenario.get_parameter_names()
+                    _progress_step(f"Reading input parameters ({len(param_names)})…")
                     combined_data.options = input_scenario.options
                     # Share the sets reference so save_scenario can write the Sets sheet
                     combined_data.sets = input_scenario.sets
@@ -686,6 +725,7 @@ class MainWindow(QMainWindow):
                 results_scenario = self.results_analyzer.get_results_by_file_path(scenario.results_file)
                 if results_scenario:
                     param_names = results_scenario.get_parameter_names()
+                    _progress_step(f"Reading results ({len(param_names)})…")
                     # Copy results to combined data
                     for param_name in param_names:
                         param = results_scenario.get_parameter(param_name)
@@ -694,11 +734,13 @@ class MainWindow(QMainWindow):
 
             if scenario.message_scenario_file:
                 if scenario.message_scenario_file not in self.loaded_data_files:
-                    self._load_data_file(scenario.message_scenario_file)
+                    self._load_data_file(scenario.message_scenario_file)  # handles its own progress
 
                 data_scenario = self.loaded_data_files.get(scenario.message_scenario_file)
                 if data_scenario:
-                    for param_name in data_scenario.get_parameter_names():
+                    param_names = data_scenario.get_parameter_names()
+                    _progress_step(f"Reading data file ({len(param_names)})…")
+                    for param_name in param_names:
                         param = data_scenario.get_parameter(param_name)
                         if param:
                             combined_data.add_parameter(param, mark_modified=False, add_to_history=False)
@@ -711,10 +753,13 @@ class MainWindow(QMainWindow):
                 for p in combined_data.parameters.values()
             )
             if not has_postprocessed:
+                _progress_step("Running postprocessing…")
                 from managers.results_postprocessor import add_postprocessed_results
                 postprocessed_count = add_postprocessed_results(combined_data)
                 if postprocessed_count > 0:
                     print(f"Added {postprocessed_count} postprocessed results to combined data")
+            else:
+                step += 1  # skip postprocessing step in counter
 
             # Organize data into sections
             sections_data = {}
@@ -750,6 +795,8 @@ class MainWindow(QMainWindow):
             if postprocessing:
                 sections_data["postprocessing"] = postprocessing
 
+            total_params = len(combined_data.get_parameter_names())
+            _progress_step(f"Building parameter tree ({total_params} items)…")
 
             # Update the parameter tree with sections
             self.param_tree.update_tree_with_sections(combined_data, sections_data)
@@ -758,8 +805,10 @@ class MainWindow(QMainWindow):
             self.param_tree.viewport().update()
             self.param_tree.repaint()
 
-            # Store combined data for retrieval
-            self.current_combined_data = combined_data
+        self.hide_progress_bar()
+
+        # Store combined data for retrieval
+        self.current_combined_data = combined_data
 
     def _load_data_file(self, file_path):
         """
@@ -1887,6 +1936,70 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "Dashboard Error",
                                f"Failed to open dashboard: {str(e)}")
 
+    def _build_combined_scenario_data(self, scenario: Scenario) -> 'ScenarioData':
+        """
+        Build a combined ScenarioData for *scenario* by pulling data from the
+        loaded managers — mirrors the logic used in _switch_to_multi_section_view.
+        """
+        from core.data_models import ScenarioData
+        combined = ScenarioData()
+
+        if scenario.input_file:
+            input_data = self.input_manager.get_scenario_by_file_path(scenario.input_file)
+            if input_data:
+                combined.options = input_data.options
+                combined.sets = input_data.sets
+                for name in input_data.get_parameter_names():
+                    param = input_data.get_parameter(name)
+                    if param:
+                        combined.add_parameter(param, mark_modified=False, add_to_history=False)
+
+        if scenario.results_file:
+            results_data = self.results_analyzer.get_results_by_file_path(scenario.results_file)
+            if results_data:
+                for name in results_data.get_parameter_names():
+                    param = results_data.get_parameter(name)
+                    if param:
+                        combined.add_parameter(param, mark_modified=False, add_to_history=False)
+
+        if scenario.message_scenario_file:
+            if scenario.message_scenario_file not in self.loaded_data_files:
+                self._load_data_file(scenario.message_scenario_file)
+            data_scenario = self.loaded_data_files.get(scenario.message_scenario_file)
+            if data_scenario:
+                for name in data_scenario.get_parameter_names():
+                    param = data_scenario.get_parameter(name)
+                    if param:
+                        combined.add_parameter(param, mark_modified=False, add_to_history=False)
+
+        return combined
+
+    def _open_comparison_window(self):
+        """Open ScenarioSelectorDialog then show ScenarioComparisonWindow."""
+        from PyQt5.QtWidgets import QDialog, QMessageBox
+        scenarios = self.file_navigator.current_scenarios
+        if len(scenarios) < 2:
+            QMessageBox.information(
+                self, "Compare Scenarios",
+                "At least two loaded scenarios are required for comparison."
+            )
+            return
+        dialog = ScenarioSelectorDialog(scenarios, parent=self)
+        if dialog.exec_() == QDialog.Accepted:
+            scenario_a, scenario_b = dialog.selected_scenarios()
+            data_a = self._build_combined_scenario_data(scenario_a)
+            data_b = self._build_combined_scenario_data(scenario_b)
+            window = ScenarioComparisonWindow(
+                scenario_a, scenario_b, data_a, data_b, parent=self
+            )
+            window.show()
+            # Keep a reference so the window is not garbage-collected
+            self._comparison_windows.append(window)
+            window.destroyed.connect(
+                lambda: self._comparison_windows.remove(window)
+                if window in self._comparison_windows else None
+            )
+
     def _on_load_files_requested(self, file_type: str):
         """Handle request to load files when 'no files loaded' is clicked"""
         if file_type == "input":
@@ -1963,30 +2076,35 @@ class MainWindow(QMainWindow):
     def show_progress_bar(self, maximum=100, message: str = ""):
         """Show and initialize the progress bar.
 
-        If *message* is given it is embedded in the bar's format string
-        (e.g. "Saving foo.xlsx…  42%") so the statusbar text area is not
-        needed and the two don't compete for space.
+        If *message* is given it is shown in a label to the right of the bar.
+        The bar itself always displays only the numeric percentage.
         """
         self.progress_bar.setMaximum(maximum)
         self.progress_bar.setValue(0)
-        if message:
-            self.progress_bar.setFormat(f"{message}  %p%")
-            self.progress_bar.setTextVisible(True)
-        else:
-            self.progress_bar.setFormat("%p%")
-        self.statusbar.clearMessage()   # hide text while the bar is visible
+        self.progress_bar.setFormat("%p%")
+        self.progress_bar.setTextVisible(True)
+        self.statusbar.clearMessage()
         self.progress_bar.setVisible(True)
+        if hasattr(self, '_progress_label'):
+            if message:
+                self._progress_label.setText(message)
+                self._progress_label.setVisible(True)
+            else:
+                self._progress_label.setVisible(False)
 
     def update_progress(self, value, message=None):
-        """Update progress bar value and optionally status message"""
+        """Update progress bar value and optionally the label text."""
         self.progress_bar.setValue(value)
-        if message:
-            self.statusbar.showMessage(message)
+        if message and hasattr(self, '_progress_label'):
+            self._progress_label.setText(message)
+            self._progress_label.setVisible(True)
 
     def hide_progress_bar(self):
-        """Hide the progress bar and reset its format."""
+        """Hide the progress bar and its label."""
         self.progress_bar.setVisible(False)
         self.progress_bar.setFormat("%p%")
+        if hasattr(self, '_progress_label'):
+            self._progress_label.setVisible(False)
 
     # Console methods
     def _append_to_console(self, message: str):

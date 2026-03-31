@@ -336,10 +336,17 @@
     <widget class="QMenu" name="menuView_separator"/>
     <addaction name="actionDashboard"/>
    </widget>
+   <widget class="QMenu" name="menuTools">
+    <property name="title">
+     <string>Tools</string>
+    </property>
+    <addaction name="actionCompare_Scenarios"/>
+   </widget>
    <addaction name="menuFile"/>
    <addaction name="menuEdit"/>
    <addaction name="menuRun"/>
    <addaction name="menuView"/>
+   <addaction name="menuTools"/>
   </widget>
   <widget class="QStatusBar" name="statusbar">
    <widget class="QProgressBar" name="progress_bar">
@@ -410,6 +417,17 @@
    </property>
    <property name="shortcut">
     <string>Ctrl+Shift+S</string>
+   </property>
+  </action>
+  <action name="actionCompare_Scenarios">
+   <property name="text">
+    <string>Compare Scenarios…</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+Shift+C</string>
+   </property>
+   <property name="toolTip">
+    <string>Open the scenario comparison view</string>
    </property>
   </action>
   <action name="actionFind">
