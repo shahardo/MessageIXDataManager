@@ -16,14 +16,14 @@ Rows where a value exists only in one scenario show "—" for the missing side.
 A "Show Δ only" checkbox hides the raw value columns.
 """
 
-from typing import Optional, Tuple
+from typing import Dict, Optional, Tuple
 
 import pandas as pd
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QBrush, QColor, QFont
 from PyQt5.QtWidgets import (
-    QApplication, QCheckBox, QHBoxLayout, QLabel, QSizePolicy, QTableWidget,
-    QTableWidgetItem, QVBoxLayout, QWidget,
+    QApplication, QCheckBox, QComboBox, QHBoxLayout, QLabel, QSizePolicy,
+    QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
 from core.data_models import Parameter
@@ -106,6 +106,7 @@ class ComparisonDataWidget(QWidget):
         self._merged_df: Optional[pd.DataFrame] = None
         self._label_a = "A"
         self._label_b = "B"
+        self._dim_filters: Dict[str, QComboBox] = {}   # col → combo
         self._setup_ui()
 
     # ------------------------------------------------------------------
@@ -131,6 +132,14 @@ class ComparisonDataWidget(QWidget):
         ctrl.addStretch()
         ctrl.addWidget(self._delta_only_cb)
         layout.addLayout(ctrl)
+
+        # Filter bar — rebuilt dynamically when data is loaded
+        self._filter_container = QWidget()
+        self._filter_layout = QHBoxLayout(self._filter_container)
+        self._filter_layout.setContentsMargins(0, 0, 0, 0)
+        self._filter_layout.setSpacing(6)
+        self._filter_container.setVisible(False)
+        layout.addWidget(self._filter_container)
 
         # Placeholder label
         self._placeholder = QLabel("Select a parameter to compare")
@@ -170,17 +179,81 @@ class ComparisonDataWidget(QWidget):
             self._show_placeholder(f"Could not merge parameters: {e}")
             return
 
-        self._populate_table(self._merged_df)
+        self._rebuild_filters(self._merged_df)
+        self._apply_filters()
 
     def clear(self) -> None:
         """Clear the table and show placeholder."""
         self._merged_df = None
+        self._filter_container.setVisible(False)
         self._table.setVisible(False)
         self._placeholder.setVisible(True)
 
     def get_merged_df(self) -> Optional[pd.DataFrame]:
         """Return the current merged DataFrame (for export)."""
         return self._merged_df
+
+    # ------------------------------------------------------------------
+    # Filter bar
+    # ------------------------------------------------------------------
+
+    def _rebuild_filters(self, df: pd.DataFrame) -> None:
+        """Recreate one QComboBox per dimension column from *df*."""
+        val_cols = {
+            f"Value ({self._label_a})", f"Value ({self._label_b})", 'Δ', 'Δ%',
+        }
+        dim_cols = [c for c in df.columns if c not in val_cols]
+
+        # Remove old widgets
+        while self._filter_layout.count():
+            item = self._filter_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+        self._dim_filters.clear()
+
+        if not dim_cols:
+            self._filter_container.setVisible(False)
+            return
+
+        self._filter_layout.addWidget(QLabel("Filter:"))
+
+        for col in dim_cols:
+            lbl = QLabel(col + ":")
+            lbl.setStyleSheet("color: #555; font-size: 11px;")
+            cb = QComboBox()
+            cb.setMaximumWidth(160)
+            cb.addItem("All")
+            unique_vals = sorted(df[col].dropna().astype(str).unique())
+            cb.addItems(unique_vals)
+            cb.currentTextChanged.connect(self._apply_filters)
+            self._filter_layout.addWidget(lbl)
+            self._filter_layout.addWidget(cb)
+            self._dim_filters[col] = cb
+
+        self._filter_layout.addStretch()
+        self._filter_container.setVisible(True)
+
+    def _apply_filters(self, *_) -> None:
+        """Apply current combo-box selections to the merged DataFrame and repopulate the table."""
+        if self._merged_df is None:
+            return
+        self._populate_table(self._filtered_df())
+
+    def _filtered_df(self) -> pd.DataFrame:
+        """Return the merged DataFrame with all active filters applied."""
+        df = self._merged_df.copy()
+        for col, cb in self._dim_filters.items():
+            # index 0 is always "All" — skip filtering when it is selected
+            if cb.currentIndex() > 0:
+                val = cb.currentText()
+                df = df[df[col].astype(str) == val]
+        return df
+
+    def _current_filtered_df(self) -> Optional[pd.DataFrame]:
+        """Public accessor for the currently filtered DataFrame (used by export)."""
+        if self._merged_df is None:
+            return None
+        return self._filtered_df()
 
     # ------------------------------------------------------------------
     # Table population
@@ -247,7 +320,7 @@ class ComparisonDataWidget(QWidget):
             QApplication.setOverrideCursor(Qt.WaitCursor)
             QApplication.processEvents()
             try:
-                self._populate_table(self._merged_df)
+                self._apply_filters()
             finally:
                 QApplication.restoreOverrideCursor()
 

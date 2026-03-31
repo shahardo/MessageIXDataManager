@@ -152,11 +152,6 @@ class ComparisonChartWidget(QWidget):
         col_a = f"Value ({label_a})"
         col_b = f"Value ({label_b})"
 
-        print(f"[ComparisonChart] param={param_a.name!r}  mode={self._mode}  "
-              f"rows={len(merged)}  cols={list(merged.columns)}")
-        print(f"[ComparisonChart] dtypes:\n{merged.dtypes}")
-        print(f"[ComparisonChart] head:\n{merged.head(3)}")
-
         if self._mode == self.GROUPED_BAR:
             self._render_grouped_bar(merged, col_a, col_b, param_a.name)
         elif self._mode == self.STACKED_BAR:
@@ -223,15 +218,12 @@ class ComparisonChartWidget(QWidget):
 
         fig = go.Figure()
 
-        print(f"[ComparisonChart grouped_bar] year_col={year_col!r}  series_col={series_col!r}")
         if year_col and series_col:
             years = sorted(merged[year_col].dropna().unique())
             series_vals = sorted(merged[series_col].dropna().unique())
-            print(f"[ComparisonChart grouped_bar] years={years}  n_series={len(series_vals)}")
 
             if len(series_vals) > _MAX_SERIES:
                 # Too many series → aggregate totals per year (2 traces only)
-                print(f"[ComparisonChart grouped_bar] aggregating {len(series_vals)} series into totals")
                 agg = merged.groupby(year_col, sort=True)[[col_a, col_b]].sum()
                 agg_a = pd.to_numeric(agg[col_a], errors='coerce')
                 agg_b = pd.to_numeric(agg[col_b], errors='coerce')
@@ -373,13 +365,9 @@ class ComparisonChartWidget(QWidget):
 
         fig = go.Figure()
 
-        print(f"[ComparisonChart stacked_bar] year_col={year_col!r}  series_col={series_col!r}")
-
         if year_col and series_col:
             # Apply technology grouping: collapse potentials / historic variants
             grouped = self._apply_tech_grouping(merged, series_col, col_a, col_b, year_col)
-            print(f"[ComparisonChart stacked_bar] after grouping: "
-                  f"{grouped[series_col].nunique()} groups (was {merged[series_col].nunique()})")
 
             years       = sorted(grouped[year_col].dropna().unique())
             series_vals = sorted(grouped[series_col].dropna().unique())
@@ -504,14 +492,11 @@ class ComparisonChartWidget(QWidget):
 
         fig = go.Figure()
 
-        print(f"[ComparisonChart overlaid_line] year_col={year_col!r}  series_col={series_col!r}")
         if year_col and series_col:
             years = sorted(merged[year_col].dropna().unique())
             series_vals = sorted(merged[series_col].dropna().unique())
-            print(f"[ComparisonChart overlaid_line] n_series={len(series_vals)}")
 
             if len(series_vals) > _MAX_SERIES:
-                print(f"[ComparisonChart overlaid_line] aggregating {len(series_vals)} series into totals")
                 agg = merged.groupby(year_col, sort=True)[[col_a, col_b]].sum()
                 fig.add_trace(go.Scatter(
                     x=agg.index.tolist(),
@@ -581,10 +566,8 @@ class ComparisonChartWidget(QWidget):
         if year_col and series_col:
             years = sorted(merged[year_col].dropna().unique())
             series_vals = sorted(merged[series_col].dropna().unique())
-            print(f"[ComparisonChart delta_bar] n_series={len(series_vals)}")
 
             if len(series_vals) > _MAX_SERIES:
-                print(f"[ComparisonChart delta_bar] aggregating {len(series_vals)} series into totals")
                 agg = merged.groupby(year_col, sort=True)[['Δ']].sum()
                 d_vals = pd.to_numeric(agg['Δ'], errors='coerce').tolist()
                 bar_colors = ['#27ae60' if (v is not None and not pd.isna(v) and v >= 0) else '#e74c3c'
@@ -631,7 +614,6 @@ class ComparisonChartWidget(QWidget):
     # ------------------------------------------------------------------
 
     def _render(self, fig: go.Figure, title: str) -> None:
-        print(f"[ComparisonChart _render] title={title!r}  n_traces={len(fig.data)}")
         try:
             config = {
                 'displayModeBar': True,
@@ -663,8 +645,6 @@ class ComparisonChartWidget(QWidget):
                 f.write(complete)
                 path = f.name
 
-            print(f"[ComparisonChart _render] wrote HTML to {path!r}  ({len(complete)} bytes)  "
-                  f"traces={[t.type for t in fig.data]}")
             self._web.setUrl(QUrl.fromLocalFile(path))
             threading.Thread(target=self._cleanup, args=(path,), daemon=True).start()
 
