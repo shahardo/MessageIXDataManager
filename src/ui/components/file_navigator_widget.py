@@ -5,7 +5,7 @@ Extracted from MainWindow to provide focused file navigation functionality.
 Implements the scenario-based architecture as defined in refactoring guide.
 """
 
-from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QFrame, QLineEdit, QApplication, QStyle
+from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QFrame, QLineEdit, QApplication, QStyle, QScrollArea
 from PyQt5.QtCore import pyqtSignal, Qt, QSize, QEvent
 from PyQt5.QtGui import QIcon, QPixmap
 from core.data_models import Scenario
@@ -82,31 +82,38 @@ class FileNavigatorWidget(QWidget):
         header_layout.addStretch()
         header_layout.addWidget(self.add_scenario_btn)
         
-        # Navigation area
+        # Navigation area — inner frame holds the scenario cards
         self.navigation_frame = QFrame()
-        self.navigation_frame.setFrameStyle(QFrame.StyledPanel | QFrame.Sunken)
         self.navigation_layout = QVBoxLayout(self.navigation_frame)
         self.navigation_layout.setContentsMargins(5, 5, 5, 5)
-        
+
+        # Scroll area wraps the frame so many scenarios don't overflow
+        self._scroll_area = QScrollArea()
+        self._scroll_area.setWidget(self.navigation_frame)
+        self._scroll_area.setWidgetResizable(True)
+        self._scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self._scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self._scroll_area.setFrameStyle(QFrame.StyledPanel | QFrame.Sunken)
+
         # No scenarios placeholder
         self.no_scenarios_widget = QWidget()
         no_scenarios_layout = QVBoxLayout(self.no_scenarios_widget)
         no_scenarios_layout.setContentsMargins(10, 10, 10, 10)
-        
+
         no_scenarios_label = QLabel("No scenarios loaded")
         no_scenarios_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         no_scenarios_label.setStyleSheet("color: gray; font-style: italic;")
-        
+
         load_files_btn = QPushButton("Load Input Files")
         load_files_btn.clicked.connect(lambda: self.load_files_requested.emit("input"))
-        
+
         no_scenarios_layout.addWidget(no_scenarios_label)
         no_scenarios_layout.addWidget(load_files_btn)
-        
+
         self.navigation_layout.addWidget(self.no_scenarios_widget)
-        
+
         layout.addLayout(header_layout)
-        layout.addWidget(self.navigation_frame)
+        layout.addWidget(self._scroll_area)
         
         self.setLayout(layout)
 
