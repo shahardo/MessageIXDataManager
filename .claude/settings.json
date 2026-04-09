@@ -1,0 +1,18 @@
+{
+    "env": {
+        "VIRTUAL_ENV": "c:\\Users\\owner\\code\\MessageIXDataManager\\env"
+    },
+    "hooks": {
+        "SessionStart": [
+            {
+                "hooks": [
+                    {
+                        "type": "command",
+                        "command": "echo '{\"systemMessage\": \"Virtual environment activated: use env/Scripts/python.exe (or env/Scripts/pytest.exe) for all Python commands in this project.\"}'",
+                        "shell": "powershell"
+                    }
+                ]
+            }
+        ]
+    }
+}

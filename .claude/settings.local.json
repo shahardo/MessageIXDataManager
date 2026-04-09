@@ -16,10 +16,11 @@
       "./env/Scripts/python.exe -c \"import *\"",
       "Bash(./env/Scripts/python.exe -m pytest tests:*)",
       "Bash(./env/Scripts/python.exe -m pytest -v tests:*)",
-      "Bash(Select-String -Pattern \"FAIL|ERROR|passed|failed\")",
+      "Bash(Select-String -Pattern:*)",
       "Bash(./env/Scripts/python.exe:*)",
-      "Bash(Select-String -Pattern \"FAILED|passed|failed|error\")",
-      "WebFetch(domain:docs.messageix.org)"
+      "WebFetch(domain:docs.messageix.org)",
+      "Skill(update-config)",
+      "Skill(update-config:*)"
     ],
     "defaultMode": "acceptEdits"
   }

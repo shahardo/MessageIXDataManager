@@ -31,11 +31,22 @@
     ],
     "python.envFile": "${workspaceFolder}/.env",
     "debug.openDebug": "openOnDebugBreak",
+    "terminal.integrated.persistentSessionReviveProcess": "onExit",
+    "python.terminal.activateEnvInCurrentTerminal": true,
+    "window.openFoldersInNewWindow": "off",
+    "window.openFilesInNewWindow": "off",
     "terminal.integrated.defaultProfile.windows": "PowerShell",
     "terminal.integrated.profiles.windows": {
         "PowerShell": {
             "source": "PowerShell",
-            "args": ["-NoExit", "-Command", "& '${workspaceFolder}/env/Scripts/Activate.ps1'"]
+            "args": ["-NoLogo", "-ExecutionPolicy", "Bypass"]
+        },
+        "Git Bash": {
+            "source": "Git Bash"
         }
+    },
+    "terminal.integrated.env.windows": {
+        "PATH": "${workspaceFolder}\\env\\Scripts;${env:PATH}",
+        "VIRTUAL_ENV": "${workspaceFolder}\\env"
     }
 }
